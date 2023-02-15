@@ -1,3 +1,4 @@
+// Simple RadioDoge Logo image (.xbm format)
 #define logo_width 128
 #define logo_height 64
 const unsigned char logo_bits[] = {

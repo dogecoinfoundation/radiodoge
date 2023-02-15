@@ -1,3 +1,4 @@
+// Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
 #include <Wire.h>
 #include "HT_SSD1306Wire.h"
 #include "LoRaWan_APP.h"
@@ -94,8 +95,8 @@ void setup() {
   oledDisplay.init();
   oledDisplay.setFont(ArialMT_Plain_10);
   // Show some animations
-  //CoinAnimation();
-  //DogeAnimation();
+  CoinAnimation();
+  DogeAnimation();
   // Display RadioDoge Image on startup
   DrawRadioDogeLogo();
   //HostHandshake();
@@ -108,6 +109,7 @@ void loop() {
   CommandAndControlLoop();
 }
 
+// Older test that allows for the sending of messages (specified from the host over serial) between devices without any addressing
 void RawSerialMessageSendAndReceive() {
   if (isLoRaIdle) {
     isLoRaIdle = false;
@@ -129,6 +131,7 @@ void RawSerialMessageSendAndReceive() {
   Radio.IrqProcess();
 }
 
+// Updated core functionality supporting addressing, pings, acks, and user defined messages
 void CommandAndControlLoop() {
   if (needToSendACK) {
     isLoRaIdle = false;
@@ -187,6 +190,7 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
   isLoRaIdle = true;
 }
 
+// Create a custom message that is specified by the host over the serial port
 bool CreateMessage() {
   if (Serial.available() > 0) {
     String readString = Serial.readStringUntil('\0');
@@ -280,12 +284,14 @@ void InitControlMessages() {
   controlPacket[7] = 0x00;
 }
 
+// Set the address of this device
 void SetLocalAddressFromSerialBuffer() {
   local.region = serialBuf[1];
   local.community = serialBuf[2];
   local.node = serialBuf[3];
 }
 
+// Set the destination address for the next transmission
 void SetDestinationFromSerialBuffer()
 {
   dest.region = serialBuf[1];
@@ -293,20 +299,24 @@ void SetDestinationFromSerialBuffer()
   dest.node = serialBuf[3];  
 }
 
+// Retrieve the local address
 void GetLocalAddress() {
   Serial.printf("MUCH LCL: %d.%d.%d\n", local.region, local.community, local.node);
 }
 
+// Indicate to the host that an ACK was received and display it on the screen
 void ReceivedACK() {
   Serial.printf("MUCH ACK FR %d.%d.%d\n", rxPacket[1], rxPacket[2], rxPacket[3]);
   DisplayRXMessage("ACK");
 }
 
+// Indicate to the host that a ping was received and display it on the screen
 void ReceivedPing() {
   Serial.printf("MUCH PING FR %d.%d.%d\n", rxPacket[1], rxPacket[2], rxPacket[3]);
   DisplayRXMessage("Ping!");
 }
 
+// Send a ping to the specified destination address
 void SendPing(nodeAddress destination) {
   // Message structure will by [message type, sender, destination]
   controlPacket[0] = (uint8_t)PING;
@@ -318,6 +328,7 @@ void SendPing(nodeAddress destination) {
   Radio.Send(controlPacket, CONTROL_SIZE);
 }
 
+// Send an ACK to the specified destination address
 void SendACK(nodeAddress destination) {
   // Message structure will by [message type, sender, destination]
   controlPacket[0] = (uint8_t)ACK;
@@ -344,6 +355,7 @@ void SendMessage(int messageLength)
   Radio.Send(serialBuf, (uint8_t)messageLength);
 }
 
+// Parse a serial command from the host and perform the desired function
 void ParseSerialRead() {
   int readLength = Serial.readBytesUntil(255, serialBuf, BUFFER_SIZE);
   Serial.printf("REPLY: Read %d bytes\n", readLength);
@@ -374,6 +386,7 @@ void ParseSerialRead() {
   }
 }
 
+// Parse a LoRa message received over the air from another module
 void ParseReceivedMessage() {
   if (CheckIfPacketForMe()) {
     Serial.println("PACKET FOR ME");
@@ -421,6 +434,7 @@ void ParseReceivedMessage() {
   }
 }
 
+// Checks to see if the received packet's destination is the same as the local address
 bool CheckIfPacketForMe() {
   return (local.region == rxPacket[4]) && (local.community == rxPacket[5]) && (local.node == rxPacket[6]);
 }

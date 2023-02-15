@@ -1,3 +1,4 @@
+// Doge face image (.xbm format)
 #define doge_width 64
 #define doge_height 64
 static unsigned char doge_bits[] = {

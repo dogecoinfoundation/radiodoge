@@ -1,3 +1,5 @@
+// DogeCoin image (.xbm format)
+// Basically a circle with the letter 'D' in the center
 #define coin_width 64
 #define coin_height 64
 static unsigned char coin_bits[] = {
