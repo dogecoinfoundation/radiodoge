@@ -32,6 +32,12 @@
 #define SERIAL_TERMINATOR 255
 #define TEST_COIN_AMOUNT 420.69
 
+#ifdef WIFI_LoRa_32_V2
+#define HELTEC_BOARD_VERSION 2
+#else
+#define HELTEC_BOARD_VERSION 3
+#endif
+
 char displayBuf[64];
 char txPacket[BUFFER_SIZE];
 char rxPacket[BUFFER_SIZE];
@@ -62,7 +68,8 @@ enum serialCommand {
   ADDRESS_GET,
   ADDRESS_SET,
   PING_REQUEST,
-  MESSAGE_REQUEST
+  MESSAGE_REQUEST,
+  HARDWARE_INFO = 63, //0x3f = '?'
 };
 
 struct nodeAddress {
@@ -254,11 +261,23 @@ void DisplayCommandAndControl(uint8_t commandVal) {
   case MESSAGE_REQUEST:
     commandTypeString = "Send Message";
     break;
+  case HARDWARE_INFO:
+    commandTypeString = "Get Hardware Info";
+    break;
   default:
     commandTypeString = "Wat!?";
   break;
   }
   oledDisplay.drawString(0, MIDDLE_OF_SCREEN, commandTypeString);
+  oledDisplay.display();
+}
+
+// Display hardware information on the screen
+void DisplayHardwareInfo()
+{
+  oledDisplay.clear();
+  sprintf(displayBuf, "Heltec WiFi LoRa 32 V%d", HELTEC_BOARD_VERSION);
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
   oledDisplay.display();
 }
 
@@ -444,6 +463,10 @@ void ParseSerialRead() {
         break;
       case MESSAGE_REQUEST:
         SendMessage(readLength);
+        break;
+      case HARDWARE_INFO:
+        DisplayHardwareInfo();
+        Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
         break;
       default:
         // Indicate that command was not understood (debug)
