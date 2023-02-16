@@ -6,6 +6,8 @@
 #include "logoImage.h"
 #include "coin.h"
 #include "doge.h"
+#include "sendingDogeCoin.h"
+#include "receivingDogeCoin.h"
 
 #define RF_FREQUENCY 915000000   // Hz
 #define TX_OUTPUT_POWER 5        // dBm
@@ -26,7 +28,11 @@
 #define BUFFER_SIZE 256  // Define the payload size here
 #define CONTROL_SIZE 8  // Really only 7 but we will have a reserved byte here for now
 #define ANIMATION_FRAME_DELAY 5
+#define MIDDLE_OF_SCREEN 27 // Assumes text is 10 pixels in length so half would be (64/2) - (10/2) = 27
+#define SERIAL_TERMINATOR 255
+#define TEST_COIN_AMOUNT 420.69
 
+char displayBuf[64];
 char txPacket[BUFFER_SIZE];
 char rxPacket[BUFFER_SIZE];
 uint8_t controlPacket[CONTROL_SIZE];
@@ -93,13 +99,18 @@ void setup() {
   delay(100);
   // Init the display
   oledDisplay.init();
+  oledDisplay.setTextAlignment(TEXT_ALIGN_LEFT);
   oledDisplay.setFont(ArialMT_Plain_10);
   // Show some animations
   CoinAnimation();
   DogeAnimation();
+  // Show the send and receive images
+  DrawSendingCoinsImage(TEST_COIN_AMOUNT);
+  delay(2500);
+  DrawReceivingCoinsImage(TEST_COIN_AMOUNT);
+  delay(2500);
   // Display RadioDoge Image on startup
   DrawRadioDogeLogo();
-  //HostHandshake();
   // Leaving setup (debug)
   Serial.println("VERY SETUP");
 }
@@ -134,6 +145,8 @@ void RawSerialMessageSendAndReceive() {
 // Updated core functionality supporting addressing, pings, acks, and user defined messages
 void CommandAndControlLoop() {
   if (needToSendACK) {
+    // For now we will delay before sending an ACK (debug purposes)
+    delay(2000);
     isLoRaIdle = false;
     needToSendACK = false;
     SendACK(dest);
@@ -207,18 +220,54 @@ bool CreateMessage() {
 // Display a transmitted message on the module's screen
 void DisplayTXMessage(String toDisplay) {
   oledDisplay.clear();
-  oledDisplay.drawString(0, 10, "Sending:");
-  oledDisplay.drawString(0, 40, toDisplay);
+  sprintf(displayBuf, "Sending to %d.%d.%d:", dest.region, dest.community, dest.node);
+  oledDisplay.drawString(0, 5, displayBuf);
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, toDisplay);
   oledDisplay.display();
 }
 
 // Display a received message on the module's screen
 void DisplayRXMessage(String rxMessage) {
   oledDisplay.clear();
-  oledDisplay.setTextAlignment(TEXT_ALIGN_LEFT);
-  oledDisplay.setFont(ArialMT_Plain_10);
-  oledDisplay.drawString(0, 10, "Received:");
-  oledDisplay.drawString(0, 40, rxMessage);
+  sprintf(displayBuf, "Received from %d.%d.%d:", rxPacket[1], rxPacket[2], rxPacket[3]);
+  oledDisplay.drawString(0, 5, displayBuf);
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, rxMessage);
+  oledDisplay.display();
+}
+
+// Display received command information from the host on the module's screen
+void DisplayCommandAndControl(uint8_t commandVal) {
+  oledDisplay.clear();
+  sprintf(displayBuf, "CMD FR HOST: %d", commandVal);
+  oledDisplay.drawString(0, 5, displayBuf);
+  String commandTypeString;
+  switch (commandVal) {
+  case ADDRESS_GET:
+    commandTypeString = "Get Address";
+    break;
+  case ADDRESS_SET:
+    commandTypeString = "Set Address";
+    break;
+  case PING_REQUEST:
+    commandTypeString = "Send Ping";
+    break;
+  case MESSAGE_REQUEST:
+    commandTypeString = "Send Message";
+    break;
+  default:
+    commandTypeString = "Wat!?";
+  break;
+  }
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, commandTypeString);
+  oledDisplay.display();
+}
+
+// Display the modules local address on the screen
+void DisplayLocalAddress()
+{
+  oledDisplay.clear();
+  sprintf(displayBuf, "Hi I'm %d.%d.%d", local.region, local.community, local.node);
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
   oledDisplay.display();
 }
 
@@ -226,6 +275,26 @@ void DisplayRXMessage(String rxMessage) {
 void DrawRadioDogeLogo() {
   oledDisplay.clear();
   oledDisplay.drawXbm(0, 0, logo_width, logo_height, logo_bits);
+  oledDisplay.display();
+}
+
+// Draw sending coin image
+void DrawSendingCoinsImage(float numCoins)
+{
+  oledDisplay.clear();
+  oledDisplay.drawXbm(0, 0, sendCoin_width, sendCoin_height, sendCoin_bits);
+  sprintf(displayBuf, "%0.2f", numCoins);
+  oledDisplay.drawString(5, MIDDLE_OF_SCREEN, displayBuf);
+  oledDisplay.display();
+}
+
+// Draw receiving coins image
+void DrawReceivingCoinsImage(float numCoins)
+{
+  oledDisplay.clear();
+  oledDisplay.drawXbm(0, 0, rcvCoin_width, rcvCoin_height, rcvCoin_bits);
+  sprintf(displayBuf, "%0.2f", numCoins);
+  oledDisplay.drawString(5, MIDDLE_OF_SCREEN, displayBuf);
   oledDisplay.display();
 }
 
@@ -259,20 +328,6 @@ void DogeAnimation() {
     }
     delay(ANIMATION_FRAME_DELAY);
   }
-}
-
-// Prototype start up procedure to establish connection to host and set address (unfinished/unused)
-void HostHandshake() {
-  Serial.println("SO INIT");
-  // Ask host to set node address
-  Serial.println("ADDRESS PLZ");
-  while (!Serial.available() > 0) {
-    // WOW MUCH SPIN
-  }
-  String readAddress = Serial.readStringUntil('\0');
-  // @TODO actually do something with this address (parse + set some variable)
-  // Indicate that address was set successfully
-  Serial.println("MUCH OK");
 }
 
 // Prepopulates control message buffers with local address
@@ -324,6 +379,7 @@ void SendPing(nodeAddress destination) {
   controlPacket[5] = destination.community;
   controlPacket[6] = destination.node;
   isLoRaIdle = false;
+  DisplayTXMessage("Ping");  
   Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
 }
@@ -335,7 +391,7 @@ void SendACK(nodeAddress destination) {
   controlPacket[4] = destination.region;
   controlPacket[5] = destination.community;
   controlPacket[6] = destination.node;
-  //DisplayTXMessage("ACK");
+  DisplayTXMessage("ACK");
   isLoRaIdle = false;
   Serial.printf("Sending ACK to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
@@ -351,25 +407,36 @@ void SendMessage(int messageLength)
   {
     messageLength = 255;
   }
+
+  // Display message on display
+  String messageString = ExtractStringMessageFromBuffer(serialBuf, messageLength);
+  DisplayTXMessage(messageString);
+
+  // Update packet header and send the message over the air
   serialBuf[0] = (uint8_t)MESSAGE;
   Radio.Send(serialBuf, (uint8_t)messageLength);
 }
 
 // Parse a serial command from the host and perform the desired function
 void ParseSerialRead() {
-  int readLength = Serial.readBytesUntil(255, serialBuf, BUFFER_SIZE);
+  int readLength = Serial.readBytesUntil(SERIAL_TERMINATOR, serialBuf, BUFFER_SIZE);
   Serial.printf("REPLY: Read %d bytes\n", readLength);
   if (readLength > 0) {
     // First byte read will be the command type
     serialCommand commType = (serialCommand)serialBuf[0];
     Serial.printf("Command From Host Received: %d\n", commType);
+    // Display the command on the module screen for now and wait for debug purposes
+    DisplayCommandAndControl(serialBuf[0]);
+    delay(2000);
     switch (commType) {
       case ADDRESS_GET:
         GetLocalAddress();
+        DisplayLocalAddress();
         break;
       case ADDRESS_SET:
         SetLocalAddressFromSerialBuffer();
         InitControlMessages();
+        DisplayLocalAddress();
         break;
       case PING_REQUEST:
         SetDestinationFromSerialBuffer();
@@ -408,16 +475,7 @@ void ParseReceivedMessage() {
         break;
       case MESSAGE:
       {
-        // Packet should have 7 extra bytes besides the message
-        // One byte for the messsage type, 6 bytes for sender and dest addresses
-        int messageSize = rxSize - 6;
-        char* extractedMessage = new char[messageSize];
-        for (int i = 0; i < messageSize; i++)
-        {
-          extractedMessage[i] = (char)rxPacket[i+7];
-        }
-        String messageString(extractedMessage);
-        free(extractedMessage);
+        String messageString = ExtractStringMessageFromBuffer((uint8_t*)rxPacket, rxSize);
         DisplayRXMessage(messageString);
         Serial.printf("MUCH TLK FR %d.%d.%d:\n", rxPacket[1], rxPacket[2], rxPacket[3]);
         Serial.println(messageString);
@@ -437,4 +495,20 @@ void ParseReceivedMessage() {
 // Checks to see if the received packet's destination is the same as the local address
 bool CheckIfPacketForMe() {
   return (local.region == rxPacket[4]) && (local.community == rxPacket[5]) && (local.node == rxPacket[6]);
+}
+
+// Extract the payload message from the given buffer (assists with displaying on screen)
+String ExtractStringMessageFromBuffer(uint8_t* buf, int bufferSize)
+{
+  int messageSize = bufferSize - 6;
+  // Packet should have 7 extra bytes besides the message
+  // One byte for the messsage type, 6 bytes for sender and dest addresses
+  char* extractedMessage = new char[messageSize];
+  for (int i = 0; i < messageSize; i++)
+  {
+    extractedMessage[i] = (char)buf[i+7];
+  }
+  String messageString(extractedMessage);
+  free(extractedMessage);
+  return messageString;
 }
