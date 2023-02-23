@@ -172,7 +172,7 @@ void CommandAndControlLoop() {
 
   // Check if there is data on the serial port to send out
   if (Serial.available() > 0) {
-    ParseSerialRead();
+    HostSerialRead();
   }
 
   Radio.IrqProcess();
@@ -435,6 +435,8 @@ void SendMessage(int messageLength) {
   Radio.Send(serialBuf, (uint8_t)messageLength);
 }
 
+// Read the serial header and extract the command type and payload size from it.
+// Currently the header consists of 8 bytes: the command type repeated 4 times and the payload size repeated 4 times.
 bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
   size_t numRead = Serial.readBytes(serialHeader, SERIAL_HEADER_SIZE);
   if (numRead != SERIAL_HEADER_SIZE) {
@@ -442,7 +444,7 @@ bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
   }
   // First 4 bytes will be command
   // Next 4 bytes will be payload size
-  // For now redundancy will require command and payload repeated 4 times each
+  // For redundancy we will require command and payload repeated 4 times each
   bool successfulParse = (serialHeader[0] == serialHeader[1] && serialHeader[0] == serialHeader[2] && serialHeader[0] == serialHeader[3]);
   successfulParse &= (serialHeader[4] == serialHeader[5] && serialHeader[4] == serialHeader[6] && serialHeader[4] == serialHeader[7]);
   commandType = (serialCommand)serialHeader[0];
@@ -450,6 +452,7 @@ bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
   return successfulParse;
 }
 
+// Read the host payload into the serial buffer.
 bool ReadSerialPayload(uint8_t payloadSize) {
   uint8_t bytesRead = Serial.readBytes(serialBuf, payloadSize);
   if (bytesRead != payloadSize) {
@@ -460,7 +463,10 @@ bool ReadSerialPayload(uint8_t payloadSize) {
   return true;
 }
 
-void ParseSerialRead() {
+// Read serial data from the host and perform the specified command/control function. 
+// This function expects the host to send a header that is 8 bytes in length and then a payload that can range from 0-255 bytes.
+// The header contains the command type and payload size information (see ReadSerialHeader for more info on the header)
+void HostSerialRead() {
   serialCommand commandVal;
   uint8_t payloadSize;
   bool headerSuccess = ReadSerialHeader(commandVal, payloadSize);
