@@ -25,10 +25,11 @@
 #define LORA_FIX_LENGTH_PAYLOAD_ON false
 #define LORA_IQ_INVERSION_ON false
 #define RX_TIMEOUT_VALUE 1000
+#define SERIAL_HEADER_SIZE 8
 #define BUFFER_SIZE 256  // Define the payload size here
-#define CONTROL_SIZE 8  // Really only 7 but we will have a reserved byte here for now
+#define CONTROL_SIZE 8   // Really only 7 but we will have a reserved byte here for now
 #define ANIMATION_FRAME_DELAY 5
-#define MIDDLE_OF_SCREEN 27 // Assumes text is 10 pixels in length so half would be (64/2) - (10/2) = 27
+#define MIDDLE_OF_SCREEN 27  // Assumes text is 10 pixels in length so half would be (64/2) - (10/2) = 27
 #define SERIAL_TERMINATOR 255
 #define TEST_COIN_AMOUNT 420.69
 
@@ -43,6 +44,7 @@ char txPacket[BUFFER_SIZE];
 char rxPacket[BUFFER_SIZE];
 uint8_t controlPacket[CONTROL_SIZE];
 uint8_t serialBuf[BUFFER_SIZE];
+uint8_t serialHeader[SERIAL_HEADER_SIZE];
 
 static RadioEvents_t RadioEvents;
 void OnTxDone(void);
@@ -69,7 +71,8 @@ enum serialCommand {
   ADDRESS_SET,
   PING_REQUEST,
   MESSAGE_REQUEST,
-  HARDWARE_INFO = 63, //0x3f = '?'
+  HARDWARE_INFO = 63,        //0x3f = '?'
+  HOST_FORMED_PACKET = 104,  //0x68 = 'h'
 };
 
 struct nodeAddress {
@@ -205,7 +208,7 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
   Radio.Sleep();
   // Indicate we received a packet (debug)
   Serial.println("WOW MUCH RX");
-  Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n",  rssi, rxSize);
+  Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n", rssi, rxSize);
   ParseReceivedMessage();
   isLoRaIdle = true;
 }
@@ -249,32 +252,34 @@ void DisplayCommandAndControl(uint8_t commandVal) {
   oledDisplay.drawString(0, 5, displayBuf);
   String commandTypeString;
   switch (commandVal) {
-  case ADDRESS_GET:
-    commandTypeString = "Get Address";
-    break;
-  case ADDRESS_SET:
-    commandTypeString = "Set Address";
-    break;
-  case PING_REQUEST:
-    commandTypeString = "Send Ping";
-    break;
-  case MESSAGE_REQUEST:
-    commandTypeString = "Send Message";
-    break;
-  case HARDWARE_INFO:
-    commandTypeString = "Get Hardware Info";
-    break;
-  default:
-    commandTypeString = "Wat!?";
-  break;
+    case ADDRESS_GET:
+      commandTypeString = "Get Address";
+      break;
+    case ADDRESS_SET:
+      commandTypeString = "Set Address";
+      break;
+    case PING_REQUEST:
+      commandTypeString = "Send Ping";
+      break;
+    case MESSAGE_REQUEST:
+      commandTypeString = "Send Message";
+      break;
+    case HARDWARE_INFO:
+      commandTypeString = "Get Hardware Info";
+      break;
+    case HOST_FORMED_PACKET:
+      commandTypeString = "Host formed packet";
+      break;
+    default:
+      commandTypeString = "Wat!?";
+      break;
   }
   oledDisplay.drawString(0, MIDDLE_OF_SCREEN, commandTypeString);
   oledDisplay.display();
 }
 
 // Display hardware information on the screen
-void DisplayHardwareInfo()
-{
+void DisplayHardwareInfo() {
   oledDisplay.clear();
   sprintf(displayBuf, "Heltec WiFi LoRa 32 V%d", HELTEC_BOARD_VERSION);
   oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
@@ -282,8 +287,7 @@ void DisplayHardwareInfo()
 }
 
 // Display the modules local address on the screen
-void DisplayLocalAddress()
-{
+void DisplayLocalAddress() {
   oledDisplay.clear();
   sprintf(displayBuf, "Hi I'm %d.%d.%d", local.region, local.community, local.node);
   oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
@@ -298,8 +302,7 @@ void DrawRadioDogeLogo() {
 }
 
 // Draw sending coin image
-void DrawSendingCoinsImage(float numCoins)
-{
+void DrawSendingCoinsImage(float numCoins) {
   oledDisplay.clear();
   oledDisplay.drawXbm(0, 0, sendCoin_width, sendCoin_height, sendCoin_bits);
   sprintf(displayBuf, "%0.2f", numCoins);
@@ -308,8 +311,7 @@ void DrawSendingCoinsImage(float numCoins)
 }
 
 // Draw receiving coins image
-void DrawReceivingCoinsImage(float numCoins)
-{
+void DrawReceivingCoinsImage(float numCoins) {
   oledDisplay.clear();
   oledDisplay.drawXbm(0, 0, rcvCoin_width, rcvCoin_height, rcvCoin_bits);
   sprintf(displayBuf, "%0.2f", numCoins);
@@ -359,18 +361,17 @@ void InitControlMessages() {
 }
 
 // Set the address of this device
-void SetLocalAddressFromSerialBuffer() {
-  local.region = serialBuf[1];
-  local.community = serialBuf[2];
-  local.node = serialBuf[3];
+void SetLocalAddressFromSerialBuffer(int offset) {
+  local.region = serialBuf[offset];
+  local.community = serialBuf[offset + 1];
+  local.node = serialBuf[offset + 2];
 }
 
 // Set the destination address for the next transmission
-void SetDestinationFromSerialBuffer()
-{
-  dest.region = serialBuf[1];
-  dest.community = serialBuf[2];
-  dest.node = serialBuf[3];  
+void SetDestinationFromSerialBuffer(int offset) {
+  dest.region = serialBuf[offset];
+  dest.community = serialBuf[offset + 1];
+  dest.node = serialBuf[offset + 2];
 }
 
 // Retrieve the local address
@@ -398,7 +399,7 @@ void SendPing(nodeAddress destination) {
   controlPacket[5] = destination.community;
   controlPacket[6] = destination.node;
   isLoRaIdle = false;
-  DisplayTXMessage("Ping");  
+  DisplayTXMessage("Ping");
   Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
 }
@@ -418,12 +419,10 @@ void SendACK(nodeAddress destination) {
 
 // Basically we will just send out the the serial buffer
 // Change up the first byte to indicate messageType=MESSAGE
-void SendMessage(int messageLength)
-{
+void SendMessage(int messageLength) {
   // For now we will cap the size of the message we can send
   // Will have to investigate breaking up large messages in future but Radio.Send only accepts a uint8_t as the buffer size
-  if (messageLength > 255)
-  {
+  if (messageLength > 255) {
     messageLength = 255;
   }
 
@@ -436,8 +435,94 @@ void SendMessage(int messageLength)
   Radio.Send(serialBuf, (uint8_t)messageLength);
 }
 
-// Parse a serial command from the host and perform the desired function
+bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
+  size_t numRead = Serial.readBytes(serialHeader, SERIAL_HEADER_SIZE);
+  if (numRead != SERIAL_HEADER_SIZE) {
+    return false;
+  }
+  // First 4 bytes will be command
+  // Next 4 bytes will be payload size
+  // For now redundancy will require command and payload repeated 4 times each
+  bool successfulParse = (serialHeader[0] == serialHeader[1] && serialHeader[0] == serialHeader[2] && serialHeader[0] == serialHeader[3]);
+  successfulParse &= (serialHeader[4] == serialHeader[5] && serialHeader[4] == serialHeader[6] && serialHeader[4] == serialHeader[7]);
+  commandType = (serialCommand)serialHeader[0];
+  payloadSize = serialHeader[4];
+  return successfulParse;
+}
+
+bool ReadSerialPayload(uint8_t payloadSize) {
+  uint8_t bytesRead = Serial.readBytes(serialBuf, payloadSize);
+  if (bytesRead != payloadSize) {
+    Serial.println("Serial read failure!");
+    return false;
+  }
+  Serial.printf("Read %d bytes\n", bytesRead);
+  return true;
+}
+
 void ParseSerialRead() {
+  serialCommand commandVal;
+  uint8_t payloadSize;
+  bool headerSuccess = ReadSerialHeader(commandVal, payloadSize);
+  if (!headerSuccess) {
+    return;
+  }
+  Serial.printf("Command From Host Received: %d\n", commandVal);
+  // Display the command on the module screen for now and wait for debug purposes
+  DisplayCommandAndControl(commandVal);
+  // Now we will read in the host's payload
+  bool payloadSuccess = ReadSerialPayload(payloadSize);
+  if (!payloadSuccess) {
+    return;
+  }
+  delay(2000);
+  switch (commandVal) {
+    case ADDRESS_GET:
+      GetLocalAddress();
+      DisplayLocalAddress();
+      break;
+    case ADDRESS_SET:
+      SetLocalAddressFromSerialBuffer(0);
+      InitControlMessages();
+      DisplayLocalAddress();
+      break;
+    case PING_REQUEST:
+      SetDestinationFromSerialBuffer(0);
+      SendPing(dest);
+      break;
+    case MESSAGE_REQUEST:
+      SetDestinationFromSerialBuffer(4);
+      SendMessage(payloadSize);
+      break;
+    case HARDWARE_INFO:
+      DisplayHardwareInfo();
+      Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
+      break;
+    case HOST_FORMED_PACKET:
+      ParseHostFormedPacket(payloadSize);
+      break;
+    default:
+      // Indicate that command was not understood (debug)
+      Serial.println("wat cmd?");
+      break;
+  }
+}
+
+void ParseHostFormedPacket(uint8_t payloadSize) {
+  // Echo back information about what was read...
+  char *extractedMessage = new char[payloadSize + 1];
+  for (int i = 0; i < payloadSize; i++) {
+    extractedMessage[i] = (char)serialBuf[i];
+  }
+  extractedMessage[payloadSize] = '\0';
+  String messageString(extractedMessage);
+  free(extractedMessage);
+  Serial.println(messageString);
+}
+
+// Parse a serial command from the host and perform the desired function
+// This assumes that the host sends '0xff' as a terminator
+void ParseSerialReadWithTerminators() {
   int readLength = Serial.readBytesUntil(SERIAL_TERMINATOR, serialBuf, BUFFER_SIZE);
   Serial.printf("REPLY: Read %d bytes\n", readLength);
   if (readLength > 0) {
@@ -453,15 +538,16 @@ void ParseSerialRead() {
         DisplayLocalAddress();
         break;
       case ADDRESS_SET:
-        SetLocalAddressFromSerialBuffer();
+        SetLocalAddressFromSerialBuffer(1);
         InitControlMessages();
         DisplayLocalAddress();
         break;
       case PING_REQUEST:
-        SetDestinationFromSerialBuffer();
+        SetDestinationFromSerialBuffer(1);
         SendPing(dest);
         break;
       case MESSAGE_REQUEST:
+        SetDestinationFromSerialBuffer(1);
         SendMessage(readLength);
         break;
       case HARDWARE_INFO:
@@ -497,20 +583,19 @@ void ParseReceivedMessage() {
         needToSendACK = true;
         break;
       case MESSAGE:
-      {
-        String messageString = ExtractStringMessageFromBuffer((uint8_t*)rxPacket, rxSize);
-        DisplayRXMessage(messageString);
-        Serial.printf("MUCH TLK FR %d.%d.%d:\n", rxPacket[1], rxPacket[2], rxPacket[3]);
-        Serial.println(messageString);
-      }
-      break;
+        {
+          String messageString = ExtractStringMessageFromBuffer((uint8_t *)rxPacket, rxSize);
+          DisplayRXMessage(messageString);
+          Serial.printf("MUCH TLK FR %d.%d.%d:\n", rxPacket[1], rxPacket[2], rxPacket[3]);
+          Serial.println(messageString);
+        }
+        break;
       default:
         // (debug)
         Serial.println("wat rcv?");
         break;
     }
-  } 
-  else {
+  } else {
     Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
   }
 }
@@ -521,15 +606,11 @@ bool CheckIfPacketForMe() {
 }
 
 // Extract the payload message from the given buffer (assists with displaying on screen)
-String ExtractStringMessageFromBuffer(uint8_t* buf, int bufferSize)
-{
+String ExtractStringMessageFromBuffer(uint8_t *buf, int bufferSize) {
   int messageSize = bufferSize - 6;
-  // Packet should have 7 extra bytes besides the message
-  // One byte for the messsage type, 6 bytes for sender and dest addresses
-  char* extractedMessage = new char[messageSize];
-  for (int i = 0; i < messageSize; i++)
-  {
-    extractedMessage[i] = (char)buf[i+7];
+  char *extractedMessage = new char[messageSize];
+  for (int i = 0; i < messageSize; i++) {
+    extractedMessage[i] = (char)buf[i + 7];
   }
   String messageString(extractedMessage);
   free(extractedMessage);
