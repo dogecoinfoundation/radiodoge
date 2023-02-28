@@ -1,13 +1,9 @@
 // Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
 #include <Wire.h>
-#include "HT_SSD1306Wire.h"
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "logoImage.h"
-#include "coin.h"
-#include "doge.h"
-#include "sendingDogeCoin.h"
-#include "receivingDogeCoin.h"
+#include "radioDogeDisplay.h"
+#include "radioDogeTypes.h"
 
 #define RF_FREQUENCY 915000000   // Hz
 #define TX_OUTPUT_POWER 5        // dBm
@@ -28,10 +24,8 @@
 #define SERIAL_HEADER_SIZE 8
 #define BUFFER_SIZE 256  // Define the payload size here
 #define CONTROL_SIZE 8   // Really only 7 but we will have a reserved byte here for now
-#define ANIMATION_FRAME_DELAY 5
-#define MIDDLE_OF_SCREEN 27  // Assumes text is 10 pixels in length so half would be (64/2) - (10/2) = 27
 #define SERIAL_TERMINATOR 255
-#define TEST_COIN_AMOUNT 420.69
+#define SENDER_ADDRESS_OFFSET 1
 
 #ifdef WIFI_LoRa_32_V2
 #define HELTEC_BOARD_VERSION 2
@@ -39,7 +33,6 @@
 #define HELTEC_BOARD_VERSION 3
 #endif
 
-char displayBuf[64];
 char txPacket[BUFFER_SIZE];
 char rxPacket[BUFFER_SIZE];
 uint8_t controlPacket[CONTROL_SIZE];
@@ -50,39 +43,15 @@ static RadioEvents_t RadioEvents;
 void OnTxDone(void);
 void OnTxTimeout(void);
 void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8_t snr);
-SSD1306Wire oledDisplay(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
 
 int16_t rssi;
 int16_t rxSize;
 bool isLoRaIdle = true;
 bool needToSendACK = false;
-int xPos = 0;
-
-enum messageType {
-  UNKNOWN,
-  ACK,
-  PING,
-  MESSAGE
-};
-
-enum serialCommand {
-  NONE,
-  ADDRESS_GET,
-  ADDRESS_SET,
-  PING_REQUEST,
-  MESSAGE_REQUEST,
-  HARDWARE_INFO = 63,        //0x3f = '?'
-  HOST_FORMED_PACKET = 104,  //0x68 = 'h'
-};
-
-struct nodeAddress {
-  uint8_t region;
-  uint8_t community;
-  uint8_t node;
-};
 
 nodeAddress local;
 nodeAddress dest;
+nodeAddress senderAddress;
 
 void setup() {
   Serial.begin(115200);
@@ -108,9 +77,7 @@ void setup() {
 
   delay(100);
   // Init the display
-  oledDisplay.init();
-  oledDisplay.setTextAlignment(TEXT_ALIGN_LEFT);
-  oledDisplay.setFont(ArialMT_Plain_10);
+  HeltecDisplayInit();
   // Show some animations
   CoinAnimation();
   DogeAnimation();
@@ -220,135 +187,11 @@ bool CreateMessage() {
     // Echo back the read string (debug)
     Serial.printf("REPLY: %s\n", readString);
     // Display on the screen
-    DisplayTXMessage(readString);
+    DisplayTXMessage(readString, dest);
     readString.toCharArray(txPacket, BUFFER_SIZE);
     return true;
   }
   return false;
-}
-
-// Display a transmitted message on the module's screen
-void DisplayTXMessage(String toDisplay) {
-  oledDisplay.clear();
-  sprintf(displayBuf, "Sending to %d.%d.%d:", dest.region, dest.community, dest.node);
-  oledDisplay.drawString(0, 5, displayBuf);
-  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, toDisplay);
-  oledDisplay.display();
-}
-
-// Display a received message on the module's screen
-void DisplayRXMessage(String rxMessage) {
-  oledDisplay.clear();
-  sprintf(displayBuf, "Received from %d.%d.%d:", rxPacket[1], rxPacket[2], rxPacket[3]);
-  oledDisplay.drawString(0, 5, displayBuf);
-  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, rxMessage);
-  oledDisplay.display();
-}
-
-// Display received command information from the host on the module's screen
-void DisplayCommandAndControl(uint8_t commandVal) {
-  oledDisplay.clear();
-  sprintf(displayBuf, "CMD FR HOST: %d", commandVal);
-  oledDisplay.drawString(0, 5, displayBuf);
-  String commandTypeString;
-  switch (commandVal) {
-    case ADDRESS_GET:
-      commandTypeString = "Get Address";
-      break;
-    case ADDRESS_SET:
-      commandTypeString = "Set Address";
-      break;
-    case PING_REQUEST:
-      commandTypeString = "Send Ping";
-      break;
-    case MESSAGE_REQUEST:
-      commandTypeString = "Send Message";
-      break;
-    case HARDWARE_INFO:
-      commandTypeString = "Get Hardware Info";
-      break;
-    case HOST_FORMED_PACKET:
-      commandTypeString = "Host formed packet";
-      break;
-    default:
-      commandTypeString = "Wat!?";
-      break;
-  }
-  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, commandTypeString);
-  oledDisplay.display();
-}
-
-// Display hardware information on the screen
-void DisplayHardwareInfo() {
-  oledDisplay.clear();
-  sprintf(displayBuf, "Heltec WiFi LoRa 32 V%d", HELTEC_BOARD_VERSION);
-  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
-  oledDisplay.display();
-}
-
-// Display the modules local address on the screen
-void DisplayLocalAddress() {
-  oledDisplay.clear();
-  sprintf(displayBuf, "Hi I'm %d.%d.%d", local.region, local.community, local.node);
-  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, displayBuf);
-  oledDisplay.display();
-}
-
-// Draw static RadioDoge Logo
-void DrawRadioDogeLogo() {
-  oledDisplay.clear();
-  oledDisplay.drawXbm(0, 0, logo_width, logo_height, logo_bits);
-  oledDisplay.display();
-}
-
-// Draw sending coin image
-void DrawSendingCoinsImage(float numCoins) {
-  oledDisplay.clear();
-  oledDisplay.drawXbm(0, 0, sendCoin_width, sendCoin_height, sendCoin_bits);
-  sprintf(displayBuf, "%0.2f", numCoins);
-  oledDisplay.drawString(5, MIDDLE_OF_SCREEN, displayBuf);
-  oledDisplay.display();
-}
-
-// Draw receiving coins image
-void DrawReceivingCoinsImage(float numCoins) {
-  oledDisplay.clear();
-  oledDisplay.drawXbm(0, 0, rcvCoin_width, rcvCoin_height, rcvCoin_bits);
-  sprintf(displayBuf, "%0.2f", numCoins);
-  oledDisplay.drawString(5, MIDDLE_OF_SCREEN, displayBuf);
-  oledDisplay.display();
-}
-
-// Animates a coin icon going across the screen
-void CoinAnimation() {
-  xPos = 0;
-  while (true) {
-    oledDisplay.clear();
-    oledDisplay.drawXbm(xPos - 64, 0, coin_width, coin_height, coin_bits);
-    oledDisplay.display();
-    xPos++;
-    if (xPos % 192 == 0) {
-      oledDisplay.clear();
-      return;
-    }
-    delay(ANIMATION_FRAME_DELAY);
-  }
-}
-
-// Animates a doge face going across the screen
-void DogeAnimation() {
-  xPos = 0;
-  while (true) {
-    oledDisplay.clear();
-    oledDisplay.drawXbm(xPos - 64, 0, doge_width, doge_height, doge_bits);
-    oledDisplay.display();
-    xPos++;
-    if (xPos % 192 == 0) {
-      oledDisplay.clear();
-      return;
-    }
-    delay(ANIMATION_FRAME_DELAY);
-  }
 }
 
 // Prepopulates control message buffers with local address
@@ -374,6 +217,14 @@ void SetDestinationFromSerialBuffer(int offset) {
   dest.node = serialBuf[offset + 2];
 }
 
+// Extracts the address of the sending node from the received packet buffer
+void SetSenderAddress()
+{
+  senderAddress.region = rxPacket[SENDER_ADDRESS_OFFSET];
+  senderAddress.community = rxPacket[SENDER_ADDRESS_OFFSET + 1];
+  senderAddress.node = rxPacket[SENDER_ADDRESS_OFFSET + 2];
+}
+
 // Retrieve the local address
 void GetLocalAddress() {
   Serial.printf("MUCH LCL: %d.%d.%d\n", local.region, local.community, local.node);
@@ -381,14 +232,16 @@ void GetLocalAddress() {
 
 // Indicate to the host that an ACK was received and display it on the screen
 void ReceivedACK() {
-  Serial.printf("MUCH ACK FR %d.%d.%d\n", rxPacket[1], rxPacket[2], rxPacket[3]);
-  DisplayRXMessage("ACK");
+  SetSenderAddress();
+  Serial.printf("MUCH ACK FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
+  DisplayRXMessage("ACK", senderAddress);
 }
 
 // Indicate to the host that a ping was received and display it on the screen
 void ReceivedPing() {
-  Serial.printf("MUCH PING FR %d.%d.%d\n", rxPacket[1], rxPacket[2], rxPacket[3]);
-  DisplayRXMessage("Ping!");
+  SetSenderAddress();
+  Serial.printf("MUCH PING FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
+  DisplayRXMessage("Ping!", senderAddress);
 }
 
 // Send a ping to the specified destination address
@@ -399,7 +252,7 @@ void SendPing(nodeAddress destination) {
   controlPacket[5] = destination.community;
   controlPacket[6] = destination.node;
   isLoRaIdle = false;
-  DisplayTXMessage("Ping");
+  DisplayTXMessage("Ping", destination);
   Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
 }
@@ -411,7 +264,7 @@ void SendACK(nodeAddress destination) {
   controlPacket[4] = destination.region;
   controlPacket[5] = destination.community;
   controlPacket[6] = destination.node;
-  DisplayTXMessage("ACK");
+  DisplayTXMessage("ACK", destination);
   isLoRaIdle = false;
   Serial.printf("Sending ACK to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
@@ -428,7 +281,7 @@ void SendMessage(int messageLength) {
 
   // Display message on display
   String messageString = ExtractStringMessageFromBuffer(serialBuf, messageLength);
-  DisplayTXMessage(messageString);
+  DisplayTXMessage(messageString, dest);
 
   // Update packet header and send the message over the air
   serialBuf[0] = (uint8_t)MESSAGE;
@@ -485,12 +338,12 @@ void HostSerialRead() {
   switch (commandVal) {
     case ADDRESS_GET:
       GetLocalAddress();
-      DisplayLocalAddress();
+      DisplayLocalAddress(local);
       break;
     case ADDRESS_SET:
       SetLocalAddressFromSerialBuffer(0);
       InitControlMessages();
-      DisplayLocalAddress();
+      DisplayLocalAddress(local);
       break;
     case PING_REQUEST:
       SetDestinationFromSerialBuffer(0);
@@ -501,7 +354,7 @@ void HostSerialRead() {
       SendMessage(payloadSize);
       break;
     case HARDWARE_INFO:
-      DisplayHardwareInfo();
+      DisplayHardwareInfo(HELTEC_BOARD_VERSION);
       Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
       break;
     case HOST_FORMED_PACKET:
@@ -541,12 +394,12 @@ void ParseSerialReadWithTerminators() {
     switch (commType) {
       case ADDRESS_GET:
         GetLocalAddress();
-        DisplayLocalAddress();
+        DisplayLocalAddress(local);
         break;
       case ADDRESS_SET:
         SetLocalAddressFromSerialBuffer(1);
         InitControlMessages();
-        DisplayLocalAddress();
+        DisplayLocalAddress(local);
         break;
       case PING_REQUEST:
         SetDestinationFromSerialBuffer(1);
@@ -557,7 +410,7 @@ void ParseSerialReadWithTerminators() {
         SendMessage(readLength);
         break;
       case HARDWARE_INFO:
-        DisplayHardwareInfo();
+        DisplayHardwareInfo(HELTEC_BOARD_VERSION);
         Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
         break;
       default:
@@ -591,8 +444,9 @@ void ParseReceivedMessage() {
       case MESSAGE:
         {
           String messageString = ExtractStringMessageFromBuffer((uint8_t *)rxPacket, rxSize);
-          DisplayRXMessage(messageString);
-          Serial.printf("MUCH TLK FR %d.%d.%d:\n", rxPacket[1], rxPacket[2], rxPacket[3]);
+          SetSenderAddress();
+          DisplayRXMessage(messageString, senderAddress);
+          Serial.printf("MUCH TLK FR %d.%d.%d:\n", senderAddress.region, senderAddress.community, senderAddress.node);
           Serial.println(messageString);
         }
         break;
