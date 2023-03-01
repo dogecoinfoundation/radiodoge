@@ -21,7 +21,7 @@
 #define LORA_FIX_LENGTH_PAYLOAD_ON false
 #define LORA_IQ_INVERSION_ON false
 #define RX_TIMEOUT_VALUE 1000
-#define SERIAL_HEADER_SIZE 8
+#define SERIAL_HEADER_SIZE 2
 #define BUFFER_SIZE 256  // Define the payload size here
 #define CONTROL_SIZE 8   // Really only 7 but we will have a reserved byte here for now
 #define SERIAL_TERMINATOR 255
@@ -289,20 +289,17 @@ void SendMessage(int messageLength) {
 }
 
 // Read the serial header and extract the command type and payload size from it.
-// Currently the header consists of 8 bytes: the command type repeated 4 times and the payload size repeated 4 times.
+// Currently the header consists of 2 bytes: the command type and the payload size.
 bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
   size_t numRead = Serial.readBytes(serialHeader, SERIAL_HEADER_SIZE);
   if (numRead != SERIAL_HEADER_SIZE) {
     return false;
   }
-  // First 4 bytes will be command
-  // Next 4 bytes will be payload size
-  // For redundancy we will require command and payload repeated 4 times each
-  bool successfulParse = (serialHeader[0] == serialHeader[1] && serialHeader[0] == serialHeader[2] && serialHeader[0] == serialHeader[3]);
-  successfulParse &= (serialHeader[4] == serialHeader[5] && serialHeader[4] == serialHeader[6] && serialHeader[4] == serialHeader[7]);
+  // First byte will be command
+  // Next byte will be payload size
   commandType = (serialCommand)serialHeader[0];
-  payloadSize = serialHeader[4];
-  return successfulParse;
+  payloadSize = serialHeader[1];
+  return true;
 }
 
 // Read the host payload into the serial buffer.
