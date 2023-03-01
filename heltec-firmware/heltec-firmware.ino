@@ -26,6 +26,10 @@
 #define CONTROL_SIZE 8   // Really only 7 but we will have a reserved byte here for now
 #define SERIAL_TERMINATOR 255
 #define SENDER_ADDRESS_OFFSET 1
+#define COMMAND_ACK_CODE 6 // 0x06 = 'ACK'
+#define COMMAND_NACK_CODE 21 // 0x15 = 'NAK'
+#define HOST_ACK_NACK_SIZE 3
+#define FIRMWARE_VERSION 1
 
 #ifdef WIFI_LoRa_32_V2
 #define HELTEC_BOARD_VERSION 2
@@ -37,7 +41,11 @@ char txPacket[BUFFER_SIZE];
 char rxPacket[BUFFER_SIZE];
 uint8_t controlPacket[CONTROL_SIZE];
 uint8_t serialBuf[BUFFER_SIZE];
+uint8_t hostReplyBuf[BUFFER_SIZE];
 uint8_t serialHeader[SERIAL_HEADER_SIZE];
+uint8_t hostCommandReply[BUFFER_SIZE];
+uint8_t hostACK[3] = {RESULT_CODE, 1, COMMAND_ACK_CODE};
+uint8_t hostNACK[3] = {RESULT_CODE, 1, COMMAND_NACK_CODE};
 
 static RadioEvents_t RadioEvents;
 void OnTxDone(void);
@@ -89,7 +97,7 @@ void setup() {
   // Display RadioDoge Image on startup
   DrawRadioDogeLogo();
   // Leaving setup (debug)
-  Serial.println("VERY SETUP");
+  //Serial.println("VERY SETUP");
 }
 
 void loop() {
@@ -102,7 +110,7 @@ void RawSerialMessageSendAndReceive() {
   if (isLoRaIdle) {
     isLoRaIdle = false;
     // Indicating that we are moving into rx mode (debug)
-    Serial.println("VERY RX");
+    //Serial.println("VERY RX");
     // Enter back into RX mode
     Radio.Rx(0);
   }
@@ -111,8 +119,8 @@ void RawSerialMessageSendAndReceive() {
   if (CreateMessage()) {
     isLoRaIdle = false;
     // Indicating that we are starting a TX
-    Serial.println("VERY TX");
-    Serial.printf("\r\nSending packet \"%X,\" , Length %d\r\n", txPacket, strlen(txPacket));
+    //Serial.println("VERY TX");
+    //Serial.printf("\r\nSending packet \"%X,\" , Length %d\r\n", txPacket, strlen(txPacket));
     Radio.Send((uint8_t *)txPacket, strlen(txPacket));
   }
 
@@ -132,7 +140,7 @@ void CommandAndControlLoop() {
   if (isLoRaIdle) {
     isLoRaIdle = false;
     // Indicating that we are moving into rx mode (debug)
-    Serial.println("VERY RX");
+    //Serial.println("VERY RX");
     // Enter back into RX mode
     Radio.Rx(0);
   }
@@ -147,14 +155,14 @@ void CommandAndControlLoop() {
 
 void OnTxDone(void) {
   // Indicate that TX is done (debug)
-  Serial.println("WOW MUCH TX");
+  //Serial.println("WOW MUCH TX");
   isLoRaIdle = true;
 }
 
 void OnTxTimeout(void) {
   Radio.Sleep();
   // Indicate that TX failed (debug)
-  Serial.println("OOPS TX BAD");
+  //Serial.println("OOPS TX BAD");
   isLoRaIdle = true;
 }
 
@@ -162,7 +170,7 @@ void OnRxTimeout(void) {
   Radio.Sleep();
   // Indicate that RX failed (debug)
   // Probably should not see this since RX should not timeout
-  Serial.println("OOPS RX BAD");
+  //Serial.println("OOPS RX BAD");
   isLoRaIdle = true;
 }
 
@@ -174,8 +182,8 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
   rxPacket[messageSize] = '\0';
   Radio.Sleep();
   // Indicate we received a packet (debug)
-  Serial.println("WOW MUCH RX");
-  Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n", rssi, rxSize);
+  //Serial.println("WOW MUCH RX");
+  //Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n", rssi, rxSize);
   ParseReceivedMessage();
   isLoRaIdle = true;
 }
@@ -185,7 +193,7 @@ bool CreateMessage() {
   if (Serial.available() > 0) {
     String readString = Serial.readStringUntil('\0');
     // Echo back the read string (debug)
-    Serial.printf("REPLY: %s\n", readString);
+    //Serial.printf("REPLY: %s\n", readString);
     // Display on the screen
     DisplayTXMessage(readString, dest);
     readString.toCharArray(txPacket, BUFFER_SIZE);
@@ -227,21 +235,28 @@ void SetSenderAddress()
 
 // Retrieve the local address
 void GetLocalAddress() {
-  Serial.printf("MUCH LCL: %d.%d.%d\n", local.region, local.community, local.node);
+  hostCommandReply[1] = 3;
+  hostCommandReply[2] = local.region;
+  hostCommandReply[3] = local.community;
+  hostCommandReply[4] = local.node;
+  Serial.write(hostCommandReply, 5);
+  //Serial.printf("MUCH LCL: %d.%d.%d\n", local.region, local.community, local.node);
 }
 
 // Indicate to the host that an ACK was received and display it on the screen
 void ReceivedACK() {
   SetSenderAddress();
-  Serial.printf("MUCH ACK FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
   DisplayRXMessage("ACK", senderAddress);
+  //Serial.printf("MUCH ACK FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
+  // @TODO indicate to host we received an ACK
 }
 
 // Indicate to the host that a ping was received and display it on the screen
 void ReceivedPing() {
   SetSenderAddress();
-  Serial.printf("MUCH PING FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
   DisplayRXMessage("Ping!", senderAddress);
+  //Serial.printf("MUCH PING FR %d.%d.%d\n", senderAddress.region, senderAddress.community, senderAddress.node);
+  // @TODO indicate to host we received a Ping
 }
 
 // Send a ping to the specified destination address
@@ -253,8 +268,9 @@ void SendPing(nodeAddress destination) {
   controlPacket[6] = destination.node;
   isLoRaIdle = false;
   DisplayTXMessage("Ping", destination);
-  Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
+  //Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
+  Serial.write(hostACK, HOST_ACK_NACK_SIZE);
 }
 
 // Send an ACK to the specified destination address
@@ -266,8 +282,9 @@ void SendACK(nodeAddress destination) {
   controlPacket[6] = destination.node;
   DisplayTXMessage("ACK", destination);
   isLoRaIdle = false;
-  Serial.printf("Sending ACK to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Radio.Send(controlPacket, CONTROL_SIZE);
+  //Serial.printf("Sending ACK to %d.%d.%d\n", destination.region, destination.community, destination.node);
+  Serial.write(hostACK, HOST_ACK_NACK_SIZE);
 }
 
 // Basically we will just send out the the serial buffer
@@ -306,10 +323,9 @@ bool ReadSerialHeader(serialCommand &commandType, uint8_t &payloadSize) {
 bool ReadSerialPayload(uint8_t payloadSize) {
   uint8_t bytesRead = Serial.readBytes(serialBuf, payloadSize);
   if (bytesRead != payloadSize) {
-    Serial.println("Serial read failure!");
     return false;
   }
-  Serial.printf("Read %d bytes\n", bytesRead);
+  //Serial.printf("Read %d bytes\n", bytesRead);
   return true;
 }
 
@@ -323,12 +339,14 @@ void HostSerialRead() {
   if (!headerSuccess) {
     return;
   }
-  Serial.printf("Command From Host Received: %d\n", commandVal);
+  hostCommandReply[0] = commandVal;
+  //Serial.printf("Command From Host Received: %d\n", commandVal);
   // Display the command on the module screen for now and wait for debug purposes
   DisplayCommandAndControl(commandVal);
   // Now we will read in the host's payload
   bool payloadSuccess = ReadSerialPayload(payloadSize);
   if (!payloadSuccess) {
+    Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
     return;
   }
   delay(2000);
@@ -341,6 +359,7 @@ void HostSerialRead() {
       SetLocalAddressFromSerialBuffer(0);
       InitControlMessages();
       DisplayLocalAddress(local);
+      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
       break;
     case PING_REQUEST:
       SetDestinationFromSerialBuffer(0);
@@ -352,16 +371,24 @@ void HostSerialRead() {
       break;
     case HARDWARE_INFO:
       DisplayHardwareInfo(HELTEC_BOARD_VERSION);
-      Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
+      //Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
+      SendHardwareInfoToHost();
       break;
     case HOST_FORMED_PACKET:
       ParseHostFormedPacket(payloadSize);
       break;
     default:
-      // Indicate that command was not understood (debug)
-      Serial.println("wat cmd?");
+      // Indicate that command was not understood (Send NACK)
+      Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
       break;
   }
+}
+
+void SendHardwareInfoToHost()
+{
+  // Just send 'h' for heltec, board version, and firmware version for now
+  uint8_t reply[5] = {RESULT_CODE, 3, 'h', HELTEC_BOARD_VERSION, FIRMWARE_VERSION}; 
+  Serial.write(reply, 5);
 }
 
 void ParseHostFormedPacket(uint8_t payloadSize) {
@@ -376,52 +403,10 @@ void ParseHostFormedPacket(uint8_t payloadSize) {
   Serial.println(messageString);
 }
 
-// Parse a serial command from the host and perform the desired function
-// This assumes that the host sends '0xff' as a terminator
-void ParseSerialReadWithTerminators() {
-  int readLength = Serial.readBytesUntil(SERIAL_TERMINATOR, serialBuf, BUFFER_SIZE);
-  Serial.printf("REPLY: Read %d bytes\n", readLength);
-  if (readLength > 0) {
-    // First byte read will be the command type
-    serialCommand commType = (serialCommand)serialBuf[0];
-    Serial.printf("Command From Host Received: %d\n", commType);
-    // Display the command on the module screen for now and wait for debug purposes
-    DisplayCommandAndControl(serialBuf[0]);
-    delay(2000);
-    switch (commType) {
-      case ADDRESS_GET:
-        GetLocalAddress();
-        DisplayLocalAddress(local);
-        break;
-      case ADDRESS_SET:
-        SetLocalAddressFromSerialBuffer(1);
-        InitControlMessages();
-        DisplayLocalAddress(local);
-        break;
-      case PING_REQUEST:
-        SetDestinationFromSerialBuffer(1);
-        SendPing(dest);
-        break;
-      case MESSAGE_REQUEST:
-        SetDestinationFromSerialBuffer(1);
-        SendMessage(readLength);
-        break;
-      case HARDWARE_INFO:
-        DisplayHardwareInfo(HELTEC_BOARD_VERSION);
-        Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
-        break;
-      default:
-        // Indicate that command was not understood (debug)
-        Serial.println("wat cmd?");
-        break;
-    }
-  }
-}
-
 // Parse a LoRa message received over the air from another module
 void ParseReceivedMessage() {
   if (CheckIfPacketForMe()) {
-    Serial.println("PACKET FOR ME");
+    //Serial.println("PACKET FOR ME");
     messageType mType = (messageType)rxPacket[0];
     switch (mType) {
       case ACK:
@@ -443,17 +428,17 @@ void ParseReceivedMessage() {
           String messageString = ExtractStringMessageFromBuffer((uint8_t *)rxPacket, rxSize);
           SetSenderAddress();
           DisplayRXMessage(messageString, senderAddress);
-          Serial.printf("MUCH TLK FR %d.%d.%d:\n", senderAddress.region, senderAddress.community, senderAddress.node);
-          Serial.println(messageString);
+          //Serial.printf("MUCH TLK FR %d.%d.%d:\n", senderAddress.region, senderAddress.community, senderAddress.node);
+          //Serial.println(messageString);
         }
         break;
       default:
         // (debug)
-        Serial.println("wat rcv?");
+        //Serial.println("wat rcv?");
         break;
     }
   } else {
-    Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
+    //Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
   }
 }
 
