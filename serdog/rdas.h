@@ -13,6 +13,9 @@ uint8_t rdas_to[2] = {0x54, 0x4F}; // TO noun is Node Address follows[3]
 uint8_t rdas_rxal[2] = {0x52, 0x58}; // RX - received packet alert
 uint8_t rdas_this[4] = {0x4D, 0x49, 0x4E, 0x45};// MINE: (message alert is for me) MSGTYPE, FR, ADDR
 
+//FOR ME will be removed
+uint8_t rdas_forme[6] = { 0x46, 0x4F, 0x52, 0x20, 0x4D, 0x45 };// FOR ME Message follows: MSGTYPE, FR, ADDR
+
 uint8_t rdas_msg[3] = {0x4D, 0x53, 0x47};//MSG, noun follows is a clear msg
 uint8_t rdas_quer[3] = {0x47, 0x49, 0x42};//GIB - verb is a remote query
 uint8_t rdas_ansr[3] = {0x57, 0x4F, 0x57};//WOW - this is a response from a query

@@ -22,7 +22,7 @@ uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
 uint8_t hdrlen = 2;
 
 int USB = 0;
-char* device = "/dev/ttyUSB3"; //autodetect this later via a known response string on the serport
+char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport
 struct termios tty;
 struct termios tty_old;
 
@@ -31,11 +31,11 @@ struct termios tty_old;
 //mi protos
 int openport();
 int init();
-int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, char* returnedbuffer);
-int cmdSetLocalAddress(int region, int community, int node, uint8_t* rxbuf);
+int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload);
+int cmdSetLocalAddress(int region, int community, int node);
 int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf);
-int cmdGetLocalAddress(char* rxbuf);
-int cmdSendPingCmd(uint8_t* inAddr, char* rxbuf);
+int cmdGetLocalAddress();
+int cmdSendPingCmd(uint8_t* inAddr);
 
 
 //command processing convenience utils

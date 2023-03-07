@@ -2,13 +2,21 @@
 //
 
 #include "serdog.h"
+#include <sys/poll.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h> 
+#include <pthread.h>
 
+int pollEnable = 0;
+uint8_t rxbuffer[1024] = { 0 };
+int charsinbuffer = 0;
 
 int openport()
 {
 	printf("Trying to open %s...\n",device);
-	USB = open(device, O_RDWR | O_NOCTTY);
+	USB = open(device, O_RDWR | O_NOCTTY ); //should be nonblock for polling
 	if (USB == -1)
 	{
 		fprintf(stderr, "Unable to open %s: error= %s\n\n",device, strerror(errno));
@@ -54,14 +62,20 @@ int init()
 	}
 
 	/* Setting other Port Stuff */
-	tty.c_cflag &= ~PARENB;             // No parity bit
-	tty.c_cflag &= ~CSTOPB;             // 1 stop bit
-	tty.c_cflag &= ~CSIZE;              // Mask data size
+	tty.c_cflag &= ~PARENB;            // No parity bit
+	tty.c_cflag &= ~CSTOPB;            // 1 stop bit
+	tty.c_cflag &= ~CSIZE;             // Mask data size
 	tty.c_cflag |= CS8;                // Select 8 data bits
 
 	tty.c_cflag &= ~CRTSCTS;           // no flow control
-	tty.c_cc[VMIN] = 1;                  // read doesn't block
-	tty.c_cc[VTIME] = 5;                  // 0.5 seconds read timeout
+	tty.c_cc[VMIN] = 1;				   // read doesn't block (1 vmin.)
+	tty.c_cc[VTIME] = 0;			   // no read timeout
+
+	                        
+	tty.c_iflag &= ~(IXON | IXOFF | IXANY);  // Disable XON/XOFF flow control both i/p and o/p 
+	tty.c_oflag &= ~OPOST;//No Output Processing
+	// Setting Time outs 
+
 
 	tty.c_cflag |= (CLOCAL | CREAD);    // turn on READ & ignore ctrl lines
 
@@ -87,7 +101,7 @@ int init()
 	}
 }
 
-int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, char* returnedbuffer)
+int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 {
 
 	int n_written = 0;
@@ -104,8 +118,6 @@ int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, c
 		payloadlen = strlen(payload);
 	}
 
-
-	//sprintf(txbytes,"%x", cmdtype); //easy way of converting an into to a character in a string.
 
 	printf("\nincoming command type %d\n", cmdtype);
 
@@ -129,12 +141,6 @@ int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, c
 
 
 	printf("\n");
-
-	//printf("terminator is [%02X] or char %c\n\n", EOTX,EOTX);
-
-	//bytecat(txbytes, EOTX);
-	
-	
 
 	//HEADER REDUNDANCY---------------- should be in fw now
 	/*
@@ -196,18 +202,13 @@ int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, c
 
 }
 
-int cmdSetLocalAddress(int region, int community, int node, uint8_t* rxbuf)
+int cmdSetLocalAddress(int region, int community, int node)
 {
 	int cmdtype = ADDRESS_SET; //we're working with address set for all of this
 
 	uint8_t payload[3] = { (uint8_t)region,(uint8_t)community,(uint8_t)node};
 
-	sendCommand(cmdtype, payload,3, rxbuf);
-
-	uint8_t respCmdType = 0;
-	size_t resplen = 0;
-
-	parsePortResponse(respCmdType,resplen,rxbuf);
+	sendCommand(cmdtype,3,payload);
 }
 
 int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
@@ -274,87 +275,126 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 
 };
 
-int cmdGetLocalAddress(char* rxbuf)
+int cmdGetLocalAddress()
 {
 	//no payload = 0.
 	uint8_t cmdtype = ADDRESS_GET;
 
-	sendCommand(cmdtype,0,0,rxbuf);
-	uint8_t respCmdType = 0;
-	size_t resplen = 0;
-
-	parsePortResponse(respCmdType, resplen, rxbuf);
+	sendCommand(cmdtype,0,0);
 
 };
 
-int cmdSendPingCmd(uint8_t* inAddr, char* rxbuf)
+int cmdSendPingCmd(uint8_t* inAddr)
 {
 	uint8_t cmdtype = PING_REQUEST;
 	int payloadsize = 3;
 	uint8_t payload[3] = {inAddr[0],inAddr[1],inAddr[2]};
 
-	sendCommand(cmdtype,payload,payloadsize,rxbuf);
-
-	int rxlin = 10;
-	char temprxbuf[1024];
-	//one line not 5 later.
-	printf("Read:\n");
-
-	for (int rx = 1; rx <= rxlin; rx++)
-	{
-		memset(temprxbuf, 0, sizeof temprxbuf);
-
-		uint8_t respCmdType = 0;
-		uint8_t resplen = 0;
-
-		parsePortResponse(respCmdType, resplen, rxbuf);
-		printf("[Line %i, %li bytes]:%s\n", rx, strlen(rxbuf), temprxbuf);
-		strcat(rxbuf, "\n");
-		strcat(rxbuf, temprxbuf);
-	}
-	uint8_t edas_this[] = {0x46, 0x4F, 0x52, 0x20, 0x4D, 0x45};// FOR ME Message follows: MSGTYPE, FR, ADDR
-
-	char* substr = strstr(rxbuf, "FOR ME");
-
-	printf("Found %s\n",substr);
-
+	sendCommand(cmdtype,payloadsize,payload);
 };
 
 void printByteArray(uint8_t* array)
 {
 	for (int nx = 0; nx < sizeof(array); nx++)
 	{
-		//
+		printf("[%02X]", array[nx]);
 	}
 }
 
-int main()
+
+void *serialPollThread(void* threadid)
+{
+	int* thisid = (int*)threadid;
+	printf("Receive monitor thread started with ID: %d\n", thisid);
+
+	struct pollfd serFileDescriptor[1];
+	serFileDescriptor[0].fd = USB;
+	serFileDescriptor[0].events = POLLIN;
+
+	do
+	{
+		int serReceivedCharacters = poll(serFileDescriptor, 1, 1000);
+
+		if (serReceivedCharacters < 0)
+		{
+			//perror("poll error");
+			printf("*** THREAD: error in poll thread \n");
+		}
+		else if (serReceivedCharacters > 0)
+		{
+			if (serFileDescriptor[0].revents & POLLIN)
+			{
+				
+				ssize_t receivedCharactersLen = read(USB, rxbuffer, sizeof(rxbuffer));
+				if (receivedCharactersLen > 0)
+				{
+					printf("*** THREAD: Received %i chars\n", receivedCharactersLen);
+					for (int rc = 0; rc < receivedCharactersLen; rc++)
+					{
+						printf("[%02x]", (uint8_t)rxbuffer[rc]);
+						charsinbuffer = charsinbuffer + receivedCharactersLen;
+					}
+					printf("\n");
+				}
+			}
+		}
+	} while (pollEnable == 1);
+	printf("*** THREAD: Exiting thread %d ..\n", thisid);
+	pthread_exit(0);
+}
+
+void waitForResponse(enum serialCommand cmdtype)
+{
+	do 
+	{
+		usleep(5000);
+	} while (charsinbuffer < 1);
+
+	printf("Relayed out of thread:");
+	for (int rc = 0; rc < charsinbuffer; rc++)
+	{
+		printf("[%02x]", (uint8_t)rxbuffer[rc]);
+	}
+	printf("\n");
+}
+
+main()
 {
 	USB = 0;     // File descriptor set to zero.
-	char rxbuf[1024];//receive buffer for responses.
-	int resplen = 0;
 	printf("SerDog starting...\n\n");
 
-	openport();
+	openport(); //open the port
 
-	init();
+	init(); //init the port paramters -- file descriptor (USB) will be set
+
+	pollEnable = 1;
+	pthread_t serThreadID;
+	pthread_create(&serThreadID, NULL, serialPollThread, (void*)&serThreadID);
 
 	//setLocalAddr
 	printf("CMD TEST: Setting local address to %i.%i.%i.\n", myaddr[0], myaddr[1], myaddr[2]);
-	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2],rxbuf);
+	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
+	waitForResponse(ADDRESS_SET);
+	
 
-	printf("\nFrom command, received: \n\"[%02X]\"\n\n", rxbuf[0]);
-
+	/*
 	//queryLocalAddr
 	printf("CMD TEST: Querying Local Address...\n");
 	cmdGetLocalAddress(rxbuf);
 	printf("\nFrom command, received: \n[%02X][%02X][%02X]\n\n", rxbuf[0],rxbuf[1],rxbuf[2]);
 
+	
 	//pingAnother
 	printf("CMD TEST: Pinging remote %i.%i.%i.\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 	cmdSendPingCmd(rmaddr, rxbuf);
 	printf("\nFrom command, received: \n[%s]\n\n", rxbuf);
 
+	*/
+	getc(stdin);//wait for keypress
+	pollEnable = 0;
+	do {
+		sleep(1);
+	} while (pthread_join(serThreadID,NULL));
 	return 0;
 }
 
