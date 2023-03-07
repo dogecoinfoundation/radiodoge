@@ -1,7 +1,7 @@
 ﻿// serdog.h : Include file for standard system include files,
 // or project specific include files.
-
-#pragma once
+#ifndef SERDOG_H
+#define SERDOG_H
 
 #include <stdio.h>      // standard input / output functions
 #include <stdlib.h>
@@ -11,10 +11,31 @@
 #include <fcntl.h>      // File control definitions
 #include <errno.h>      // Error number definitions
 #include <termios.h>    // POSIX terminal control definitions
+#include "radioDogeTypes.h"
+#include "rdasutils.h"
 // TODO: Reference additional headers your program requires here.
 
+//node settings (for now)
+uint8_t myaddr[] = { 0x0A, 0x05, 0x04 };
+uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
 
-int readPortResponse();
+uint8_t hdrlen = 2;
+
+int USB = 0;
+char* device = "/dev/ttyUSB3"; //autodetect this later via a known response string on the serport
+struct termios tty;
+struct termios tty_old;
+
+
+
+//mi protos
+int openport();
+int init();
+int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, char* returnedbuffer);
+int cmdSetLocalAddress(int region, int community, int node, uint8_t* rxbuf);
+int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf);
+int cmdGetLocalAddress(char* rxbuf);
+int cmdSendPingCmd(uint8_t* inAddr, char* rxbuf);
 
 
 //command processing convenience utils
@@ -116,3 +137,4 @@ char* printBaudRate(speed_t speed) {
     return SPEED;
 }
 
+#endif

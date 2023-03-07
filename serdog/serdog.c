@@ -2,27 +2,7 @@
 //
 
 #include "serdog.h"
-
-int USB = 0;
-char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport
-struct termios tty;
-struct termios tty_old;
-
-uint8_t myaddr[] = { 0x0A, 0x05, 0x03 };
-uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
-
-uint8_t EOTX = {0xFF};
-
-//serial commands
-
-enum SerialCommandType
-{
-	None,
-	GetAddress,
-	SetAddresses,
-	Ping,
-	Message
-};
+#include <stdint.h>
 
 
 int openport()
@@ -107,15 +87,22 @@ int init()
 	}
 }
 
-int sendCommand(enum SerialCommandType cmdtype, uint8_t* payload, char* returnedbuffer)
+int sendCommand(enum serialCommand cmdtype, uint8_t* payload, int payloadsize, char* returnedbuffer)
 {
+
 	int n_written = 0;
 	int total_written = 0;
     int idx = 0;
 	uint8_t currCommand = 0;
 	size_t cmdlength = 0;
-	uint8_t txbytes[255];
+	uint8_t payloadlen = 0;
+	uint8_t txbytes[255+2]; //payload+hdrlen (cmd+payloadlenbyte)
 	int intcmd = cmdtype;
+	if (payload !=NULL)
+	{
+		printf("\ntest\n");
+		payloadlen = strlen(payload);
+	}
 
 
 	//sprintf(txbytes,"%x", cmdtype); //easy way of converting an into to a character in a string.
@@ -123,33 +110,72 @@ int sendCommand(enum SerialCommandType cmdtype, uint8_t* payload, char* returned
 	printf("\nincoming command type %d\n", cmdtype);
 
 	txbytes[0] = (uint8_t)cmdtype;
+	txbytes[1] = (uint8_t)payloadlen;
 
 	printf("cmd type is [%02X]\n", txbytes[0]);
+	printf("embed payload len is [%02X]\n", txbytes[1]);
 	if (payload != 0)
 	{
-		size_t payloadlen = strlen(payload - 1);
+		printf("Payload length %i\n", payloadlen);
 		printf("Payload is :");
 		idx = 0;
 		do
 		{
 			printf(" [%02X] ", payload[idx]);
-			txbytes[idx + 1] = payload[idx];//+1 because commandtype has been added
+			txbytes[idx + 2] = payload[idx];//+2 because commandtype and payloadlen has been added
 			idx++;
-		} while (payload[idx - 1] != EOTX);
+		} while (idx != payloadlen);
 	}
 
 
 	printf("\n");
 
-	printf("terminator is [%02X] or char %c\n\n", EOTX,EOTX);
+	//printf("terminator is [%02X] or char %c\n\n", EOTX,EOTX);
 
-	bytecat(txbytes, EOTX);
+	//bytecat(txbytes, EOTX);
 	
+	
+
+	//HEADER REDUNDANCY---------------- should be in fw now
+	/*
+	int re_level = 4; //only 4 supported now 4x repeat
+	
+	printf("building in redundancy..\n");
+	uint8_t redundant[8 + 255]; //cmd x4 + lenbyte x4 + 255
+	
+	for (int r = 0; r < re_level; r++)
+	{
+		redundant[r]=cmdtype;
+	}
+
+	for (int r = 0; r < re_level; r++)
+	{
+		redundant[r + re_level] = (uint8_t)payloadlen;
+	}
+	
+	for (int p = 0; p < payloadlen; p++)
+	{
+		redundant[2 * re_level + p] = payload[p];
+	}
+	printf("redundant output:");
+
+	idx = 0;
+	do 
+	{
+		printf("[%02X]", redundant[idx]);
+		idx++;
+	} while (idx < (payloadlen + (2 * re_level)));
+	
+	printf("\n");
+
+	//HEADER REDUNDANCY----------------
+	*/
 	idx = 0;
 	printf("Writing bytes: ");
 	do {
 
 		printf("[%02X]", txbytes[idx]);
+		
 		n_written = write(USB, &txbytes[idx], 1);
 		idx += n_written;
 
@@ -162,7 +188,7 @@ int sendCommand(enum SerialCommandType cmdtype, uint8_t* payload, char* returned
 			printf("\nError writing to port %s as numbytes written was %i.\n", device, n_written);
 		}
 	} 
-	while (txbytes[idx-1] != EOTX && n_written > 0);
+	while (total_written != (payloadlen+hdrlen) && n_written > 0);
 	printf(" to port [%s]\n", device);
 
 	printf("[%i] total bytes written to [%s]\n", total_written, device);
@@ -170,32 +196,65 @@ int sendCommand(enum SerialCommandType cmdtype, uint8_t* payload, char* returned
 
 }
 
-int cmdSetLocalAddress(int region, int community, int node, char* rxbuf)
+int cmdSetLocalAddress(int region, int community, int node, uint8_t* rxbuf)
 {
+	int cmdtype = ADDRESS_SET; //we're working with address set for all of this
 
-	uint8_t payload[4] = { (uint8_t)region,(uint8_t)community,(uint8_t)node,EOTX };
+	uint8_t payload[3] = { (uint8_t)region,(uint8_t)community,(uint8_t)node};
 
-	sendCommand(SetAddresses, payload, rxbuf);
+	sendCommand(cmdtype, payload,3, rxbuf);
 
-	readPortResponse(rxbuf);
+	uint8_t respCmdType = 0;
+	size_t resplen = 0;
+
+	parsePortResponse(respCmdType,resplen,rxbuf);
 }
 
-int readPortResponse(char* rxbuf)
+int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 {
 	int n_read = 0;
 	int idx = 0;
 	char buf = '\0';
+	int resptype = 0;
 
-	/* Whole response*/
-	memset(rxbuf, '\0', sizeof rxbuf);
+
+	//get resptype
+	if (read(USB, &resptype, 1))
+	{
+		printf("response type is [%02X]\n", resptype);
+		respCmdType = resptype;
+	}
+	else
+	{
+		printf("Error getting response type.\n");
+		return -1;
+	}
+
+	//get resplen
+	if (read(USB, &resplen, 1))
+	{
+		printf("response length is [%02X]\n", (uint8_t)resplen);
+	}
+	else
+	{
+
+		printf("Error getting response length.\n");
+		resplen = -1;
+		return -1;
+	}
+
+	/* Remaining response */
+	memset(respbuf, '\0', resplen);
 	do {
 		n_read = read(USB, &buf, 1);
-		if (buf != '\n')
 		{
-			sprintf(&rxbuf[idx], "%c", buf);
+			printf("nread=%i,read=%02X\n", n_read, buf);
+			sprintf(&respbuf[idx], "%c", buf);
 		};
 		idx += n_read;
-	} while (buf != '\n' && n_read > 0);
+	} while (idx < resplen);
+
+	printf("exited read at index %i\n", idx);
 
 
 
@@ -210,7 +269,7 @@ int readPortResponse(char* rxbuf)
 	}
 	else 
 	{
-		return sizeof rxbuf;
+		return sizeof respbuf;
 	}
 
 };
@@ -218,74 +277,62 @@ int readPortResponse(char* rxbuf)
 int cmdGetLocalAddress(char* rxbuf)
 {
 	//no payload = 0.
+	uint8_t cmdtype = ADDRESS_GET;
 
-	sendCommand(GetAddress, 0, rxbuf);
+	sendCommand(cmdtype,0,0,rxbuf);
+	uint8_t respCmdType = 0;
+	size_t resplen = 0;
 
-	//hopefully this is one line later.
+	parsePortResponse(respCmdType, resplen, rxbuf);
 
-	printf("Read:");
-	readPortResponse(rxbuf);
-	printf("[Line 1, %i bytes]", strlen(rxbuf));
-	char secondbuf[1024];
-	readPortResponse(secondbuf);
-	printf("[Line 2, %i bytes]", strlen(secondbuf));
-	char thirdbuf[1024];
-	readPortResponse(thirdbuf);
-	printf("[Line 3, %i bytes]", strlen(thirdbuf));
-	char fourthbuf[1024];
-	readPortResponse(fourthbuf);
-	printf("[Line 4, %i bytes]\n", strlen(fourthbuf));
-
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, secondbuf);
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, thirdbuf);
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, fourthbuf);
 };
 
 int cmdSendPingCmd(uint8_t* inAddr, char* rxbuf)
 {
+	uint8_t cmdtype = PING_REQUEST;
+	int payloadsize = 3;
+	uint8_t payload[3] = {inAddr[0],inAddr[1],inAddr[2]};
 
-	uint8_t payload[4] = { inAddr[0],inAddr[1],inAddr[2],EOTX };
+	sendCommand(cmdtype,payload,payloadsize,rxbuf);
 
-	sendCommand(Ping, payload, rxbuf);
-
+	int rxlin = 10;
+	char temprxbuf[1024];
 	//one line not 5 later.
-	printf("Read:");
-	readPortResponse(rxbuf);
-	printf("[Line 1, %i bytes]", strlen(rxbuf));
-	char secondbuf[1024];
-	readPortResponse(secondbuf);
-	printf("[Line 2, %i bytes]", strlen(secondbuf));
-	char thirdbuf[1024];
-	readPortResponse(thirdbuf);
-	printf("[Line 3, %i bytes]", strlen(thirdbuf));
-	char fourthbuf[1024];
-	readPortResponse(fourthbuf);
-	printf("[Line 4, %i bytes]", strlen(fourthbuf));
-	char fifthbuf[1024];
-	readPortResponse(fifthbuf);
-	printf("[Line 5, %i bytes]\n", strlen(fifthbuf));
+	printf("Read:\n");
 
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, secondbuf);
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, thirdbuf);
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, fourthbuf);
-	strcat(rxbuf, "\n");
-	strcat(rxbuf, fifthbuf);
+	for (int rx = 1; rx <= rxlin; rx++)
+	{
+		memset(temprxbuf, 0, sizeof temprxbuf);
 
+		uint8_t respCmdType = 0;
+		uint8_t resplen = 0;
+
+		parsePortResponse(respCmdType, resplen, rxbuf);
+		printf("[Line %i, %li bytes]:%s\n", rx, strlen(rxbuf), temprxbuf);
+		strcat(rxbuf, "\n");
+		strcat(rxbuf, temprxbuf);
+	}
+	uint8_t edas_this[] = {0x46, 0x4F, 0x52, 0x20, 0x4D, 0x45};// FOR ME Message follows: MSGTYPE, FR, ADDR
+
+	char* substr = strstr(rxbuf, "FOR ME");
+
+	printf("Found %s\n",substr);
 
 };
 
+void printByteArray(uint8_t* array)
+{
+	for (int nx = 0; nx < sizeof(array); nx++)
+	{
+		//
+	}
+}
 
 int main()
 {
 	USB = 0;     // File descriptor set to zero.
 	char rxbuf[1024];//receive buffer for responses.
-
+	int resplen = 0;
 	printf("SerDog starting...\n\n");
 
 	openport();
@@ -296,17 +343,19 @@ int main()
 	printf("CMD TEST: Setting local address to %i.%i.%i.\n", myaddr[0], myaddr[1], myaddr[2]);
 	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2],rxbuf);
 
-	printf("\nFrom command, received: \n\"%s\"\n\n", rxbuf);
+	printf("\nFrom command, received: \n\"[%02X]\"\n\n", rxbuf[0]);
 
 	//queryLocalAddr
 	printf("CMD TEST: Querying Local Address...\n");
 	cmdGetLocalAddress(rxbuf);
-	printf("\nFrom command, received: \n\"%s\"\n\n", rxbuf);
+	printf("\nFrom command, received: \n[%02X][%02X][%02X]\n\n", rxbuf[0],rxbuf[1],rxbuf[2]);
 
 	//pingAnother
 	printf("CMD TEST: Pinging remote %i.%i.%i.\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 	cmdSendPingCmd(rmaddr, rxbuf);
-	printf("\nFrom command, received: \n\"%s\"\n\n", rxbuf);
+	printf("\nFrom command, received: \n[%s]\n\n", rxbuf);
 
 	return 0;
 }
+
+
