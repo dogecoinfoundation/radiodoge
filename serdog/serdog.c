@@ -10,7 +10,7 @@
 #include <pthread.h>
 
 int pollEnable = 0;
-uint8_t rxbuffer[1024] = { 0 };
+
 int charsinbuffer = 0;
 
 int openport()
@@ -291,6 +291,7 @@ int cmdSendPingCmd(uint8_t* inAddr)
 	uint8_t payload[3] = {inAddr[0],inAddr[1],inAddr[2]};
 
 	sendCommand(cmdtype,payloadsize,payload);
+
 };
 
 void printByteArray(uint8_t* array)
@@ -304,12 +305,19 @@ void printByteArray(uint8_t* array)
 
 void *serialPollThread(void* threadid)
 {
+	uint8_t rxbuffer[1024] = { 0 };
+	uint8_t rxindex = 0;
 	int* thisid = (int*)threadid;
 	printf("Receive monitor thread started with ID: %d\n", thisid);
 
 	struct pollfd serFileDescriptor[1];
 	serFileDescriptor[0].fd = USB;
 	serFileDescriptor[0].events = POLLIN;
+
+	ssize_t totalRxChars = 0;
+	int rxPayloadSize = -1;
+
+
 
 	do
 	{
@@ -318,33 +326,101 @@ void *serialPollThread(void* threadid)
 		if (serReceivedCharacters < 0)
 		{
 			//perror("poll error");
-			printf("*** THREAD: error in poll thread \n");
+			printf("*** THREAD: error in poll thread \n",NULL);
 		}
 		else if (serReceivedCharacters > 0)
 		{
+			uint8_t minibuffer[255] = { 0 };
 			if (serFileDescriptor[0].revents & POLLIN)
 			{
 				
-				ssize_t receivedCharactersLen = read(USB, rxbuffer, sizeof(rxbuffer));
+				ssize_t receivedCharactersLen = read(USB, minibuffer, sizeof(minibuffer));
 				if (receivedCharactersLen > 0)
 				{
 					printf("*** THREAD: Received %i chars\n", receivedCharactersLen);
+					
+					
 					for (int rc = 0; rc < receivedCharactersLen; rc++)
 					{
-						printf("[%02x]", (uint8_t)rxbuffer[rc]);
-						charsinbuffer = charsinbuffer + receivedCharactersLen;
+						
+						printf("[%02x]", (uint8_t)minibuffer[rc]);
+						rxbuffer[totalRxChars] = minibuffer[rc];
+						totalRxChars++;
 					}
-					printf("\n");
+					
+					printf("\n",NULL);
 				}
 			}
+		}
+
+		rxPayloadSize = isCompleteCmd(rxbuffer, totalRxChars);
+		if (rxPayloadSize>=0)
+		{
+			
+			printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
+		}
+		else
+		{
+			printf("***Not cmd** totRX=%i\n", totalRxChars);
 		}
 	} while (pollEnable == 1);
 	printf("*** THREAD: Exiting thread %d ..\n", thisid);
 	pthread_exit(0);
 }
 
+int isCompleteCmd(uint8_t* inBuf,int charsReceived)
+{
+	if (charsReceived > 2)
+	{
+		printf("int inbuf %i %i %i\n", (int)inBuf[0],(int)inBuf[1],(int)inBuf[2]);
+		if (isCmd(inBuf[0]) && (int)inBuf[1] == charsReceived - 2)
+		{
+			printf("charsReceived: %i\n", charsReceived);
+			return ((int)inBuf[1]);
+		}
+	}
+	else
+	{
+		return -1;
+	}
+	
+}
+
+
+int isCmd(uint8_t inByte)
+{
+	switch ((int)inByte)
+	{
+	case ADDRESS_GET:
+		return (int)ADDRESS_GET;
+		break;
+	case ADDRESS_SET:
+		return (int)ADDRESS_SET;
+		break;
+	case PING_REQUEST:
+		return (int)PING_REQUEST;
+		break;
+	case MESSAGE_REQUEST:
+		return (int)MESSAGE_REQUEST;
+		break;
+	case HARDWARE_INFO:
+		return (int)HARDWARE_INFO;
+		break;
+	case HOST_FORMED_PACKET:
+		return (int)HOST_FORMED_PACKET;
+		break;
+	case RESULT_CODE:
+		return (int)RESULT_CODE;
+		break;
+
+	default: 
+		return 0;
+	}
+}
+
 void waitForResponse(enum serialCommand cmdtype)
 {
+	uint8_t rxbuffer[1024] = { 0 };
 	do 
 	{
 		usleep(5000);
@@ -361,7 +437,7 @@ void waitForResponse(enum serialCommand cmdtype)
 main()
 {
 	USB = 0;     // File descriptor set to zero.
-	printf("SerDog starting...\n\n");
+	printf("SerDog starting...\n\n",NULL);
 
 	openport(); //open the port
 
