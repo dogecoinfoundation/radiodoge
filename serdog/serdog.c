@@ -520,7 +520,14 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		break;
 	case HARDWARE_INFO:
 		printf("Hardware info received from device!\n");
-		// @TODO
+		if ((char)payloadIn[2] == 'h')
+		{
+			printf("Heltec WiFi LoRa 32 (V%i)\nFirmware version %i\n", payloadIn[3], payloadIn[4]);
+		}
+		else
+		{
+			printf("Unknown hardware!\n");
+		}
 		break;
 	case HOST_FORMED_PACKET:
 		printf("Received host formed packet!\n");

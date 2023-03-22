@@ -397,7 +397,7 @@ void HostSerialRead() {
 void SendHardwareInfoToHost()
 {
   // Just send 'h' for heltec, board version, and firmware version for now
-  uint8_t reply[5] = {RESULT_CODE, 3, 'h', HELTEC_BOARD_VERSION, FIRMWARE_VERSION}; 
+  uint8_t reply[5] = {HARDWARE_INFO, 3, 'h', HELTEC_BOARD_VERSION, FIRMWARE_VERSION}; 
   Serial.write(reply, 5);
 }
 
