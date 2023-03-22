@@ -37,6 +37,7 @@ int cmdSetLocalAddress(int region, int community, int node);
 int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf);
 int cmdGetLocalAddress();
 int cmdSendPingCmd(uint8_t* inAddr);
+int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, uint8_t customPayloadLen);
 int isCmd(uint8_t inByte);
 
 //command processing convenience utils

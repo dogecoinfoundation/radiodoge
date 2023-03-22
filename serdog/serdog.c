@@ -286,6 +286,14 @@ int cmdSendPingCmd(uint8_t* inAddr)
 	sendCommand(cmdtype, payloadsize, payload);
 };
 
+/// <summary>
+/// Sends a custom payload to the desired node
+/// </summary>
+/// <param name="inAddr">Local node address</param>
+/// <param name="destAddr">Destination node address</param>
+/// <param name="customPayload">Array containing the custom payload</param>
+/// <param name="customPayloadLen">Length of the custom payload</param>
+/// <returns></returns>
 int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t*customPayload, uint8_t customPayloadLen)
 {
 	uint8_t cmdType = HOST_FORMED_PACKET;
@@ -313,15 +321,16 @@ void printByteArray(uint8_t* arrayIn)
 	{
 		printf("[%02X]", arrayIn[nx]);
 	}
+	printf("\n");
 }
 
-void printByteArrayOfLength(uint8_t* array, int length)
+void printByteArrayOfLength(uint8_t* arrayIn, int length)
 {
-	printf("\nPrinting array of size %d\n", length);
 	for (int nx = 0; nx < length; nx++)
 	{
-		printf("[%02X]", array[nx]);
+		printf("[%02X]", arrayIn[nx]);
 	}
+	printf("\n");
 }
 
 
@@ -378,7 +387,8 @@ void* serialPollThread(void* threadid)
 			if (rxPayloadSize >= 0)
 			{
 				printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
-				
+				printf("**Complete Payload**\n");
+				printByteArrayOfLength(rxbuffer, totalRxChars);
 				// @TODO process the payload
 
 				// Assume at this point we processed the payload
@@ -491,6 +501,8 @@ main()
 
 	getc(stdin);// Wait for keypress for next command
 	printf("Sending Host Created Packet!\n");
+
+	// Create a custom payload to send
 	uint8_t customTestPayload[50];
 	for (int i = 0; i < 50; i++)
 	{
