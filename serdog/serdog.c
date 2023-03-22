@@ -538,14 +538,15 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		memcpy(destAddr, payloadIn + 5, addrlen);
 		// Isolate the payload
 		int dataLen = payloadSize - 8;
-		uint8_t* data = malloc(dataLen);
-		memcpy(data, payloadIn + 8, dataLen);
+		uint8_t* extractedData = malloc(dataLen);
+		memcpy(extractedData, payloadIn + 8, dataLen);
 		printf("Sender Address:\n");
 		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
 		printf("Destination Address:\n");
 		printf("%i.%i.%i\n", payloadIn[5], payloadIn[6], payloadIn[7]);
 		printf("Data:\n");
-		printByteArrayOfLength(data, dataLen);
+		printByteArrayOfLength(extractedData, dataLen);
+		free(extractedData);
 		break;
 	case MULTI_PART_PACKET:
 		break;
