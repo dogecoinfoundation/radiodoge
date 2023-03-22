@@ -191,8 +191,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 		{
 			printf("\nError writing to port %s as numbytes written was %i.\n", device, n_written);
 		}
-	} 
-	while (total_written != (payloadlen + hdrlen) && n_written > 0);
+	} while (total_written != (payloadlen + hdrlen) && n_written > 0);
 	printf(" to port [%s]\n", device);
 
 	printf("[%i] total bytes written to [%s]\n", total_written, device);
@@ -248,8 +247,7 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 			sprintf(&respbuf[idx], "%c", buf);
 		};
 		idx += n_read;
-	} 
-	while (idx < resplen);
+	} while (idx < resplen);
 
 	printf("exited read at index %i\n", idx);
 
@@ -273,9 +271,15 @@ int cmdGetLocalAddress()
 {
 	//no payload = 0.
 	uint8_t cmdtype = ADDRESS_GET;
-
 	sendCommand(cmdtype, 0, 0);
 };
+
+int cmdGetHardwareInfo()
+{
+	// No payload for this command
+	uint8_t cmdtype = HARDWARE_INFO;
+	sendCommand(cmdtype, 0, 0);
+}
 
 int cmdSendPingCmd(uint8_t* inAddr)
 {
@@ -294,7 +298,7 @@ int cmdSendPingCmd(uint8_t* inAddr)
 /// <param name="customPayload">Array containing the custom payload</param>
 /// <param name="customPayloadLen">Length of the custom payload</param>
 /// <returns></returns>
-int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t*customPayload, uint8_t customPayloadLen)
+int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, uint8_t customPayloadLen)
 {
 	uint8_t cmdType = HOST_FORMED_PACKET;
 	// Combined payload length will be cmd type and payload length + size of the two addresses (6 bytes) + custom payload length
@@ -309,6 +313,43 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t*customPayload, ui
 	sendCommand(cmdType, totalPayloadSize, combinedPayload);
 	free(combinedPayload);
 };
+
+int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
+{
+	uint8_t cmdType = MULTI_PART_PACKET;
+	int totalNumParts = customPayloadLen / maxPayloadLen;
+	size_t maxPacketSize = maxPayloadLen + 12;
+	printf("Sending message in %d parts\n", totalNumParts);
+	int payloadLeft = customPayloadLen;
+	int payloadInd = 0;
+	// Each payload part will have a cmd type, payload length, 2 addresses, and 4 bytes for multipart info 
+	uint8_t currentPacket[maxPacketSize];
+	int currPayloadLen = 0;
+	for (int i = 0; i < totalNumParts; i++)
+	{
+		currentPacket[0] = cmdType;
+		if (payloadLeft >= maxPayloadLen)
+		{
+			currPayloadLen = maxPayloadLen;
+		}
+		else
+		{
+			currPayloadLen = payloadLeft;
+
+		}
+		currentPacket[1] = currPayloadLen + 10;
+		memcpy(currentPacket + 2, inAddr, addrlen);
+		memcpy(currentPacket + addrlen + 2, destAddr, addrlen);
+		// Now include multipart info
+		currentPacket[8] = messageID;
+		currentPacket[9] = 0; // for now we will reserve this one byte
+		currentPacket[10] = (uint8_t)i;
+		currentPacket[11] = (uint8_t)totalNumParts;
+		memcpy(currentPacket + 12, customPayload + payloadInd, currPayloadLen);
+		sendCommand(cmdType, currPayloadLen + 12, currentPacket);
+		// @TODO delay each part???
+	}
+}
 
 /// <summary>
 /// Something is wrong with this print function. Seems like it maxes out at a size of 8 no matter what??? I believe it has to do with the sizeof()
@@ -390,6 +431,7 @@ void* serialPollThread(void* threadid)
 				printf("**Complete Payload**\n");
 				printByteArrayOfLength(rxbuffer, totalRxChars);
 				// @TODO process the payload
+				processPayload(rxbuffer, totalRxChars);
 
 				// Assume at this point we processed the payload
 				// Therefore we will reset the buffer's received character size to 0 allowing it to be rewritten on next receive
@@ -457,6 +499,65 @@ int isCmd(uint8_t inByte)
 	}
 }
 
+// @TODO fill this in. Some of these we don't need to actual cover since we won't get a reply with that command type
+void processPayload(uint8_t* payloadIn, int payloadSize)
+{
+	switch (payloadIn[0])
+	{
+	case ADDRESS_GET:
+		printf("Local node address:\n");
+		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
+		break;
+	case ADDRESS_SET:
+		// Should not see this
+		// This command will just be ACK'd
+		break;
+	case PING_REQUEST:
+		// Should not see this
+		// This command will just be ACK'd
+		break;
+	case MESSAGE_REQUEST:
+		break;
+	case HARDWARE_INFO:
+		printf("Hardware info received from device!\n");
+		// @TODO
+		break;
+	case HOST_FORMED_PACKET:
+		printf("Received host formed packet!\n");
+		// Strip off the sender and dest address
+		uint8_t senderAddr[3];
+		memcpy(senderAddr, payloadIn + 2, addrlen);
+		uint8_t destAddr[3];
+		memcpy(destAddr, payloadIn + 5, addrlen);
+		// Isolate the payload
+		int dataLen = payloadSize - 8;
+		uint8_t* data = malloc(dataLen);
+		memcpy(data, payloadIn + 8, dataLen);
+		printf("Sender Address:\n");
+		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
+		printf("Destination Address:\n");
+		printf("%i.%i.%i\n", payloadIn[5], payloadIn[6], payloadIn[7]);
+		printf("Data:\n");
+		printByteArrayOfLength(data, dataLen);
+		break;
+	case MULTI_PART_PACKET:
+		break;
+	case RESULT_CODE:
+		if (payloadIn[2] == RESULT_ACK)
+		{
+			printf("Device ACK'd command!\n");
+		}
+		else if (payloadIn[2] == RESULT_NACK)
+		{
+			printf("ERROR: Device sent a NACK!\n");
+		}
+		break;
+
+	default:
+		printf("Unknown payload!");
+	}
+}
+
 void waitForResponse(enum serialCommand cmdtype)
 {
 	uint8_t rxbuffer[1024] = { 0 };
@@ -499,18 +600,23 @@ main()
 	cmdGetLocalAddress();
 	//printf("\nFrom command, received: \n[%02X][%02X][%02X]\n\n", rxbuf[0],rxbuf[1],rxbuf[2]);
 
+	// Get hardware info
+	getc(stdin);// Wait for keypress for next command
+	printf("CMD TEST: Getting hardware info...\n");
+	cmdGetHardwareInfo();
+
 	getc(stdin);// Wait for keypress for next command
 	printf("Sending Host Created Packet!\n");
 
 	// Create a custom payload to send
-	uint8_t customTestPayload[50];
-	for (int i = 0; i < 50; i++)
+	uint8_t customTestPayload[240];
+	for (int i = 0; i < 240; i++)
 	{
 		customTestPayload[i] = (uint8_t)(i);
 	}
 	printf("\nCustom Payload:\n");
-	printByteArrayOfLength(customTestPayload, 50);
-	cmdSendMessage(myaddr, rmaddr, customTestPayload, 50);
+	printByteArrayOfLength(customTestPayload, 240);
+	cmdSendMessage(myaddr, rmaddr, customTestPayload, 240);
 
 	/*
 	//pingAnother
