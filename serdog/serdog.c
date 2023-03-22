@@ -289,13 +289,15 @@ int cmdSendPingCmd(uint8_t* inAddr)
 int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t*customPayload, uint8_t customPayloadLen)
 {
 	uint8_t cmdType = HOST_FORMED_PACKET;
-	// Combined payload length will be custom payload + size of the two addresses (6 bytes)
-	size_t totalPayloadSize = customPayloadLen + 6;
+	// Combined payload length will be cmd type and payload length + size of the two addresses (6 bytes) + custom payload length
+	size_t totalPayloadSize = customPayloadLen + 8;
 	uint8_t* combinedPayload = malloc(totalPayloadSize);
-	memcpy(combinedPayload, inAddr, addrlen);
-	memcpy(combinedPayload + addrlen, destAddr, addrlen);
-	// We start 6 bytes in since there have now been 2 addressed of 3 bytes each added
-	memcpy(combinedPayload + 6, customPayload, customPayloadLen);
+	combinedPayload[0] = cmdType;
+	combinedPayload[1] = totalPayloadSize - 2; // Ignore the type and size in this count
+	memcpy(combinedPayload + 2, inAddr, addrlen);
+	memcpy(combinedPayload + addrlen + 2, destAddr, addrlen);
+	// We start 8 bytes in since there have now been 2 bytes for the cmd type and payload length in addition to 2 addressed of 3 bytes each
+	memcpy(combinedPayload + 8, customPayload, customPayloadLen);
 	sendCommand(cmdType, totalPayloadSize, combinedPayload);
 	free(combinedPayload);
 };
@@ -489,14 +491,14 @@ main()
 
 	getc(stdin);// Wait for keypress for next command
 	printf("Sending Host Created Packet!\n");
-	uint8_t customTestPayload[20];
-	for (int i = 0; i < 20; i++)
+	uint8_t customTestPayload[50];
+	for (int i = 0; i < 50; i++)
 	{
-		customTestPayload[i] = (uint8_t)i;
+		customTestPayload[i] = (uint8_t)(i);
 	}
 	printf("\nCustom Payload:\n");
-	printByteArrayOfLength(customTestPayload, 20);
-	cmdSendMessage(myaddr, rmaddr, customTestPayload, 20);
+	printByteArrayOfLength(customTestPayload, 50);
+	cmdSendMessage(myaddr, rmaddr, customTestPayload, 50);
 
 	/*
 	//pingAnother

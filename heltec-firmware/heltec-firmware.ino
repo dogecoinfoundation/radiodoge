@@ -23,9 +23,9 @@
 #define RX_TIMEOUT_VALUE 1000
 #define SERIAL_HEADER_SIZE 2
 #define BUFFER_SIZE 256  // Define the payload size here
-#define CONTROL_SIZE 8   // Really only 7 but we will have a reserved byte here for now
+#define CONTROL_SIZE 8
 #define SERIAL_TERMINATOR 255
-#define SENDER_ADDRESS_OFFSET 1
+#define SENDER_ADDRESS_OFFSET 2
 #define COMMAND_ACK_CODE 6 // 0x06 = 'ACK'
 #define COMMAND_NACK_CODE 21 // 0x15 = 'NAK'
 #define HOST_ACK_NACK_SIZE 3
@@ -205,10 +205,11 @@ bool CreateMessage() {
 // Prepopulates control message buffers with local address
 void InitControlMessages() {
   controlPacket[0] = (uint8_t)UNKNOWN;
-  controlPacket[1] = local.region;
-  controlPacket[2] = local.community;
-  controlPacket[3] = local.node;
-  controlPacket[7] = 0x00;
+  // Payload size for control packets is fixed at 6
+  controlPacket[1] = 6;
+  controlPacket[2] = local.region;
+  controlPacket[3] = local.community;
+  controlPacket[4] = local.node;
 }
 
 // Set the address of this device
@@ -263,9 +264,9 @@ void ReceivedPing() {
 void SendPing(nodeAddress destination) {
   // Message structure will by [message type, sender, destination]
   controlPacket[0] = (uint8_t)PING;
-  controlPacket[4] = destination.region;
-  controlPacket[5] = destination.community;
-  controlPacket[6] = destination.node;
+  controlPacket[5] = destination.region;
+  controlPacket[6] = destination.community;
+  controlPacket[7] = destination.node;
   isLoRaIdle = false;
   DisplayTXMessage("Ping", destination);
   Radio.Send(controlPacket, CONTROL_SIZE);
@@ -277,9 +278,9 @@ void SendPing(nodeAddress destination) {
 void SendACK(nodeAddress destination) {
   // Message structure will by [message type, sender, destination]
   controlPacket[0] = (uint8_t)ACK;
-  controlPacket[4] = destination.region;
-  controlPacket[5] = destination.community;
-  controlPacket[6] = destination.node;
+  controlPacket[5] = destination.region;
+  controlPacket[6] = destination.community;
+  controlPacket[7] = destination.node;
   DisplayTXMessage("ACK", destination);
   isLoRaIdle = false;
   Radio.Send(controlPacket, CONTROL_SIZE);
@@ -349,7 +350,7 @@ void HostSerialRead() {
     Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
     return;
   }
-  delay(2000);
+  delay(1500);
   switch (commandVal) {
     case ADDRESS_GET:
       GetLocalAddress();
@@ -375,9 +376,13 @@ void HostSerialRead() {
       SendHardwareInfoToHost();
       break;
     case HOST_FORMED_PACKET:
-      ParseHostFormedPacket(payloadSize);
+      //ParseHostFormedPacket(payloadSize);
+      SetDestinationFromSerialBuffer(5);
+      DisplayTXMessage("Custom Packet!", dest);
       // Send out the host formed packet
       Radio.Send(serialBuf, payloadSize);
+      // Acknowledge the host that we sent the packet
+      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
       break;
     case MULTI_PART_PACKET:
       // @TODO
@@ -437,6 +442,12 @@ void ParseReceivedMessage() {
           //Serial.println(messageString);
         }
         break;
+      case HOST_FORMED_PACKET:
+        SetSenderAddress();
+        DisplayRXMessage("Custom Packet Received!", senderAddress);
+        // We will just pass on the message directly to the host
+        Serial.write(rxPacket, rxSize);
+        break;      
       default:
         // (debug)
         //Serial.println("wat rcv?");
@@ -449,7 +460,7 @@ void ParseReceivedMessage() {
 
 // Checks to see if the received packet's destination is the same as the local address
 bool CheckIfPacketForMe() {
-  return (local.region == rxPacket[4]) && (local.community == rxPacket[5]) && (local.node == rxPacket[6]);
+  return (local.region == rxPacket[5]) && (local.community == rxPacket[6]) && (local.node == rxPacket[7]);
 }
 
 // Extract the payload message from the given buffer (assists with displaying on screen)
