@@ -16,7 +16,7 @@ enum serialCommand {
   MESSAGE_REQUEST,
   HARDWARE_INFO = 63,        //0x3f = '?'
   HOST_FORMED_PACKET = 104,  //0x68 = 'h'
-  RESULT_CODE = 255
+  RESULT_CODE = 254
 };
 
 struct nodeAddress {
