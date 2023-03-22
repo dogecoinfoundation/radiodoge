@@ -114,10 +114,9 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	int intcmd = cmdtype;
 	if (payload != NULL)
 	{
-		printf("\ntest\n");
-		payloadlen = strlen(payload);
+		payloadlen = (uint8_t)payloadsize;
+		printf("\nPayload Length %d\n", payloadlen);
 	}
-
 
 	printf("\nincoming command type %d\n", cmdtype);
 
@@ -138,7 +137,6 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 			idx++;
 		} while (idx != payloadlen);
 	}
-
 
 	printf("\n");
 
@@ -198,8 +196,6 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	printf(" to port [%s]\n", device);
 
 	printf("[%i] total bytes written to [%s]\n", total_written, device);
-
-
 }
 
 int cmdSetLocalAddress(int region, int community, int node)
@@ -252,7 +248,8 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 			sprintf(&respbuf[idx], "%c", buf);
 		};
 		idx += n_read;
-	} while (idx < resplen);
+	} 
+	while (idx < resplen);
 
 	printf("exited read at index %i\n", idx);
 
@@ -278,7 +275,6 @@ int cmdGetLocalAddress()
 	uint8_t cmdtype = ADDRESS_GET;
 
 	sendCommand(cmdtype, 0, 0);
-
 };
 
 int cmdSendPingCmd(uint8_t* inAddr)
@@ -288,12 +284,39 @@ int cmdSendPingCmd(uint8_t* inAddr)
 	uint8_t payload[3] = { inAddr[0],inAddr[1],inAddr[2] };
 
 	sendCommand(cmdtype, payloadsize, payload);
-
 };
 
-void printByteArray(uint8_t* array)
+int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t*customPayload, uint8_t customPayloadLen)
 {
-	for (int nx = 0; nx < sizeof(array); nx++)
+	uint8_t cmdType = HOST_FORMED_PACKET;
+	// Combined payload length will be custom payload + size of the two addresses (6 bytes)
+	size_t totalPayloadSize = customPayloadLen + 6;
+	uint8_t* combinedPayload = malloc(totalPayloadSize);
+	memcpy(combinedPayload, inAddr, addrlen);
+	memcpy(combinedPayload + addrlen, destAddr, addrlen);
+	// We start 6 bytes in since there have now been 2 addressed of 3 bytes each added
+	memcpy(combinedPayload + 6, customPayload, customPayloadLen);
+	sendCommand(cmdType, totalPayloadSize, combinedPayload);
+	free(combinedPayload);
+};
+
+/// <summary>
+/// Something is wrong with this print function. Seems like it maxes out at a size of 8 no matter what??? I believe it has to do with the sizeof()
+/// </summary>
+/// <param name="arrayIn"></param>
+void printByteArray(uint8_t* arrayIn)
+{
+	printf("\nPrinting array of size %d\n", sizeof(arrayIn));
+	for (int nx = 0; nx < sizeof(arrayIn); nx++)
+	{
+		printf("[%02X]", arrayIn[nx]);
+	}
+}
+
+void printByteArrayOfLength(uint8_t* array, int length)
+{
+	printf("\nPrinting array of size %d\n", length);
+	for (int nx = 0; nx < length; nx++)
 	{
 		printf("[%02X]", array[nx]);
 	}
@@ -372,7 +395,7 @@ void* serialPollThread(void* threadid)
 
 int isCompleteCmd(uint8_t* inBuf, int charsReceived)
 {
-	if (charsReceived > 2)
+	if (charsReceived >= 2)
 	{
 		printf("int inbuf %i %i %i\n", (int)inBuf[0], (int)inBuf[1], (int)inBuf[2]);
 		if (isCmd(inBuf[0]) && (int)inBuf[1] == charsReceived - 2)
@@ -390,7 +413,6 @@ int isCompleteCmd(uint8_t* inBuf, int charsReceived)
 		return -1;
 	}
 }
-
 
 int isCmd(uint8_t inByte)
 {
@@ -458,12 +480,23 @@ main()
 	//waitForResponse(ADDRESS_SET);
 
 	getc(stdin);// Wait for keypress for next command
-	printf("Sending Next Command!");
+	printf("Sending Next Command!\n");
 
 	//queryLocalAddr
 	printf("CMD TEST: Querying Local Address...\n");
 	cmdGetLocalAddress();
 	//printf("\nFrom command, received: \n[%02X][%02X][%02X]\n\n", rxbuf[0],rxbuf[1],rxbuf[2]);
+
+	getc(stdin);// Wait for keypress for next command
+	printf("Sending Host Created Packet!\n");
+	uint8_t customTestPayload[20];
+	for (int i = 0; i < 20; i++)
+	{
+		customTestPayload[i] = (uint8_t)i;
+	}
+	printf("\nCustom Payload:\n");
+	printByteArrayOfLength(customTestPayload, 20);
+	cmdSendMessage(myaddr, rmaddr, customTestPayload, 20);
 
 	/*
 	//pingAnother

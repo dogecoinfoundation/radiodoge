@@ -20,6 +20,7 @@ uint8_t myaddr[] = { 0x0A, 0x05, 0x04 };
 uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
 
 uint8_t hdrlen = 2;
+uint8_t addrlen = 3;
 
 int USB = 0;
 char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport
