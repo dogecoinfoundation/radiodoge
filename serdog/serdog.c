@@ -103,7 +103,6 @@ int init()
 
 int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 {
-
 	int n_written = 0;
 	int total_written = 0;
 	int idx = 0;
@@ -398,6 +397,10 @@ void* serialPollThread(void* threadid)
 	ssize_t totalRxChars = 0;
 	int rxPayloadSize = -1;
 
+	// Multipart payload related variables
+	uint8_t multipartBuffer[4096] = { 0 };
+	int multipartIndex = 0;
+
 	do
 	{
 		int serReceivedCharacters = poll(serFileDescriptor, 1, 1000);
@@ -437,10 +440,27 @@ void* serialPollThread(void* threadid)
 			if (rxPayloadSize >= 0)
 			{
 				printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
-				printf("**Complete Payload**\n");
-				printByteArrayOfLength(rxbuffer, totalRxChars);
-				// @TODO process the payload
-				processPayload(rxbuffer, totalRxChars);
+				if (rxbuffer[0] == MULTIPART_PACKET)
+				{
+					printf("**Partial Payload (with packet header)**\n");
+					printByteArrayOfLength(rxbuffer, totalRxChars);
+					int processResult = processMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex);
+					if (processResult)
+					{
+						// @TODO do something with entire payload
+						printf("Fully reassembled payload!\n");
+						printByteArrayOfLength(multipartBuffer, multipartIndex);
+
+						// Reset multipart count values
+						multipartIndex = 0;
+					}
+				}
+				else
+				{
+					printf("**Complete Payload (with packet header)**\n");
+					printByteArrayOfLength(rxbuffer, totalRxChars);
+					processPayload(rxbuffer, totalRxChars);
+				}
 
 				// Assume at this point we processed the payload
 				// Therefore we will reset the buffer's received character size to 0 allowing it to be rewritten on next receive
@@ -511,7 +531,6 @@ int isCmd(uint8_t inByte)
 	}
 }
 
-// @TODO fill this in. Some of these we don't need to actual cover since we won't get a reply with that command type
 void processPayload(uint8_t* payloadIn, int payloadSize)
 {
 	switch (payloadIn[0])
@@ -561,7 +580,7 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		free(extractedData);
 		break;
 	case MULTIPART_PACKET:
-		printf("Received multipart packet!\n");
+		printf("ERROR: Received multipart packet when a single part packet was expected!\n");
 		break;
 	case RESULT_CODE:
 		if (payloadIn[2] == RESULT_ACK)
@@ -576,6 +595,27 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 
 	default:
 		printf("Unknown payload!");
+	}
+}
+
+// @TODO 
+// NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
+int processMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize)
+{
+	// Copy just the data portion over to the buffer
+	// This requires stripping out the header portion which will be 12 bytes
+	memcpy(multipartBuffer + *multipartSize, payloadPartIn + multipartHeaderLen, partSize - multipartHeaderLen);
+	*multipartSize += (partSize - multipartHeaderLen);
+
+	// Check if it was the last part
+	// We do this currently by seeing if the piece number is equal to the total number of pieces
+	if (payloadPartIn[10] == payloadPartIn[11])
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
 	}
 }
 
@@ -646,8 +686,8 @@ main()
 	printf("CMD TEST: Pinging remote %i.%i.%i.\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 	cmdSendPingCmd(rmaddr, rxbuf);
 	printf("\nFrom command, received: \n[%s]\n\n", rxbuf);
-
 	*/
+
 	getc(stdin);//wait for keypress
 	printf("Exiting!");
 	pollEnable = 0;
