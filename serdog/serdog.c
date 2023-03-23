@@ -600,6 +600,8 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 
 // @TODO 
 // NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
+// Also there will be issues if we receive multipart packets from multiple nodes simultaneously as it doesn't do anything with the msg id
+// This just reassembles the pieces for now
 int processMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize)
 {
 	// Copy just the data portion over to the buffer
@@ -609,14 +611,7 @@ int processMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multi
 
 	// Check if it was the last part
 	// We do this currently by seeing if the piece number is equal to the total number of pieces
-	if (payloadPartIn[10] == payloadPartIn[11])
-	{
-		return 1;
-	}
-	else
-	{
-		return 0;
-	}
+	return payloadPartIn[10] == payloadPartIn[11];
 }
 
 void waitForResponse(enum serialCommand cmdtype)
