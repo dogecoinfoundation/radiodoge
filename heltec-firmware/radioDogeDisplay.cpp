@@ -100,6 +100,9 @@ void DisplayCommandAndControl(uint8_t commandVal) {
     case HOST_FORMED_PACKET:
       commandTypeString = "Host formed packet";
       break;
+    case MULTIPART_PACKET:
+      commandTypeString = "Multipart packet";
+      break;
     default:
       commandTypeString = "Wat!?";
       break;

@@ -16,7 +16,7 @@ enum serialCommand {
   MESSAGE_REQUEST,
   HARDWARE_INFO = 63,        //0x3f = '?'
   HOST_FORMED_PACKET = 104,  //0x68 = 'h'
-  MULTI_PART_PACKET = 109, // 0x6D = 'm'
+  MULTIPART_PACKET = 109, // 0x6D = 'm'
   RESULT_CODE = 254
 };
 

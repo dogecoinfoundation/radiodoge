@@ -300,6 +300,8 @@ int cmdSendPingCmd(uint8_t* inAddr)
 /// <returns></returns>
 int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, uint8_t customPayloadLen)
 {
+	// Structure of message sent across the air is 1 byte for cmd type, 1 byte for payload length, 3 bytes for sender address, 3 bytes for destination address, then payload
+	// Note that the payload length includes the 6 bytes used for addressing
 	uint8_t cmdType = HOST_FORMED_PACKET;
 	// Combined payload length will be cmd type and payload length + size of the two addresses (6 bytes) + custom payload length
 	size_t totalPayloadSize = customPayloadLen + 8;
@@ -316,8 +318,12 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
 {
-	uint8_t cmdType = MULTI_PART_PACKET;
+	uint8_t cmdType = MULTIPART_PACKET;
 	int totalNumParts = customPayloadLen / maxPayloadLen;
+	if (customPayloadLen % maxPayloadLen != 0)
+	{
+		totalNumParts++;
+	}
 	size_t maxPacketSize = maxPayloadLen + 12;
 	printf("Sending message in %d parts\n", totalNumParts);
 	int payloadLeft = customPayloadLen;
@@ -325,7 +331,7 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 	// Each payload part will have a cmd type, payload length, 2 addresses, and 4 bytes for multipart info 
 	uint8_t currentPacket[maxPacketSize];
 	int currPayloadLen = 0;
-	for (int i = 0; i < totalNumParts; i++)
+	for (int i = 1; i < totalNumParts + 1; i++)
 	{
 		currentPacket[0] = cmdType;
 		if (payloadLeft >= maxPayloadLen)
@@ -343,11 +349,14 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 		// Now include multipart info
 		currentPacket[8] = messageID;
 		currentPacket[9] = 0; // for now we will reserve this one byte
-		currentPacket[10] = (uint8_t)i;
+		currentPacket[10] = (uint8_t)(i);
 		currentPacket[11] = (uint8_t)totalNumParts;
 		memcpy(currentPacket + 12, customPayload + payloadInd, currPayloadLen);
 		sendCommand(cmdType, currPayloadLen + 12, currentPacket);
-		// @TODO delay each part???
+		payloadInd += currPayloadLen;
+		payloadLeft -= currPayloadLen;
+		// Delay each part of the packet
+		sleep(1);
 	}
 }
 
@@ -490,6 +499,9 @@ int isCmd(uint8_t inByte)
 	case HOST_FORMED_PACKET:
 		return (int)HOST_FORMED_PACKET;
 		break;
+	case MULTIPART_PACKET:
+		return (int)MULTIPART_PACKET;
+		break;
 	case RESULT_CODE:
 		return (int)RESULT_CODE;
 		break;
@@ -548,7 +560,8 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		printByteArrayOfLength(extractedData, dataLen);
 		free(extractedData);
 		break;
-	case MULTI_PART_PACKET:
+	case MULTIPART_PACKET:
+		printf("Received multipart packet!\n");
 		break;
 	case RESULT_CODE:
 		if (payloadIn[2] == RESULT_ACK)
@@ -617,14 +630,16 @@ main()
 	printf("Sending Host Created Packet!\n");
 
 	// Create a custom payload to send
-	uint8_t customTestPayload[240];
-	for (int i = 0; i < 240; i++)
+	int custSize = 1024;
+	uint8_t customTestPayload[custSize];
+	for (int i = 0; i < custSize; i++)
 	{
-		customTestPayload[i] = (uint8_t)(i);
+		customTestPayload[i] = (uint8_t)(i % 256);
 	}
 	printf("\nCustom Payload:\n");
-	printByteArrayOfLength(customTestPayload, 240);
-	cmdSendMessage(myaddr, rmaddr, customTestPayload, 240);
+	printByteArrayOfLength(customTestPayload, custSize);
+	//cmdSendMessage(myaddr, rmaddr, customTestPayload, custSize);
+	cmdSendMultipartMessage(myaddr, rmaddr, customTestPayload, custSize, 123);
 
 	/*
 	//pingAnother

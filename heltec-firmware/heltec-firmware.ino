@@ -350,7 +350,7 @@ void HostSerialRead() {
     Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
     return;
   }
-  delay(1500);
+  delay(500);
   switch (commandVal) {
     case ADDRESS_GET:
       GetLocalAddress();
@@ -384,8 +384,14 @@ void HostSerialRead() {
       // Acknowledge the host that we sent the packet
       Serial.write(hostACK, HOST_ACK_NACK_SIZE);
       break;
-    case MULTI_PART_PACKET:
-      // @TODO
+    case MULTIPART_PACKET:
+      SetDestinationFromSerialBuffer(5);
+      char tempBuf[64];
+      sprintf(tempBuf, "Part %i of %i", serialBuf[10], serialBuf[11]);
+      DisplayTXMessage(String(tempBuf), dest);
+      Radio.Send(serialBuf, payloadSize);
+      // Send ACK to let them know we sent out that part
+      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
       break;
     default:
       // Indicate that command was not understood (Send NACK)
@@ -444,10 +450,17 @@ void ParseReceivedMessage() {
         break;
       case HOST_FORMED_PACKET:
         SetSenderAddress();
-        DisplayRXMessage("Custom Packet Received!", senderAddress);
+        DisplayRXMessage("Packet Received!", senderAddress);
         // We will just pass on the message directly to the host
         Serial.write(rxPacket, rxSize);
-        break;      
+        break;
+      case MULTIPART_PACKET:
+        SetSenderAddress();
+        char tempBuf[64];
+        sprintf(tempBuf, "Packet part %i of %i", rxPacket[10], rxPacket[11]);
+        DisplayRXMessage(String(tempBuf), senderAddress);
+        Serial.write(rxPacket, rxSize);
+        break;
       default:
         // (debug)
         //Serial.println("wat rcv?");
