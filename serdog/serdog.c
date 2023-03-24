@@ -190,7 +190,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 		{
 			printf("\nError writing to port %s as numbytes written was %i.\n", device, n_written);
 		}
-	} while (total_written != (payloadlen + hdrlen) && n_written > 0);
+	} while (total_written != (payloadlen + HDR_LEN) && n_written > 0);
 	printf(" to port [%s]\n", device);
 
 	printf("[%i] total bytes written to [%s]\n", total_written, device);
@@ -303,14 +303,18 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 	// Note that the payload length includes the 6 bytes used for addressing
 	uint8_t cmdType = HOST_FORMED_PACKET;
 	// Combined payload length will be cmd type and payload length + size of the two addresses (6 bytes) + custom payload length
-	size_t totalPayloadSize = customPayloadLen + 8;
+	int offset = 0;
+	size_t totalPayloadSize = customPayloadLen + HDR_LEN + ADDR_LEN + ADDR_LEN;
 	uint8_t* combinedPayload = malloc(totalPayloadSize);
 	combinedPayload[0] = cmdType;
-	combinedPayload[1] = totalPayloadSize - 2; // Ignore the type and size in this count
-	memcpy(combinedPayload + 2, inAddr, addrlen);
-	memcpy(combinedPayload + addrlen + 2, destAddr, addrlen);
+	combinedPayload[1] = totalPayloadSize - HDR_LEN; // Ignore the type and size in this count (i.e. ignore the header)
+	offset += HDR_LEN;
+	memcpy(combinedPayload + offset, inAddr, ADDR_LEN);
+	offset += ADDR_LEN;
+	memcpy(combinedPayload + offset, destAddr, ADDR_LEN);
+	offset += ADDR_LEN;
 	// We start 8 bytes in since there have now been 2 bytes for the cmd type and payload length in addition to 2 addressed of 3 bytes each
-	memcpy(combinedPayload + 8, customPayload, customPayloadLen);
+	memcpy(combinedPayload + offset, customPayload, customPayloadLen);
 	sendCommand(cmdType, totalPayloadSize, combinedPayload);
 	free(combinedPayload);
 };
@@ -318,40 +322,45 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
 {
 	uint8_t cmdType = MULTIPART_PACKET;
-	int totalNumParts = customPayloadLen / maxPayloadLen;
-	if (customPayloadLen % maxPayloadLen != 0)
+	int totalNumParts = customPayloadLen / MAX_PAYLOAD_LEN;
+	if (customPayloadLen % MAX_PAYLOAD_LEN != 0)
 	{
 		totalNumParts++;
 	}
-	size_t maxPacketSize = maxPayloadLen + 12;
+	size_t maxPacketSize = MAX_PAYLOAD_LEN + MULTIPART_HDR_LEN;
 	printf("Sending message in %d parts\n", totalNumParts);
 	int payloadLeft = customPayloadLen;
 	int payloadInd = 0;
-	// Each payload part will have a cmd type, payload length, 2 addresses, and 4 bytes for multipart info 
+	// Each payload part will have a cmd type (1 byte), payload length (1 byte), 2 addresses (3 bytes each), and 4 bytes for multipart info 
 	uint8_t currentPacket[maxPacketSize];
 	int currPayloadLen = 0;
 	for (int i = 1; i < totalNumParts + 1; i++)
 	{
+		int offset = 0;
 		currentPacket[0] = cmdType;
-		if (payloadLeft >= maxPayloadLen)
+		if (payloadLeft >= MAX_PAYLOAD_LEN)
 		{
-			currPayloadLen = maxPayloadLen;
+			currPayloadLen = MAX_PAYLOAD_LEN;
 		}
 		else
 		{
 			currPayloadLen = payloadLeft;
 
 		}
-		currentPacket[1] = currPayloadLen + 10;
-		memcpy(currentPacket + 2, inAddr, addrlen);
-		memcpy(currentPacket + addrlen + 2, destAddr, addrlen);
+		currentPacket[1] = currPayloadLen + MULTIPART_HDR_LEN - HDR_LEN;
+		offset += HDR_LEN;
+		memcpy(currentPacket + offset, inAddr, ADDR_LEN);
+		offset += ADDR_LEN;
+		memcpy(currentPacket + offset, destAddr, ADDR_LEN);
+		offset += ADDR_LEN;
 		// Now include multipart info
 		currentPacket[8] = messageID;
 		currentPacket[9] = 0; // for now we will reserve this one byte
 		currentPacket[10] = (uint8_t)(i);
 		currentPacket[11] = (uint8_t)totalNumParts;
-		memcpy(currentPacket + 12, customPayload + payloadInd, currPayloadLen);
-		sendCommand(cmdType, currPayloadLen + 12, currentPacket);
+		offset += MULTIPART_PIECE_INFO_LEN;
+		memcpy(currentPacket + offset, customPayload + payloadInd, currPayloadLen);
+		sendCommand(cmdType, currPayloadLen + MULTIPART_HDR_LEN, currentPacket);
 		payloadInd += currPayloadLen;
 		payloadLeft -= currPayloadLen;
 		// Delay each part of the packet
@@ -460,6 +469,7 @@ void* serialPollThread(void* threadid)
 					printf("**Complete Payload (with packet header)**\n");
 					printByteArrayOfLength(rxbuffer, totalRxChars);
 					processPayload(rxbuffer, totalRxChars);
+					// @TODO do something else with the payload
 				}
 
 				// Assume at this point we processed the payload
@@ -564,9 +574,9 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		printf("Received host formed packet!\n");
 		// Strip off the sender and dest address
 		uint8_t senderAddr[3];
-		memcpy(senderAddr, payloadIn + 2, addrlen);
+		memcpy(senderAddr, payloadIn + 2, ADDR_LEN);
 		uint8_t destAddr[3];
-		memcpy(destAddr, payloadIn + 5, addrlen);
+		memcpy(destAddr, payloadIn + 5, ADDR_LEN);
 		// Isolate the payload
 		int dataLen = payloadSize - 8;
 		uint8_t* extractedData = malloc(dataLen);
@@ -606,8 +616,8 @@ int processMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multi
 {
 	// Copy just the data portion over to the buffer
 	// This requires stripping out the header portion which will be 12 bytes
-	memcpy(multipartBuffer + *multipartSize, payloadPartIn + multipartHeaderLen, partSize - multipartHeaderLen);
-	*multipartSize += (partSize - multipartHeaderLen);
+	memcpy(multipartBuffer + *multipartSize, payloadPartIn + MULTIPART_HDR_LEN, partSize - MULTIPART_HDR_LEN);
+	*multipartSize += (partSize - MULTIPART_HDR_LEN);
 
 	// Check if it was the last part
 	// We do this currently by seeing if the piece number is equal to the total number of pieces

@@ -15,14 +15,16 @@
 #include "rdasutils.h"
 // TODO: Reference additional headers your program requires here.
 
+// Constants
+#define HDR_LEN 2
+#define ADDR_LEN 3
+#define MAX_PAYLOAD_LEN 192
+#define MULTIPART_HDR_LEN 12
+#define MULTIPART_PIECE_INFO_LEN 4
+
 //node settings (for now)
 uint8_t myaddr[] = { 0x0A, 0x05, 0x04 };
 uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
-
-uint8_t hdrlen = 2;
-uint8_t addrlen = 3;
-uint8_t maxPayloadLen = 192;
-uint8_t multipartHeaderLen = 12;
 
 int USB = 0;
 char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport
