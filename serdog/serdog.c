@@ -13,7 +13,7 @@ int pollEnable = 0;
 
 int charsinbuffer = 0;
 
-int openport()
+int openPort()
 {
 	printf("Trying to open %s...\n", device);
 	USB = open(device, O_RDWR | O_NOCTTY); //should be nonblock for polling
@@ -109,7 +109,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	uint8_t currCommand = 0;
 	size_t cmdlength = 0;
 	uint8_t payloadlen = 0;
-	uint8_t txbytes[255 + 2]; //payload+hdrlen (cmd+payloadlenbyte)
+	uint8_t txbytes[255 + HDR_LEN]; //payload+hdrlen (cmd+payloadlenbyte)
 	int intcmd = cmdtype;
 	if (payload != NULL)
 	{
@@ -132,7 +132,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 		do
 		{
 			printf(" [%02X] ", payload[idx]);
-			txbytes[idx + 2] = payload[idx];//+2 because commandtype and payloadlen has been added
+			txbytes[idx + HDR_LEN] = payload[idx];//+2 because commandtype and payloadlen has been added
 			idx++;
 		} while (idx != payloadlen);
 	}
@@ -646,7 +646,7 @@ main()
 	USB = 0;     // File descriptor set to zero.
 	printf("SerDog starting...\n\n", NULL);
 
-	openport(); // Open the port
+	openPort(); // Open the port
 
 	init(); // Init the port parameters -- file descriptor (USB) will be set
 

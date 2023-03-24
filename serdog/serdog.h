@@ -32,7 +32,7 @@ struct termios tty;
 struct termios tty_old;
 
 //mi protos
-int openport();
+int openPort();
 int init();
 int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload);
 int cmdSetLocalAddress(int region, int community, int node);
@@ -41,6 +41,7 @@ int cmdGetLocalAddress();
 int cmdGetHardwareInfo();
 int cmdSendPingCmd(uint8_t* inAddr);
 int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, uint8_t customPayloadLen);
+int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID);
 int isCmd(uint8_t inByte);
 
 //command processing convenience utils
