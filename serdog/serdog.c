@@ -303,12 +303,11 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 	// Note that the payload length includes the 6 bytes used for addressing
 	uint8_t cmdType = HOST_FORMED_PACKET;
 	// Combined payload length will be cmd type and payload length + size of the two addresses (6 bytes) + custom payload length
-	int offset = 0;
 	size_t totalPayloadSize = customPayloadLen + HDR_LEN + ADDR_LEN + ADDR_LEN;
 	uint8_t* combinedPayload = malloc(totalPayloadSize);
 	combinedPayload[0] = cmdType;
 	combinedPayload[1] = totalPayloadSize - HDR_LEN; // Ignore the type and size in this count (i.e. ignore the header)
-	offset += HDR_LEN;
+	int offset = HDR_LEN;
 	memcpy(combinedPayload + offset, inAddr, ADDR_LEN);
 	offset += ADDR_LEN;
 	memcpy(combinedPayload + offset, destAddr, ADDR_LEN);
@@ -336,7 +335,6 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 	int currPayloadLen = 0;
 	for (int i = 1; i < totalNumParts + 1; i++)
 	{
-		int offset = 0;
 		currentPacket[0] = cmdType;
 		if (payloadLeft >= MAX_PAYLOAD_LEN)
 		{
@@ -348,7 +346,7 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 
 		}
 		currentPacket[1] = currPayloadLen + MULTIPART_HDR_LEN - HDR_LEN;
-		offset += HDR_LEN;
+		int offset = HDR_LEN;
 		memcpy(currentPacket + offset, inAddr, ADDR_LEN);
 		offset += ADDR_LEN;
 		memcpy(currentPacket + offset, destAddr, ADDR_LEN);
@@ -488,10 +486,10 @@ void* serialPollThread(void* threadid)
 
 int isCompleteCmd(uint8_t* inBuf, int charsReceived)
 {
-	if (charsReceived >= 2)
+	if (charsReceived >= HDR_LEN)
 	{
 		printf("int inbuf %i %i %i\n", (int)inBuf[0], (int)inBuf[1], (int)inBuf[2]);
-		if (isCmd(inBuf[0]) && (int)inBuf[1] == charsReceived - 2)
+		if (isCmd(inBuf[0]) && (int)inBuf[1] == charsReceived - HDR_LEN)
 		{
 			printf("charsReceived: %i\n", charsReceived);
 			return ((int)inBuf[1]);
@@ -573,14 +571,17 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 	case HOST_FORMED_PACKET:
 		printf("Received host formed packet!\n");
 		// Strip off the sender and dest address
+		int offset = HDR_LEN;
 		uint8_t senderAddr[3];
-		memcpy(senderAddr, payloadIn + 2, ADDR_LEN);
+		memcpy(senderAddr, payloadIn + HDR_LEN, ADDR_LEN);
+		offset += ADDR_LEN;
 		uint8_t destAddr[3];
-		memcpy(destAddr, payloadIn + 5, ADDR_LEN);
+		memcpy(destAddr, payloadIn + offset, ADDR_LEN);
+		offset += ADDR_LEN;
 		// Isolate the payload
-		int dataLen = payloadSize - 8;
+		int dataLen = payloadSize - offset;
 		uint8_t* extractedData = malloc(dataLen);
-		memcpy(extractedData, payloadIn + 8, dataLen);
+		memcpy(extractedData, payloadIn + offset, dataLen);
 		printf("Sender Address:\n");
 		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
 		printf("Destination Address:\n");
