@@ -34,6 +34,11 @@ namespace RadioDoge
             {
                 return $"{region}.{community}.{node}";
             }
+
+            public byte[] ToByteArray()
+            {
+                return new byte[] { region, community, node };
+            }
         }
 
         private enum SerialCommandType
@@ -74,16 +79,12 @@ namespace RadioDoge
                     destinationAddress = GetUserSetAddress();
                     byte[] setHeader = CreateCommandHeader((byte)commandType, 3);
                     commandBytes.AddRange(setHeader);
-                    commandBytes.Add(localAddress.region);
-                    commandBytes.Add(localAddress.community);
-                    commandBytes.Add(localAddress.node);
+                    commandBytes.AddRange(localAddress.ToByteArray());
                     break;
                 case SerialCommandType.Ping:
                     byte[] pingHeader = CreateCommandHeader((byte)commandType, 3);
                     commandBytes.AddRange(pingHeader);
-                    commandBytes.Add(destinationAddress.region);
-                    commandBytes.Add(destinationAddress.community);
-                    commandBytes.Add(destinationAddress.node);
+                    commandBytes.AddRange(destinationAddress.ToByteArray());
                     break;
                 case SerialCommandType.Message:
                     Console.WriteLine("Enter message:");
@@ -92,12 +93,8 @@ namespace RadioDoge
                     byte payloadSize = (byte)(messageBytes.Length + 7);
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, payloadSize));
                     commandBytes.Add((byte)SerialCommandType.Message);
-                    commandBytes.Add(localAddress.region);
-                    commandBytes.Add(localAddress.community);
-                    commandBytes.Add(localAddress.node);
-                    commandBytes.Add(destinationAddress.region);
-                    commandBytes.Add(destinationAddress.community);
-                    commandBytes.Add(destinationAddress.node);
+                    commandBytes.AddRange(localAddress.ToByteArray());
+                    commandBytes.AddRange(destinationAddress.ToByteArray());
                     commandBytes.AddRange(messageBytes);
                     break;
                 case SerialCommandType.HardwareInfo:
@@ -110,12 +107,8 @@ namespace RadioDoge
                     byte messageSize = (byte)(convertedMessageBytes.Length + 6);
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, (byte)(messageSize + 2)));
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, messageSize));
-                    commandBytes.Add(localAddress.region);
-                    commandBytes.Add(localAddress.community);
-                    commandBytes.Add(localAddress.node);
-                    commandBytes.Add(destinationAddress.region);
-                    commandBytes.Add(destinationAddress.community);
-                    commandBytes.Add(destinationAddress.node);
+                    commandBytes.AddRange(localAddress.ToByteArray());
+                    commandBytes.AddRange(destinationAddress.ToByteArray());
                     commandBytes.AddRange(convertedMessageBytes);
                     break;
                 case SerialCommandType.MultipartPacket:
@@ -172,15 +165,11 @@ namespace RadioDoge
                 currPacketBytes.AddRange(packetHeader);
 
                 // Add in address information
-                currPacketBytes.Add(localAddress.region);
-                currPacketBytes.Add(localAddress.community);
-                currPacketBytes.Add(localAddress.node);
-                currPacketBytes.Add(destinationAddress.region);
-                currPacketBytes.Add(destinationAddress.community);
-                currPacketBytes.Add(destinationAddress.node);
+                currPacketBytes.AddRange(localAddress.ToByteArray());
+                currPacketBytes.AddRange(destinationAddress.ToByteArray());
 
                 // Add in multipacket count information
-                currPacketBytes.Add(123); // msg id for now
+                currPacketBytes.Add(123); // default msg id for now
                 currPacketBytes.Add(0); // reserved
                 currPacketBytes.Add((byte)i);
                 currPacketBytes.Add((byte)totalNumPackets);
