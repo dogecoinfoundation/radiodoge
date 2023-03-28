@@ -237,9 +237,11 @@ namespace RadioDoge
                 {
                     Console.WriteLine("The following serial ports were found:");
                     // Display each port name to the console.
+                    int portIndex = 0;
                     foreach (string port in ports)
                     {
-                        Console.WriteLine(port);
+                        Console.WriteLine($"{portIndex}: {port}");
+                        portIndex++;
                     }
 
                     // Try automatically connecting if there is only one available com port
@@ -248,6 +250,25 @@ namespace RadioDoge
                         Console.WriteLine($"Trying again with port {ports[0]}");
                         retryConnect = false;
                         return OpenPortHelper(ports[0]);
+                    }
+                    else if (ports.Length > 1)
+                    {
+                        // Ask user to specify which port they would like to open
+                        while(true)
+                        {
+                            Console.WriteLine($"Enter a port index: 0-{ports.Length - 1}");
+                            bool parseSuccess = int.TryParse(Console.ReadLine(), out int selectedIndex);
+                            if (parseSuccess && selectedIndex >= 0 && selectedIndex < ports.Length)
+                            {
+                                Console.WriteLine($"Trying again with port {ports[selectedIndex]}");
+                                retryConnect = false;
+                                return OpenPortHelper(ports[selectedIndex]);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Invalid selection!");
+                            }
+                        }
                     }
                 }
                 else
