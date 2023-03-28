@@ -1,6 +1,4 @@
-﻿using RadioDoge;
-
-namespace SharpDoge
+﻿namespace RadioDoge
 {
     public class Program
     {

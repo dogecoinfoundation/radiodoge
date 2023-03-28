@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO.Ports;
+﻿using System.IO.Ports;
 using System.Text;
-using System.Threading;
 
 namespace RadioDoge
 {
@@ -18,28 +15,7 @@ namespace RadioDoge
         private readonly byte terminator = 255;
         private const int MAX_PAYLOAD_BYTES = 192;
         private bool retryConnect = true;
-
-        class NodeAddress
-        {
-            public byte region, community, node;
-
-            public NodeAddress(byte region, byte community, byte node)
-            {
-                this.region = region;
-                this.community = community;
-                this.node = node;
-            }
-
-            public override string ToString()
-            {
-                return $"{region}.{community}.{node}";
-            }
-
-            public byte[] ToByteArray()
-            {
-                return new byte[] { region, community, node };
-            }
-        }
+        private MultipartPacket currMultipartPacket = new MultipartPacket();
 
         private enum SerialCommandType
         {
@@ -51,6 +27,7 @@ namespace RadioDoge
             HardwareInfo = 0x3f, //Translates to sending '?'
             HostFormedPacket = 0x68, // Translates to sending 'h'
             MultipartPacket = 0x6D, // Translates to sending 'm'
+            ResultCode = 0xFE
         }
 
         public void Execute()
@@ -113,7 +90,7 @@ namespace RadioDoge
                     break;
                 case SerialCommandType.MultipartPacket:
                     SendMultipartMessage();
-                    // No need to continue as it is all handled in the SendMultipartMessage function so we will just return
+                    // No need to continue as sending the message is all handled in the SendMultipartMessage function so we will just return
                     return;
                 default:
                     ConsoleWriteEmphasizedLine("Unknown command", ConsoleColor.Red);
@@ -317,7 +294,7 @@ namespace RadioDoge
         {
             // Show all the incoming data in the port's buffer
             Thread.Sleep(500);
-            int commandType = port.ReadByte();
+            SerialCommandType commandType = (SerialCommandType)port.ReadByte();
             int payloadSize = port.ReadByte();
             byte[] payload = new byte[payloadSize];
             while (port.BytesToRead < payloadSize)
@@ -325,7 +302,28 @@ namespace RadioDoge
                 Thread.Sleep(50);
             }
             port.Read(payload, 0, payloadSize);
-            Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
+            if (commandType == SerialCommandType.MultipartPacket)
+            {
+                PacketReconstructionCode result = currMultipartPacket.AddPacketPiece(payload);
+                if (result == PacketReconstructionCode.Complete)
+                {
+                    Console.WriteLine(currMultipartPacket.ToString());
+                    byte[] completePayload = currMultipartPacket.GetPayload();
+                    PrintPayloadAsHex(completePayload);
+                    // @TODO do something useful with the payload
+                    currMultipartPacket = new MultipartPacket();
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
+                PrintPayloadAsHex(payload);
+                ProcessPayload(commandType, payload);
+            }
+        }
+
+        private void PrintPayloadAsHex(byte[] payload)
+        {
             StringBuilder hex = new StringBuilder(payload.Length * 2);
             foreach (byte b in payload)
             {
@@ -334,12 +332,53 @@ namespace RadioDoge
             Console.WriteLine(hex.ToString());
         }
 
+        private void ProcessPayload(SerialCommandType commandType, byte[] payload)
+        {
+            switch(commandType)
+            {
+                case SerialCommandType.GetAddress:
+                    ConsoleWriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
+                    break;
+                case SerialCommandType.HardwareInfo:
+                    if ((char)payload[0] == 'h')
+                    {
+                        ConsoleWriteEmphasizedLine($"Heltec LoRa WiFi LoRa 32 (V{payload[1]})\nFirmware version {payload[2]}", ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        ConsoleWriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
+                    }
+                    break;
+                case SerialCommandType.HostFormedPacket:
+                    // Extract address info
+                    // @TODO
+                    // Extract raw payload
+                    // @TODO
+                    break;
+                case SerialCommandType.Message:
+                    break;
+                case SerialCommandType.ResultCode:
+                    if (payload[0] == 0x06)
+                    {
+                        ConsoleWriteEmphasizedLine("Device ACK'd Command", ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        ConsoleWriteEmphasizedLine("ERROR: Device sent a NACK!", ConsoleColor.Red);
+                    }
+                    break;
+                default:
+                    ConsoleWriteEmphasizedLine("Unknown payload type!", ConsoleColor.Red);
+                    break;
+            }
+        }
+
         private void PrintCommandHelp()
         {
             ConsoleWriteEmphasizedLine("Available Commands:", ConsoleColor.Magenta);
             foreach (int i in Enum.GetValues(typeof(SerialCommandType)))
             {
-                if (i < (int)'!')
+                if (i < (int)'!' || i > (int)'z')
                 {
                     ConsoleWriteEmphasizedLine($"{i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
                 }

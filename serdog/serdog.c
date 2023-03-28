@@ -71,7 +71,6 @@ int init()
 	tty.c_cc[VMIN] = 1;				   // read doesn't block (1 vmin.)
 	tty.c_cc[VTIME] = 0;			   // no read timeout
 
-
 	tty.c_iflag &= ~(IXON | IXOFF | IXANY);  // Disable XON/XOFF flow control both i/p and o/p 
 	tty.c_oflag &= ~OPOST;//No Output Processing
 	// Setting Time outs 
@@ -199,9 +198,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 int cmdSetLocalAddress(int region, int community, int node)
 {
 	int cmdtype = ADDRESS_SET; //we're working with address set for all of this
-
 	uint8_t payload[3] = { (uint8_t)region,(uint8_t)community,(uint8_t)node };
-
 	sendCommand(cmdtype, 3, payload);
 }
 
@@ -231,7 +228,6 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 	}
 	else
 	{
-
 		printf("Error getting response length.\n");
 		resplen = -1;
 		return -1;
@@ -285,7 +281,6 @@ int cmdSendPingCmd(uint8_t* inAddr)
 	uint8_t cmdtype = PING_REQUEST;
 	int payloadsize = 3;
 	uint8_t payload[3] = { inAddr[0],inAddr[1],inAddr[2] };
-
 	sendCommand(cmdtype, payloadsize, payload);
 };
 
@@ -352,10 +347,10 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 		memcpy(currentPacket + offset, destAddr, ADDR_LEN);
 		offset += ADDR_LEN;
 		// Now include multipart info
-		currentPacket[8] = messageID;
-		currentPacket[9] = 0; // for now we will reserve this one byte
-		currentPacket[10] = (uint8_t)(i);
-		currentPacket[11] = (uint8_t)totalNumParts;
+		currentPacket[offset] = messageID;
+		currentPacket[offset + 1] = 0; // for now we will reserve this one byte
+		currentPacket[offset + 2] = (uint8_t)(i);
+		currentPacket[offset + 3] = (uint8_t)totalNumParts;
 		offset += MULTIPART_PIECE_INFO_LEN;
 		memcpy(currentPacket + offset, customPayload + payloadInd, currPayloadLen);
 		sendCommand(cmdType, currPayloadLen + MULTIPART_HDR_LEN, currentPacket);
@@ -366,21 +361,7 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 	}
 }
 
-/// <summary>
-/// Something is wrong with this print function. Seems like it maxes out at a size of 8 no matter what??? I believe it has to do with the sizeof()
-/// </summary>
-/// <param name="arrayIn"></param>
-void printByteArray(uint8_t* arrayIn)
-{
-	printf("\nPrinting array of size %d\n", sizeof(arrayIn));
-	for (int nx = 0; nx < sizeof(arrayIn); nx++)
-	{
-		printf("[%02X]", arrayIn[nx]);
-	}
-	printf("\n");
-}
-
-void printByteArrayOfLength(uint8_t* arrayIn, int length)
+void printByteArray(uint8_t* arrayIn, int length)
 {
 	for (int nx = 0; nx < length; nx++)
 	{
@@ -450,13 +431,13 @@ void* serialPollThread(void* threadid)
 				if (rxbuffer[0] == MULTIPART_PACKET)
 				{
 					printf("**Partial Payload (with packet header)**\n");
-					printByteArrayOfLength(rxbuffer, totalRxChars);
+					printByteArray(rxbuffer, totalRxChars);
 					int processResult = processMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex);
 					if (processResult)
 					{
-						// @TODO do something with entire payload
+						// @TODO do something with entire payload besides just printing it
 						printf("Fully reassembled payload!\n");
-						printByteArrayOfLength(multipartBuffer, multipartIndex);
+						printByteArray(multipartBuffer, multipartIndex);
 
 						// Reset multipart count values
 						multipartIndex = 0;
@@ -465,12 +446,12 @@ void* serialPollThread(void* threadid)
 				else
 				{
 					printf("**Complete Payload (with packet header)**\n");
-					printByteArrayOfLength(rxbuffer, totalRxChars);
+					printByteArray(rxbuffer, totalRxChars);
 					processPayload(rxbuffer, totalRxChars);
 					// @TODO do something else with the payload
 				}
 
-				// Assume at this point we processed the payload
+				// At this point we processed the payload
 				// Therefore we will reset the buffer's received character size to 0 allowing it to be rewritten on next receive
 				totalRxChars = 0;
 			}
@@ -587,7 +568,7 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		printf("Destination Address:\n");
 		printf("%i.%i.%i\n", payloadIn[5], payloadIn[6], payloadIn[7]);
 		printf("Data:\n");
-		printByteArrayOfLength(extractedData, dataLen);
+		printByteArray(extractedData, dataLen);
 		free(extractedData);
 		break;
 	case MULTIPART_PACKET:
@@ -683,7 +664,7 @@ main()
 		customTestPayload[i] = (uint8_t)(i % 256);
 	}
 	printf("\nCustom Payload:\n");
-	printByteArrayOfLength(customTestPayload, custSize);
+	printByteArray(customTestPayload, custSize);
 	//cmdSendMessage(myaddr, rmaddr, customTestPayload, custSize);
 	cmdSendMultipartMessage(myaddr, rmaddr, customTestPayload, custSize, 123);
 
