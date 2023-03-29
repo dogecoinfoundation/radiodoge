@@ -2,17 +2,11 @@
 #define RADIO_DOGE_TYPES
 
 #pragma once
-enum messageType {
-	UNKNOWN,
-	ACK,
-	PING,
-	MESSAGE
-};
-
-enum serialCommand {
+enum serialCommand 
+{
 	NONE,
-	ADDRESS_GET,
-	ADDRESS_SET,
+	NODE_ADDRESS_GET,
+	NODE_ADDRESS_SET,
 	PING_REQUEST,
 	MESSAGE_REQUEST,
 	HARDWARE_INFO = 63,        //0x3f = '?'
@@ -21,9 +15,16 @@ enum serialCommand {
 	RESULT_CODE=254 //0xFE
 };
 
-enum resultCode {
+enum resultCode 
+{
 	RESULT_ACK=6, // 0x06 = 'ACK'
 	RESULT_NACK=21 // 0x15 = 'NAK'
+};
+
+enum dogeCommand 
+{
+	GET_DOGE_ADDRESS = 120,
+	SEND_DOGE_ADDRESS = 240
 };
 
 struct nodeAddress {

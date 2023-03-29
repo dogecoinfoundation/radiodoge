@@ -20,14 +20,20 @@ namespace RadioDoge
         private enum SerialCommandType
         {
             None,
-            GetAddress,
-            SetAddresses,
+            GetNodeAddress,
+            SetNodeAddresses,
             Ping,
             Message,
             HardwareInfo = 0x3f, //Translates to sending '?'
             HostFormedPacket = 0x68, // Translates to sending 'h'
             MultipartPacket = 0x6D, // Translates to sending 'm'
             ResultCode = 0xFE
+        }
+
+        private enum DogeCommands
+        {
+            GetDogeAddress = 120,
+            SendDogeAddress = 240,
         }
 
         public void Execute()
@@ -46,10 +52,10 @@ namespace RadioDoge
             ConsoleWriteEmphasizedLine($"Sending Command: {commandType}", ConsoleColor.Yellow);
             switch (commandType)
             {
-                case SerialCommandType.GetAddress:
+                case SerialCommandType.GetNodeAddress:
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, 0));
                     break;
-                case SerialCommandType.SetAddresses:
+                case SerialCommandType.SetNodeAddresses:
                     ConsoleWriteEmphasizedLine("Please set the local address...", ConsoleColor.Cyan);
                     localAddress = GetUserSetAddress();
                     ConsoleWriteEmphasizedLine("Please set the destination address...", ConsoleColor.Cyan);
@@ -78,18 +84,26 @@ namespace RadioDoge
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, 0));
                     break;
                 case SerialCommandType.HostFormedPacket:
+                    /*
                     ConsoleWriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMessage = Console.ReadLine();
                     byte[] convertedMessageBytes = Encoding.ASCII.GetBytes(readMessage);
-                    byte messageSize = (byte)(convertedMessageBytes.Length + 6);
-                    commandBytes.AddRange(CreateCommandHeader((byte)commandType, (byte)(messageSize + 2)));
-                    commandBytes.AddRange(CreateCommandHeader((byte)commandType, messageSize));
-                    commandBytes.AddRange(localAddress.ToByteArray());
-                    commandBytes.AddRange(destinationAddress.ToByteArray());
-                    commandBytes.AddRange(convertedMessageBytes);
-                    break;
+                    SendPacket(destinationAddress,convertedMessageBytes);
+                    */
+                    RequestDogeCoinAddress(destinationAddress);
+                    return;
                 case SerialCommandType.MultipartPacket:
-                    SendMultipartMessage();
+                    /*
+                    ConsoleHelper.ConsoleWriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
+                    string readMultipartMessage = Console.ReadLine();
+                    byte[] convertedMultipartMessageBytes = Encoding.ASCII.GetBytes(readMultipartMessage);
+                    */
+                    byte[] convertedMultipartMessageBytes = new byte[1024];
+                    for (int i = 0; i < convertedMultipartMessageBytes.Length; i++)
+                    {
+                        convertedMultipartMessageBytes[i] = (byte)(i % 256);
+                    }
+                    SendMultipartPacket(convertedMultipartMessageBytes);
                     // No need to continue as sending the message is all handled in the SendMultipartMessage function so we will just return
                     return;
                 default:
@@ -101,27 +115,35 @@ namespace RadioDoge
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 
-        private void SendMultipartMessage()
+        private void SendPacket(NodeAddress destAddress, byte[] payload)
+        {
+            List<byte> packetBytes = new List<byte>(payload.Length + 6);
+            byte commandType = (byte)SerialCommandType.HostFormedPacket;
+            byte messageSize = (byte)(payload.Length + 6);
+            packetBytes.AddRange(CreateCommandHeader((byte)commandType, (byte)(messageSize + 2)));
+            packetBytes.AddRange(CreateCommandHeader((byte)commandType, messageSize));
+            packetBytes.AddRange(localAddress.ToByteArray());
+            packetBytes.AddRange(destAddress.ToByteArray());
+            packetBytes.AddRange(payload);
+
+            // Send out the packet now
+            byte[] commandToSend = packetBytes.ToArray();
+            PrintCommandBytes(commandToSend);
+            port.Write(commandToSend, 0, commandToSend.Length);
+        }
+
+        private void SendMultipartPacket(byte[] multipartPayload)
         {
             byte commandType = (byte)SerialCommandType.MultipartPacket;
-            /*
-            ConsoleHelper.ConsoleWriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
-            string readMultipartMessage = Console.ReadLine();
-            byte[] convertedMultipartMessageBytes = Encoding.ASCII.GetBytes(readMultipartMessage);
-            */
-            byte[] convertedMultipartMessageBytes = new byte[1024];
-            for (int i = 0; i < convertedMultipartMessageBytes.Length; i++)
-            {
-                convertedMultipartMessageBytes[i] = (byte)(i % 256);
-            }
+
             // Determine how many packets we are going to create
-            int totalNumPackets = convertedMultipartMessageBytes.Length / MAX_PAYLOAD_BYTES;
-            if (convertedMultipartMessageBytes.Length % MAX_PAYLOAD_BYTES != 0)
+            int totalNumPackets = multipartPayload.Length / MAX_PAYLOAD_BYTES;
+            if (multipartPayload.Length % MAX_PAYLOAD_BYTES != 0)
             {
                 totalNumPackets++;
             }
             List<byte> currPacketBytes = new List<byte>();
-            int payloadLeft = convertedMultipartMessageBytes.Length;
+            int payloadLeft = multipartPayload.Length;
             int payloadInd = 0;
             int currPayloadLength = 0;
             for (int i = 1; i < totalNumPackets + 1; i++)
@@ -153,7 +175,7 @@ namespace RadioDoge
 
                 // Add in payload now
                 byte[] currPayload = new byte[currPayloadLength];
-                Array.Copy(convertedMultipartMessageBytes, payloadInd, currPayload, 0, currPayloadLength);
+                Array.Copy(multipartPayload, payloadInd, currPayload, 0, currPayloadLength);
                 payloadInd += currPayloadLength;
                 payloadLeft -= currPayloadLength;
                 currPacketBytes.AddRange(currPayload);
@@ -165,6 +187,13 @@ namespace RadioDoge
                 currPacketBytes.Clear();
                 Thread.Sleep(1000);
             }
+        }
+
+        private void RequestDogeCoinAddress(NodeAddress destNode)
+        {
+            // Create payload
+            byte[] payload = new byte[]{ (byte)DogeCommands.GetDogeAddress };
+            SendPacket(destNode, payload);
         }
 
         private byte[] CreateCommandHeader(byte commandType, byte payloadSize)
@@ -357,7 +386,7 @@ namespace RadioDoge
         {
             switch(commandType)
             {
-                case SerialCommandType.GetAddress:
+                case SerialCommandType.GetNodeAddress:
                     ConsoleWriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
                     break;
                 case SerialCommandType.HardwareInfo:

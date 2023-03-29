@@ -198,7 +198,7 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 
 int cmdSetLocalAddress(int region, int community, int node)
 {
-	int cmdtype = ADDRESS_SET; //we're working with address set for all of this
+	int cmdtype = NODE_ADDRESS_SET; //we're working with address set for all of this
 	uint8_t payload[3] = { (uint8_t)region,(uint8_t)community,(uint8_t)node };
 	sendCommand(cmdtype, 3, payload);
 }
@@ -266,7 +266,7 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 int cmdGetLocalAddress()
 {
 	//no payload = 0.
-	uint8_t cmdtype = ADDRESS_GET;
+	uint8_t cmdtype = NODE_ADDRESS_GET;
 	sendCommand(cmdtype, 0, 0);
 };
 
@@ -313,6 +313,20 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 	sendCommand(cmdType, totalPayloadSize, combinedPayload);
 	free(combinedPayload);
 };
+
+cmdRequestDogeAddress(uint8_t* inAddr, uint8_t* destAddr)
+{
+	uint8_t requestPayload[1] = { GET_DOGE_ADDRESS };
+	cmdSendMessage(inAddr, destAddr, requestPayload, 1);
+}
+
+cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+{
+	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
+	payload[0] = SEND_DOGE_ADDRESS;
+	memcpy(payload + 1, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
+}
 
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
 {
@@ -386,9 +400,13 @@ void* serialPollThread(void* threadid)
 	ssize_t totalRxChars = 0;
 	int rxPayloadSize = -1;
 
+	// Single packet payload storage
+	uint8_t dataBuffer[255] = { 0 };
+
 	// Multipart payload related variables
 	uint8_t multipartBuffer[4096] = { 0 };
 	int multipartIndex = 0;
+	uint8_t senderAddress[3] = { 0 };
 
 	do
 	{
@@ -433,23 +451,30 @@ void* serialPollThread(void* threadid)
 				{
 					printf("**Partial Payload (with packet header)**\n");
 					printByteArray(rxbuffer, totalRxChars);
-					int processResult = processMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex);
+					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex);
 					if (processResult)
 					{
 						// @TODO do something with entire payload besides just printing it
 						printf("Fully reassembled payload!\n");
 						printByteArray(multipartBuffer, multipartIndex);
+						processDogePayload(multipartBuffer, multipartIndex);
 
 						// Reset multipart count values
 						multipartIndex = 0;
 					}
 				}
-				else
+				else if (rxbuffer[0] == HOST_FORMED_PACKET)
 				{
 					printf("**Complete Payload (with packet header)**\n");
 					printByteArray(rxbuffer, totalRxChars);
-					processPayload(rxbuffer, totalRxChars);
+					parseHostFormedPacket(senderAddress, dataBuffer, rxbuffer, totalRxChars);
 					// @TODO do something else with the payload
+					processDogePayload(senderAddress, dataBuffer, totalRxChars - SINGLE_PACKET_HDR_LEN);
+				}
+				else
+				{
+					// Parse as a cmd payload
+					processCommandPayload(rxbuffer, totalRxChars);
 				}
 
 				// At this point we processed the payload
@@ -464,6 +489,27 @@ void* serialPollThread(void* threadid)
 	} while (pollEnable == 1);
 	printf("*** THREAD: Exiting thread %d ..\n", thisid);
 	pthread_exit(0);
+}
+
+void parseHostFormedPacket(uint8_t* senderAddr, uint8_t* extractedDataBuffer, uint8_t* payloadIn, int payloadSize)
+{
+	printf("Received host formed packet!\n");
+	// Strip off the sender and dest address
+	int offset = HDR_LEN;
+	memcpy(senderAddr, payloadIn + HDR_LEN, ADDR_LEN);
+	offset += ADDR_LEN;
+	uint8_t destAddr[3];
+	memcpy(destAddr, payloadIn + offset, ADDR_LEN);
+	offset += ADDR_LEN;
+	// Isolate the payload
+	int dataLen = payloadSize - offset;
+	memcpy(extractedDataBuffer, payloadIn + offset, dataLen);
+	printf("Sender Address:\n");
+	printf("%i.%i.%i\n", senderAddr[0], senderAddr[1], senderAddr[2]);
+	printf("Destination Address:\n");
+	printf("%i.%i.%i\n", destAddr[0], destAddr[1], destAddr[2]);
+	printf("Data:\n");
+	printByteArray(extractedDataBuffer, dataLen);
 }
 
 int isCompleteCmd(uint8_t* inBuf, int charsReceived)
@@ -491,11 +537,11 @@ int isCmd(uint8_t inByte)
 {
 	switch ((int)inByte)
 	{
-	case ADDRESS_GET:
-		return (int)ADDRESS_GET;
+	case NODE_ADDRESS_GET:
+		return (int)NODE_ADDRESS_GET;
 		break;
-	case ADDRESS_SET:
-		return (int)ADDRESS_SET;
+	case NODE_ADDRESS_SET:
+		return (int)NODE_ADDRESS_SET;
 		break;
 	case PING_REQUEST:
 		return (int)PING_REQUEST;
@@ -521,15 +567,31 @@ int isCmd(uint8_t inByte)
 	}
 }
 
-void processPayload(uint8_t* payloadIn, int payloadSize)
+void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize)
 {
 	switch (payloadIn[0])
 	{
-	case ADDRESS_GET:
-		printf("Local node address:\n");
-		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
+	case GET_DOGE_ADDRESS:
+		printf("Send Doge Address Request received!\n");
+		sendDogeAddressTest(senderAddr);
 		break;
-	case ADDRESS_SET:
+	case SEND_DOGE_ADDRESS:
+		printf("Received Doge Address!\n");
+		break;
+	default:
+		printf("Unknown payload received!\n");
+		break;
+	}
+}
+
+void processCommandPayload(uint8_t* payloadIn, int payloadSize)
+{
+	switch (payloadIn[0])
+	{
+	case NODE_ADDRESS_GET:
+		printf("Local node address: %i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
+		break;
+	case NODE_ADDRESS_SET:
 		// Should not see this
 		// This command will just be ACK'd
 		break;
@@ -543,7 +605,7 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		printf("Hardware info received from device!\n");
 		if ((char)payloadIn[2] == 'h')
 		{
-			printf("Heltec WiFi LoRa 32 (V%i)\nFirmware version %i\n", payloadIn[3], payloadIn[4]);
+			printf("Heltec WiFi LoRa 32 (V%i) - Firmware version %i\n", payloadIn[3], payloadIn[4]);
 		}
 		else
 		{
@@ -551,29 +613,10 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 		}
 		break;
 	case HOST_FORMED_PACKET:
-		printf("Received host formed packet!\n");
-		// Strip off the sender and dest address
-		int offset = HDR_LEN;
-		uint8_t senderAddr[3];
-		memcpy(senderAddr, payloadIn + HDR_LEN, ADDR_LEN);
-		offset += ADDR_LEN;
-		uint8_t destAddr[3];
-		memcpy(destAddr, payloadIn + offset, ADDR_LEN);
-		offset += ADDR_LEN;
-		// Isolate the payload
-		int dataLen = payloadSize - offset;
-		uint8_t* extractedData = malloc(dataLen);
-		memcpy(extractedData, payloadIn + offset, dataLen);
-		printf("Sender Address:\n");
-		printf("%i.%i.%i\n", payloadIn[2], payloadIn[3], payloadIn[4]);
-		printf("Destination Address:\n");
-		printf("%i.%i.%i\n", payloadIn[5], payloadIn[6], payloadIn[7]);
-		printf("Data:\n");
-		printByteArray(extractedData, dataLen);
-		free(extractedData);
+		printf("ERROR: Received host formed packet when a command packet was expected\n");
 		break;
 	case MULTIPART_PACKET:
-		printf("ERROR: Received multipart packet when a single part packet was expected!\n");
+		printf("ERROR: Received multipart packet when a command packet was expected!\n");
 		break;
 	case RESULT_CODE:
 		if (payloadIn[2] == RESULT_ACK)
@@ -595,7 +638,7 @@ void processPayload(uint8_t* payloadIn, int payloadSize)
 // NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
 // Also there will be issues if we receive multipart packets from multiple nodes simultaneously as it doesn't do anything with the msg id
 // This just reassembles the pieces for now
-int processMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize)
+int parseMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize)
 {
 	// Copy just the data portion over to the buffer
 	// This requires stripping out the header portion which will be 12 bytes
@@ -635,8 +678,22 @@ int testLib(char* addrbuffer)
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
 	generatePrivPubKeypair(keybuffer, addrbuffer, false);
 
-	//If the returned address starts with "d" then reteurn good/true/"1".
+	//If the returned address starts with "d" then return good/true/"1".
 	return (1-(strncmp(addrbuffer, addrheader, 1)));
+}
+
+int sendDogeAddressTest(uint8_t* destAddr)
+{
+	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
+	char addrbuffer[P2PKH_ADDR_STRINGLEN];
+	//create a buffer the size of a private key (wallet import format uncompressed key length)
+	//this constant is in include/constants.h, included via libdogecoin.h
+	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
+	generatePrivPubKeypair(keybuffer, addrbuffer, false);
+	printf("Sending Test Address: % s \n", addrbuffer);
+
+	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
 main()
@@ -659,16 +716,8 @@ main()
 		printf("Libdogecoin not responding or error. \n");
 	}
 
-	//Stop the libdogecoin ecc 
-	dogecoin_ecc_stop();
-
-
 	USB = 0;     // File descriptor set to zero.
 	printf("\nSerDog starting...\n\n", NULL);
-
-
-
-
 
 	openPort(); // Open the port
 
@@ -724,6 +773,8 @@ main()
 	do {
 		sleep(1);
 	} while (pthread_join(serThreadID, NULL));
+	//Stop the libdogecoin ecc 
+	dogecoin_ecc_stop();
 	return 0;
 }
 
