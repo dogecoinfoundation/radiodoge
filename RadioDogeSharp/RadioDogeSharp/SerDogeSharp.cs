@@ -360,16 +360,32 @@ namespace RadioDoge
                     Console.WriteLine(currMultipartPacket.ToString());
                     byte[] completePayload = currMultipartPacket.GetPayload();
                     PrintPayloadAsHex(completePayload);
+                    ProcessDogePayload(completePayload);
                     // @TODO do something useful with the payload
                     currMultipartPacket = new MultipartPacket();
                 }
+            }
+            else if (commandType == SerialCommandType.HostFormedPacket)
+            {
+                Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
+                byte[] dataPayload = ExtractHostFormedPacketData(payload, out NodeAddress currSenderAddr);
+                ProcessDogePayload(dataPayload);
             }
             else
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
                 PrintPayloadAsHex(payload);
-                ProcessPayload(commandType, payload);
+                ProcessCommandPayload(commandType, payload);
             }
+        }
+
+        private byte[] ExtractHostFormedPacketData(byte[] rawPayload, out NodeAddress senderAddress)
+        {
+            senderAddress = new NodeAddress(rawPayload[0], rawPayload[1], rawPayload[2]);
+            int dataLen = rawPayload.Length - 6;
+            byte[] dataPortion = new byte[dataLen];
+            Array.Copy(rawPayload, 6, dataPortion, 0, dataLen);
+            return dataPortion;
         }
 
         private void PrintPayloadAsHex(byte[] payload)
@@ -382,7 +398,31 @@ namespace RadioDoge
             Console.WriteLine(hex.ToString());
         }
 
-        private void ProcessPayload(SerialCommandType commandType, byte[] payload)
+        private void ProcessDogePayload(byte[] payload)
+        {
+            DogeCommands commType = (DogeCommands)payload[0];
+            switch(commType)
+            {
+                case DogeCommands.SendDogeAddress:
+                    // This means we got sent a dogecoin address
+                    int addrLength = payload.Length - 1;
+                    char[] dogecoinAddress = new char[addrLength];
+                    Array.Copy(payload, 1, dogecoinAddress, 0, addrLength);
+                    string addressString = new string(dogecoinAddress);
+                    Console.WriteLine($"Received Dogecoin Address: {addressString}");
+                    break;
+                case DogeCommands.GetDogeAddress:
+                    // This means someone is requesting a dogecoin address
+                    // @TODO
+                    break;
+                default:
+                    Console.WriteLine("Unknown payload. Raw data:");
+                    PrintPayloadAsHex(payload);
+                    break;
+            }
+        }
+
+        private void ProcessCommandPayload(SerialCommandType commandType, byte[] payload)
         {
             switch(commandType)
             {
@@ -398,12 +438,6 @@ namespace RadioDoge
                     {
                         ConsoleWriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
                     }
-                    break;
-                case SerialCommandType.HostFormedPacket:
-                    // Extract address info
-                    // @TODO
-                    // Extract raw payload
-                    // @TODO
                     break;
                 case SerialCommandType.Message:
                     break;
