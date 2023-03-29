@@ -2,6 +2,7 @@
 //
 
 #include "serdog.h"
+#include "libdogecoin.h"
 #include <sys/poll.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -622,10 +623,52 @@ void waitForResponse(enum serialCommand cmdtype)
 	printf("\n");
 }
 
+int testLib(char* addrbuffer)
+{
+	//create a buffer the size of a private key (wallet import format uncompressed key length)
+	//this constant is in include/constants.h, included via libdogecoin.h
+	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+
+	//create a string to compare to; valid dogecoin addresses generated this way start with "D".
+	char* addrheader = "D";
+
+	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
+	generatePrivPubKeypair(keybuffer, addrbuffer, false);
+
+	//If the returned address starts with "d" then reteurn good/true/"1".
+	return (1-(strncmp(addrbuffer, addrheader, 1)));
+}
+
 main()
 {
+	printf("\nChecking for libdogecoin integration...\n\n", NULL);
+
+	//start the libdogecoin elliptical crypto mem space
+	dogecoin_ecc_start(); 
+
+	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
+	char returnedaddr[P2PKH_ADDR_STRINGLEN];
+
+	if (testLib(returnedaddr))
+	{
+		printf("Libdogecoin found.\n", NULL);
+	    printf("Libdogecoin TEST - randomly generated test addr : % s \n", returnedaddr);
+	}
+	else
+	{
+		printf("Libdogecoin not responding or error. \n");
+	}
+
+	//Stop the libdogecoin ecc 
+	dogecoin_ecc_stop();
+
+
 	USB = 0;     // File descriptor set to zero.
-	printf("SerDog starting...\n\n", NULL);
+	printf("\nSerDog starting...\n\n", NULL);
+
+
+
+
 
 	openPort(); // Open the port
 
