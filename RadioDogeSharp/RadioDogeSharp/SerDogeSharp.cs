@@ -9,7 +9,7 @@ namespace RadioDoge
     public class SerDogeSharp
     {
         private SerialPort port;
-        private int selectedPort = 3;
+        private const string DEFAULT_PORT = "COM3";
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private readonly byte terminator = 255;
@@ -17,50 +17,45 @@ namespace RadioDoge
         private bool retryConnect = true;
         private MultipartPacket currMultipartPacket = new MultipartPacket();
 
-        private enum SerialCommandType
-        {
-            None,
-            GetNodeAddress,
-            SetNodeAddresses,
-            Ping,
-            Message,
-            HardwareInfo = 0x3f, //Translates to sending '?'
-            HostFormedPacket = 0x68, // Translates to sending 'h'
-            MultipartPacket = 0x6D, // Translates to sending 'm'
-            ResultCode = 0xFE
-        }
-
-        private enum DogeCommands
-        {
-            GetDogeAddress = 120,
-            SendDogeAddress = 240,
-            GetBalance = 101,
-            SendBalance = 202
-        }
-
         public void Execute()
         {
-            string portToOpen = $"COM{selectedPort}";
-            if (OpenPortHelper(portToOpen))
+            ConsoleHelper.PrintTitleScreen();
+            SetupSerialConnection();
+        }
+
+        private void SetupSerialConnection()
+        {
+            Console.WriteLine("Setting up connection to LoRa module...");
+            if (OpenPortHelper(DEFAULT_PORT))
             {
+                ConsoleHelper.WriteEmphasizedLine("Connection to LoRa module successful!", ConsoleColor.Green);
                 SerialCommandLoop();
                 port.Close();
+            }
+            else
+            {
+                Console.WriteLine("Enter 'quit' to exit the program or anything else to try connecting again!");
+                string userInput = Console.ReadLine();           
+                if (!userInput.Equals("quit", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    SetupSerialConnection();
+                }
             }
         }
 
         private void SendCommand(SerialCommandType commandType)
         {
             List<byte> commandBytes = new List<byte>();
-            ConsoleWriteEmphasizedLine($"Sending Command: {commandType}", ConsoleColor.Yellow);
+            ConsoleHelper.WriteEmphasizedLine($"Sending Command: {commandType}", ConsoleColor.Yellow);
             switch (commandType)
             {
                 case SerialCommandType.GetNodeAddress:
                     commandBytes.AddRange(CreateCommandHeader((byte)commandType, 0));
                     break;
                 case SerialCommandType.SetNodeAddresses:
-                    ConsoleWriteEmphasizedLine("Please set the local address...", ConsoleColor.Cyan);
+                    ConsoleHelper.WriteEmphasizedLine("Please set the local address...", ConsoleColor.Cyan);
                     localAddress = GetUserSetAddress();
-                    ConsoleWriteEmphasizedLine("Please set the destination address...", ConsoleColor.Cyan);
+                    ConsoleHelper.WriteEmphasizedLine("Please set the destination address...", ConsoleColor.Cyan);
                     destinationAddress = GetUserSetAddress();
                     byte[] setHeader = CreateCommandHeader((byte)commandType, 3);
                     commandBytes.AddRange(setHeader);
@@ -87,7 +82,7 @@ namespace RadioDoge
                     break;
                 case SerialCommandType.HostFormedPacket:
                     /*
-                    ConsoleWriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
+                    ConsoleHelper.WriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMessage = Console.ReadLine();
                     byte[] convertedMessageBytes = Encoding.ASCII.GetBytes(readMessage);
                     SendPacket(destinationAddress,convertedMessageBytes);
@@ -96,7 +91,7 @@ namespace RadioDoge
                     return;
                 case SerialCommandType.MultipartPacket:
                     /*
-                    ConsoleHelper.ConsoleWriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
+                    ConsoleHelper.ConsoleHelper.WriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMultipartMessage = Console.ReadLine();
                     byte[] convertedMultipartMessageBytes = Encoding.ASCII.GetBytes(readMultipartMessage);
                     */
@@ -109,7 +104,7 @@ namespace RadioDoge
                     // No need to continue as sending the message is all handled in the SendMultipartMessage function so we will just return
                     return;
                 default:
-                    ConsoleWriteEmphasizedLine("Unknown command", ConsoleColor.Red);
+                    ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;
             }
             byte[] commandToSend = commandBytes.ToArray();
@@ -228,7 +223,7 @@ namespace RadioDoge
         {
             while (true)
             {
-                ConsoleWriteEmphasizedLine("Enter Desired Address (Format = Region.Community.Node):", ConsoleColor.Green);
+                ConsoleHelper.WriteEmphasizedLine("Enter Desired Address (Format = Region.Community.Node):", ConsoleColor.Green);
                 string fullAddress = Console.ReadLine();
                 string[] splitAddress = fullAddress.Split('.');
                 bool parseSuccess = false;
@@ -250,7 +245,7 @@ namespace RadioDoge
                 }
                 else
                 {
-                    ConsoleWriteEmphasizedLine("Unable to successfully parse address!", ConsoleColor.Red);
+                    ConsoleHelper.WriteEmphasizedLine("Unable to successfully parse address!", ConsoleColor.Red);
                 }
             }
         }
@@ -270,7 +265,7 @@ namespace RadioDoge
             }
             catch
             {
-                ConsoleWriteEmphasizedLine($"Failed to open up {portToOpen}", ConsoleColor.Red);
+                ConsoleHelper.WriteEmphasizedLine($"Failed to open up {portToOpen}", ConsoleColor.Red);
                 string[] ports = SerialPort.GetPortNames();
                 if (ports.Length > 0)
                 {
@@ -321,22 +316,22 @@ namespace RadioDoge
 
         private void SerialCommandLoop()
         {
-            PrintCommandHelp();
+            ConsoleHelper.PrintSerialCommandHelp();
 
             bool keepGoing = true;
             while (keepGoing)
             {
-                ConsoleWriteEmphasizedLine("===================\n|||Enter Command|||\n===================", ConsoleColor.Yellow);
+                ConsoleHelper.WriteEmphasizedLine("===================\n|||Enter Command|||\n===================", ConsoleColor.Yellow);
                 string message = Console.ReadLine();
                 bool parseSuccess = Int32.TryParse(message, out int commandType);
 
-                if (String.Equals("quit", message))
+                if (String.Equals("quit", message, StringComparison.InvariantCultureIgnoreCase))
                 {
                     keepGoing = false;
                 }
-                else if (String.Equals("help", message))
+                else if (String.Equals("help", message, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    PrintCommandHelp();
+                    ConsoleHelper.PrintSerialCommandHelp();
                 }
                 else if (parseSuccess)
                 {
@@ -437,16 +432,16 @@ namespace RadioDoge
             switch(commandType)
             {
                 case SerialCommandType.GetNodeAddress:
-                    ConsoleWriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
+                    ConsoleHelper.WriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
                     break;
                 case SerialCommandType.HardwareInfo:
                     if ((char)payload[0] == 'h')
                     {
-                        ConsoleWriteEmphasizedLine($"Heltec LoRa WiFi LoRa 32 (V{payload[1]})\nFirmware version {payload[2]}", ConsoleColor.Green);
+                        ConsoleHelper.WriteEmphasizedLine($"Heltec LoRa WiFi LoRa 32 (V{payload[1]})\nFirmware version {payload[2]}", ConsoleColor.Green);
                     }
                     else
                     {
-                        ConsoleWriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
+                        ConsoleHelper.WriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
                     }
                     break;
                 case SerialCommandType.Message:
@@ -454,41 +449,17 @@ namespace RadioDoge
                 case SerialCommandType.ResultCode:
                     if (payload[0] == 0x06)
                     {
-                        ConsoleWriteEmphasizedLine("Device ACK'd Command", ConsoleColor.Green);
+                        ConsoleHelper.WriteEmphasizedLine("Device ACK'd Command", ConsoleColor.Green);
                     }
                     else
                     {
-                        ConsoleWriteEmphasizedLine("ERROR: Device sent a NACK!", ConsoleColor.Red);
+                        ConsoleHelper.WriteEmphasizedLine("ERROR: Device sent a NACK!", ConsoleColor.Red);
                     }
                     break;
                 default:
-                    ConsoleWriteEmphasizedLine("Unknown payload type!", ConsoleColor.Red);
+                    ConsoleHelper.WriteEmphasizedLine("Unknown payload type!", ConsoleColor.Red);
                     break;
             }
-        }
-
-        private void PrintCommandHelp()
-        {
-            ConsoleWriteEmphasizedLine("Available Commands:", ConsoleColor.Magenta);
-            foreach (int i in Enum.GetValues(typeof(SerialCommandType)))
-            {
-                if (i < (int)'!' || i > (int)'z')
-                {
-                    ConsoleWriteEmphasizedLine($"{i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
-                }
-                else
-                {
-                    ConsoleWriteEmphasizedLine($"{i} or {(char)i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
-                }
-            }
-            ConsoleWriteEmphasizedLine("Enter 'quit' to exit or 'help' for available commands\n", ConsoleColor.Magenta);
-        }
-
-        private void ConsoleWriteEmphasizedLine(string text, ConsoleColor consoleColor)
-        {
-            Console.ForegroundColor = consoleColor;
-            Console.WriteLine(text);
-            Console.ForegroundColor = ConsoleColor.White;
         }
     }
 }
