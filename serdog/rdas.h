@@ -16,24 +16,24 @@ uint8_t rdas_this[4] = {0x4D, 0x49, 0x4E, 0x45};// MINE: (message alert is for m
 //FOR ME will be removed
 uint8_t rdas_forme[6] = { 0x46, 0x4F, 0x52, 0x20, 0x4D, 0x45 };// FOR ME Message follows: MSGTYPE, FR, ADDR
 
-uint8_t rdas_msg[3] = {0x4D, 0x53, 0x47};//MSG, noun follows is a clear msg
-uint8_t rdas_quer[3] = {0x47, 0x49, 0x42};//GIB - verb is a remote query
-uint8_t rdas_ansr[3] = {0x57, 0x4F, 0x57};//WOW - this is a response from a query
-uint8_t rdas_txn[3] = {0x54, 0x58, 0x4E};//TXN - noun is an outgoing transaction
-uint8_t rdas_bal[3] = {0x42, 0x41, 0x4C};//BAL - noun is balance (or returnval is balance)
-uint8_t rdas_amtd[3] = {0x41, 0x4D, 0x54};//AMT - amount in whole dogecoin
-uint8_t rdas_koin[3] = {0x4B, 0x4E, 0x55};//KNU - Mantissa amount in koinu
-uint8_t rdas_dest[3] = {0x44, 0x53, 0x54};//DST - Noun that follows is a destination (dogecoin address)
-uint8_t rdas_src[3] = {0x53, 0x52, 0x43};//SRC - Noun that follows is a source (utxo, index, address)
+uint8_t rdas_msg[3] = {0x4D, 0x53, 0x47}; //MSG, noun follows is a clear msg
+uint8_t rdas_quer[3] = {0x47, 0x49, 0x42}; //GIB - verb is a remote query
+uint8_t rdas_ansr[3] = {0x57, 0x4F, 0x57}; //WOW - this is a response from a query
+uint8_t rdas_txn[3] = {0x54, 0x58, 0x4E}; //TXN - noun is an outgoing transaction
+uint8_t rdas_bal[3] = {0x42, 0x41, 0x4C}; //BAL - noun is balance (or returnval is balance)
+uint8_t rdas_amtd[3] = {0x41, 0x4D, 0x54}; //AMT - amount in whole dogecoin
+uint8_t rdas_koin[3] = {0x4B, 0x4E, 0x55}; //KNU - Mantissa amount in koinu
+uint8_t rdas_dest[3] = {0x44, 0x53, 0x54}; //DST - Noun that follows is a destination (dogecoin address)
+uint8_t rdas_src[3] = {0x53, 0x52, 0x43}; //SRC - Noun that follows is a source (utxo, index, address)
 
-uint8_t rdas_pay[3] = {0x50, 0x41, 0x59};//PAY - ask the node to pay AMOUNT/KOINU
-uint8_t rdas_ask[3] = {0x41, 0x53 ,0x4B};//ASK - request the node for a payment of AMOUNT/KOINU
-uint8_t rdas_addr[3] = {0x41, 0x44, 0x52};//ADR - noun that follows is a dogecoin address
-uint8_t rdas_utxo[3] = {0x55, 0x54, 0x58};//UTX - noun that follows is a UTXO
-uint8_t rdas_indx[3] = {0x49, 0x44, 0x58};//IDX - noun that follows is as utxo index.
-uint8_t rdas_txid[3] = {0x54, 0x49, 0x44};//TID - noun that follows is a transaction id.
-uint8_t rdas_blk[3] = {0x42, 0x4C, 0x4B};//BLK - noun that follows is a block/height.
-uint8_t rdas_qr[3] = {0x51, 0x52, 0x43};//QRC - noun that follows is a QR Code 1-bit bmp data stream
+uint8_t rdas_pay[3] = {0x50, 0x41, 0x59}; //PAY - ask the node to pay AMOUNT/KOINU
+uint8_t rdas_ask[3] = {0x41, 0x53 ,0x4B}; //ASK - request the node for a payment of AMOUNT/KOINU
+uint8_t rdas_addr[3] = {0x41, 0x44, 0x52}; //ADR - noun that follows is a dogecoin address
+uint8_t rdas_utxo[3] = {0x55, 0x54, 0x58}; //UTX - noun that follows is a UTXO
+uint8_t rdas_indx[3] = {0x49, 0x44, 0x58}; //IDX - noun that follows is as utxo index.
+uint8_t rdas_txid[3] = {0x54, 0x49, 0x44}; //TID - noun that follows is a transaction id.
+uint8_t rdas_blk[3] = {0x42, 0x4C, 0x4B}; //BLK - noun that follows is a block/height.
+uint8_t rdas_qr[3] = {0x51, 0x52, 0x43}; //QRC - noun that follows is a QR Code 1-bit bmp data stream
 
 //Get 10.5.3 asks to get balance of D67y62BCBcaCGpqnjFjWbUkdXbgBUJzubf
 // 

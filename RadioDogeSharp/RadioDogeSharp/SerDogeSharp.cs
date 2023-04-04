@@ -34,6 +34,8 @@ namespace RadioDoge
         {
             GetDogeAddress = 120,
             SendDogeAddress = 240,
+            GetBalance = 101,
+            SendBalance = 202
         }
 
         public void Execute()
@@ -194,6 +196,14 @@ namespace RadioDoge
             // Create payload
             byte[] payload = new byte[]{ (byte)DogeCommands.GetDogeAddress };
             SendPacket(destNode, payload);
+        }
+
+        private void RequestDogeCoinBalance(NodeAddress destNode, byte[] dogeCoinAddress)
+        {
+            List<byte> payload = new List<byte>(dogeCoinAddress.Length + 1);
+            payload.Add((byte)DogeCommands.GetBalance);
+            payload.AddRange(dogeCoinAddress);
+            SendPacket(destNode, payload.ToArray());
         }
 
         private byte[] CreateCommandHeader(byte commandType, byte payloadSize)

@@ -24,7 +24,9 @@ enum resultCode
 enum dogeCommand 
 {
 	GET_DOGE_ADDRESS = 120,
-	SEND_DOGE_ADDRESS = 240
+	SEND_DOGE_ADDRESS = 240,
+	GET_BALANCE = 101,
+	SEND_BALANCE = 202
 };
 
 struct nodeAddress {
