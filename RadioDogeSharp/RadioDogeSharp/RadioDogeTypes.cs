@@ -29,4 +29,10 @@
         Quit,
         Invalid
     }
+
+    internal enum TestFunctions
+    {
+        SendMultipartPacket,
+        SendSinglePacket,
+    }
 }
