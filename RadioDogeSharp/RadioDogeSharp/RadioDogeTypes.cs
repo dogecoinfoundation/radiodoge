@@ -20,4 +20,13 @@
         GetBalance = 101,
         SendBalance = 202
     }
+
+    internal enum ModeSelection
+    {
+        LoRaSetup,
+        Doge,
+        Test,
+        Quit,
+        Invalid
+    }
 }

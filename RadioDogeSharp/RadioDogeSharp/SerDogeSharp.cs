@@ -12,7 +12,6 @@ namespace RadioDoge
         private const string DEFAULT_PORT = "COM3";
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
-        private readonly byte terminator = 255;
         private const int MAX_PAYLOAD_BYTES = 192;
         private bool retryConnect = true;
         private MultipartPacket currMultipartPacket = new MultipartPacket();
@@ -20,17 +19,20 @@ namespace RadioDoge
         public void Execute()
         {
             ConsoleHelper.PrintTitleScreen();
-            SetupSerialConnection();
+            if (SetupSerialConnection())
+            {
+                ModeSelectionLoop();
+                port.Close();
+            }
         }
 
-        private void SetupSerialConnection()
+        private bool SetupSerialConnection()
         {
             Console.WriteLine("Setting up connection to LoRa module...");
             if (OpenPortHelper(DEFAULT_PORT))
             {
-                ConsoleHelper.WriteEmphasizedLine("Connection to LoRa module successful!", ConsoleColor.Green);
-                SerialCommandLoop();
-                port.Close();
+                ConsoleHelper.WriteEmphasizedLine("WOW SO CONNECTED! Connection to LoRa module successful!", ConsoleColor.Green);
+                return true;
             }
             else
             {
@@ -38,12 +40,40 @@ namespace RadioDoge
                 string userInput = Console.ReadLine();           
                 if (!userInput.Equals("quit", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    SetupSerialConnection();
+                    return SetupSerialConnection();
+                }
+            }
+            return false;
+        }
+
+        private void ModeSelectionLoop()
+        {
+            while(true)
+            {
+                ModeSelection mode = ConsoleHelper.GetUserModeSelection();
+                switch (mode)
+                {
+                    case ModeSelection.LoRaSetup:
+                        SerialSetupCommandLoop();
+                        break;
+                    case ModeSelection.Doge:
+                        DogeCommandLoop();
+                        break;
+                    case ModeSelection.Test:
+                        // @TODO
+                        ConsoleHelper.WriteEmphasizedLine("Test mode unavailable!", ConsoleColor.Red);
+                        break;
+                    case ModeSelection.Quit:
+                        Console.WriteLine("Quitting the program!");
+                        return;
+                    default:
+                        Console.WriteLine("Unknown mode selection!");
+                        break;
                 }
             }
         }
 
-        private void SendCommand(SerialCommandType commandType)
+        private void SendSerialCommand(SerialCommandType commandType)
         {
             List<byte> commandBytes = new List<byte>();
             ConsoleHelper.WriteEmphasizedLine($"Sending Command: {commandType}", ConsoleColor.Yellow);
@@ -314,9 +344,9 @@ namespace RadioDoge
             }
         }
 
-        private void SerialCommandLoop()
+        private void SerialSetupCommandLoop()
         {
-            ConsoleHelper.PrintSerialCommandHelp();
+            ConsoleHelper.PrintSerialSetupCommandHelp();
 
             bool keepGoing = true;
             while (keepGoing)
@@ -325,24 +355,29 @@ namespace RadioDoge
                 string message = Console.ReadLine();
                 bool parseSuccess = Int32.TryParse(message, out int commandType);
 
-                if (String.Equals("quit", message, StringComparison.InvariantCultureIgnoreCase))
+                if (String.Equals("exit", message, StringComparison.InvariantCultureIgnoreCase))
                 {
                     keepGoing = false;
                 }
                 else if (String.Equals("help", message, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    ConsoleHelper.PrintSerialCommandHelp();
+                    ConsoleHelper.PrintSerialSetupCommandHelp();
                 }
                 else if (parseSuccess)
                 {
-                    SendCommand((SerialCommandType)commandType);
+                    SendSerialCommand((SerialCommandType)commandType);
                 }
                 // Try parsing as a single character
                 else if (message.Length == 1)
                 {
-                    SendCommand((SerialCommandType)message[0]);
+                    SendSerialCommand((SerialCommandType)message[0]);
                 }
             }
+        }
+
+        private void DogeCommandLoop()
+        {
+            ConsoleHelper.PrintDogeCommandHelp();
         }
 
         private void PortDataReceived(object sender, SerialDataReceivedEventArgs e)
