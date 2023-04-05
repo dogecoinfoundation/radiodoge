@@ -431,9 +431,9 @@ void ParseReceivedMessage() {
       case PING:
         ReceivedPing();
         // Set the ACK destination as the address of the sender
-        dest.region = rxPacket[1];
-        dest.community = rxPacket[2];
-        dest.node = rxPacket[3];
+        dest.region = rxPacket[2];
+        dest.community = rxPacket[3];
+        dest.node = rxPacket[4];
         // For some reason sending the ACK here works on V2 but not V3
         // Not sure why but sending it in the main loop works for both so we will do it there
         // We will just set a flag to send an ACK
