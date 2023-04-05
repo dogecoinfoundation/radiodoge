@@ -705,6 +705,21 @@ int sendDogeAddressTest(uint8_t* destAddr)
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
+void displayDogeQRCode()
+{
+	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
+	char addrbuffer[P2PKH_ADDR_STRINGLEN];
+	//create a buffer the size of a private key (wallet import format uncompressed key length)
+	//this constant is in include/constants.h, included via libdogecoin.h
+	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
+	generatePrivPubKeypair(keybuffer, addrbuffer, false);
+	printf("Random Test Address: % s \n", addrbuffer);
+	char qrBuffer[4096];
+	int result = qrgen_p2pkh_to_qr_string(addrbuffer, qrBuffer);
+	printf("%s\n", qrBuffer);
+}
+
 void modeSelectionLoop()
 {
 	int selectedMode = 0;
@@ -785,6 +800,10 @@ void enterDogeMode()
 		case 1:
 			// Get Dogecoin Balance
 			break;
+		case 2:
+			// Display QR code
+			displayDogeQRCode();
+			break;
 		}
 		sleep(2);
 	}
@@ -800,6 +819,7 @@ void enterTestMode()
 		{
 		case 0:
 			// Send Packet Test
+			printf("Not currently supported!\n");
 			break;
 		case 1:
 			// Multipart Packet Test

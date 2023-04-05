@@ -34,8 +34,9 @@ int getDogeModeSelection()
 	printf("\n### MUCH DOGE MODE SELECT ###\n");
 	printf("0: Get Dogecoin Address\n");
 	printf("1: Get Dogecoin Balance\n");
-	printf("2: Exit Doge Mode\n");
-	return userInputLoop(2);
+	printf("2: Display QR code\n");
+	printf("3: Exit Doge Mode\n");
+	return userInputLoop(3);
 }
 
 int getTestModeSelection()
@@ -67,10 +68,12 @@ void getUserSuppliedNodeAddress(uint8_t* address)
 int userInputLoop(int upperBound)
 {
 	printf("Enter a value between 0 and %i\n", upperBound);
+	char userInput[128];
 	int userSelection;
 	while (1)
 	{
-		scanf("%i", &userSelection);
+		fgets(userInput, 128, stdin);
+		userSelection = atoi(userInput);
 		if (userSelection >= 0 && userSelection <= (upperBound - 1))
 		{
 			return userSelection;

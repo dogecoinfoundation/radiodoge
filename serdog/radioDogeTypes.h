@@ -21,8 +21,9 @@ enum resultCode
 	RESULT_NACK=21 // 0x15 = 'NAK'
 };
 
-enum dogeCommand 
+enum dogeCommand
 {
+	DISPLAY_QR = 1,
 	GET_DOGE_ADDRESS = 120,
 	SEND_DOGE_ADDRESS = 240,
 	GET_BALANCE = 101,
