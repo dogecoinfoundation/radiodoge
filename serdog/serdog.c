@@ -2,6 +2,7 @@
 //
 
 #include "serdog.h"
+#include "consolehelper.h"
 #include "libdogecoin.h"
 #include <sys/poll.h>
 #include <stdint.h>
@@ -696,37 +697,38 @@ int sendDogeAddressTest(uint8_t* destAddr)
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
-main()
+void EnterSetupMode()
 {
-	printf("\nChecking for libdogecoin integration...\n\n", NULL);
-
-	//start the libdogecoin elliptical crypto mem space
-	dogecoin_ecc_start(); 
-
-	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
-	char returnedaddr[P2PKH_ADDR_STRINGLEN];
-
-	if (testLib(returnedaddr))
+	int userSelection = 0;
+	while (userSelection >= 0)
 	{
-		printf("Libdogecoin found.\n", NULL);
-	    printf("Libdogecoin TEST - randomly generated test addr : % s \n", returnedaddr);
+		userSelection = getSetupModeSelection();
+		// @TODO process the selection
 	}
-	else
+}
+
+void EnterDogeMode()
+{
+	int userSelection = 0;
+	while (userSelection >= 0)
 	{
-		printf("Libdogecoin not responding or error. \n");
+		userSelection = getDogeModeSelection();
+		// @TODO process the selection
 	}
+}
 
-	USB = 0;     // File descriptor set to zero.
-	printf("\nSerDog starting...\n\n", NULL);
+void EnterTestMode()
+{
+	int userSelection = 0;
+	while (userSelection >= 0)
+	{
+		userSelection = getTestModeSelection();
+		// @TODO process the selection
+	}
+}
 
-	openPort(); // Open the port
-
-	init(); // Init the port parameters -- file descriptor (USB) will be set
-
-	pollEnable = 1;
-	pthread_t serThreadID;
-	pthread_create(&serThreadID, NULL, serialPollThread, (void*)&serThreadID);
-
+void hardwareTests()
+{
 	//setLocalAddr
 	printf("CMD TEST: Setting local address to %i.%i.%i.\n", myaddr[0], myaddr[1], myaddr[2]);
 	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
@@ -759,16 +761,63 @@ main()
 	printByteArray(customTestPayload, custSize);
 	//cmdSendMessage(myaddr, rmaddr, customTestPayload, custSize);
 	cmdSendMultipartMessage(myaddr, rmaddr, customTestPayload, custSize, 123);
+}
 
-	/*
-	//pingAnother
-	printf("CMD TEST: Pinging remote %i.%i.%i.\n", rmaddr[0], rmaddr[1], rmaddr[2]);
-	cmdSendPingCmd(rmaddr, rxbuf);
-	printf("\nFrom command, received: \n[%s]\n\n", rxbuf);
-	*/
+main()
+{
+	printStartScreen();
+	// Start by attempting to setup serial communication
+	USB = 0;     // File descriptor set to zero.
+	openPort(); // Open the port
 
-	getc(stdin);//wait for keypress
-	printf("Exiting!");
+	init(); // Init the port parameters -- file descriptor (USB) will be set
+
+	pollEnable = 1;
+	pthread_t serThreadID;
+	pthread_create(&serThreadID, NULL, serialPollThread, (void*)&serThreadID);
+
+	printf("\nChecking for libdogecoin integration...\n\n", NULL);
+
+	//start the libdogecoin elliptical crypto mem space
+	dogecoin_ecc_start(); 
+
+	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
+	char returnedaddr[P2PKH_ADDR_STRINGLEN];
+
+	if (testLib(returnedaddr))
+	{
+		printf("Libdogecoin found.\n", NULL);
+	    printf("Libdogecoin TEST - randomly generated test addr : % s \n\n", returnedaddr);
+	}
+	else
+	{
+		printf("Libdogecoin not responding or error. \n");
+		exit(EXIT_FAILURE);
+	}
+
+	// Enter into mode selection loop
+	int selectedMode = 0;
+	while (selectedMode >= 0)
+	{
+		selectedMode = getModeSelection();
+		switch (selectedMode)
+		{
+		case 0:
+			// Enter Setup mode
+			EnterSetupMode();
+			break;
+		case 1:
+			// Enter Doge mode
+			EnterDogeMode();
+			break;
+		case 2:
+			// Enter Test mode
+			EnterTestMode();
+			break;
+		}
+	}
+
+	printf("Exiting!\n");
 	pollEnable = 0;
 	do {
 		sleep(1);

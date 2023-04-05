@@ -6,7 +6,7 @@ cmake_minimum_required (VERSION 3.8)
 project ("serdog")
 
 # Add source to this project's executable.
-add_executable (serdog "serdog.c" "serdog.h" "rdas.h" "radioDogeTypes.h" "rdasutils.h" "libdogecoin.h")
+add_executable (serdog "serdog.c" "serdog.h" "rdas.h" "radioDogeTypes.h" "rdasutils.h" "libdogecoin.h" "consolehelper.h" "consolehelper.c")
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(serdog PRIVATE "${CMAKE_SOURCE_DIR}/libdogecoin.a" Threads::Threads)
