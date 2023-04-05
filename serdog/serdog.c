@@ -452,13 +452,14 @@ void* serialPollThread(void* threadid)
 				{
 					printf("**Partial Payload (with packet header)**\n");
 					printByteArray(rxbuffer, totalRxChars);
-					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex);
+					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex, senderAddress);
 					if (processResult)
 					{
 						// @TODO do something with entire payload besides just printing it
 						printf("Fully reassembled payload!\n");
+						printf("Sender: %i.%i.%i\n", senderAddress[0], senderAddress[1], senderAddress[2]);
 						printByteArray(multipartBuffer, multipartIndex);
-						processDogePayload(multipartBuffer, multipartIndex);
+						processDogePayload(senderAddress, multipartBuffer, multipartIndex);
 
 						// Reset multipart count values
 						multipartIndex = 0;
@@ -639,8 +640,15 @@ void processCommandPayload(uint8_t* payloadIn, int payloadSize)
 // NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
 // Also there will be issues if we receive multipart packets from multiple nodes simultaneously as it doesn't do anything with the msg id
 // This just reassembles the pieces for now
-int parseMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize)
+int parseMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize, uint8_t* senderAddress)
 {
+	if (*multipartSize == 0)
+	{
+		// Save the sender address
+		senderAddress[0] = payloadPartIn[2];
+		senderAddress[1] = payloadPartIn[3];
+		senderAddress[2] = payloadPartIn[4];
+	}
 	// Copy just the data portion over to the buffer
 	// This requires stripping out the header portion which will be 12 bytes
 	memcpy(multipartBuffer + *multipartSize, payloadPartIn + MULTIPART_HDR_LEN, partSize - MULTIPART_HDR_LEN);
