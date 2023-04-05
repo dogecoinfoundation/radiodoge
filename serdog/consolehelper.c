@@ -21,11 +21,12 @@ int getSetupModeSelection()
 	printf("\n### MUCH SETUP MODE SELECT ###\n");
 	printf("0: Get Local Node Address\n");
 	printf("1: Set Local Node Address\n");
-	printf("2: Send Ping\n");
-	printf("3: Send Message\n");
-	printf("4: Get Hardware Information\n");
-	printf("5: Exit Setup Mode\n");
-	return userInputLoop(5);
+	printf("2: Set Destination Node Address\n");
+	printf("3: Send Ping\n");
+	printf("4: Send Message\n");
+	printf("5: Get Hardware Information\n");
+	printf("6: Exit Setup Mode\n");
+	return userInputLoop(6);
 }
 
 int getDogeModeSelection()

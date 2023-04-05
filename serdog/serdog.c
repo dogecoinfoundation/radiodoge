@@ -115,30 +115,30 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	if (payload != NULL)
 	{
 		payloadlen = (uint8_t)payloadsize;
-		printf("\nPayload Length %d\n", payloadlen);
+		//printf("\nPayload Length %d\n", payloadlen);
 	}
 
-	printf("\nincoming command type %d\n", cmdtype);
+	//printf("\nincoming command type %d\n", cmdtype);
 
 	txbytes[0] = (uint8_t)cmdtype;
 	txbytes[1] = (uint8_t)payloadlen;
 
-	printf("cmd type is [%02X]\n", txbytes[0]);
-	printf("embed payload len is [%02X]\n", txbytes[1]);
+	//printf("cmd type is [%02X]\n", txbytes[0]);
+	//printf("embed payload len is [%02X]\n", txbytes[1]);
 	if (payload != 0)
 	{
-		printf("Payload length %i\n", payloadlen);
-		printf("Payload is :");
+		//printf("Payload length %i\n", payloadlen);
+		//printf("Payload is :");
 		idx = 0;
 		do
 		{
-			printf(" [%02X] ", payload[idx]);
+			//printf(" [%02X] ", payload[idx]);
 			txbytes[idx + HDR_LEN] = payload[idx];//+2 because commandtype and payloadlen has been added
 			idx++;
 		} while (idx != payloadlen);
 	}
 
-	printf("\n");
+	//printf("\n");
 
 	//HEADER REDUNDANCY---------------- should be in fw now
 	/*
@@ -175,10 +175,10 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	//HEADER REDUNDANCY----------------
 	*/
 	idx = 0;
-	printf("Writing bytes: ");
+	//printf("Writing bytes: ");
 	do {
 
-		printf("[%02X]", txbytes[idx]);
+		//printf("[%02X]", txbytes[idx]);
 
 		n_written = write(USB, &txbytes[idx], 1);
 		idx += n_written;
@@ -192,9 +192,9 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 			printf("\nError writing to port %s as numbytes written was %i.\n", device, n_written);
 		}
 	} while (total_written != (payloadlen + HDR_LEN) && n_written > 0);
-	printf(" to port [%s]\n", device);
+	//printf(" to port [%s]\n", device);
 
-	printf("[%i] total bytes written to [%s]\n", total_written, device);
+	//printf("[%i] total bytes written to [%s]\n", total_written, device);
 }
 
 int cmdSetLocalAddress(int region, int community, int node)
@@ -427,16 +427,16 @@ void* serialPollThread(void* threadid)
 				ssize_t receivedCharactersLen = read(USB, minibuffer, sizeof(minibuffer));
 				if (receivedCharactersLen > 0)
 				{
-					printf("*** THREAD: Received %i chars\n", receivedCharactersLen);
+					//printf("*** THREAD: Received %i chars\n", receivedCharactersLen);
 
 					for (int rc = 0; rc < receivedCharactersLen; rc++)
 					{
-						printf("[%02x]", (uint8_t)minibuffer[rc]);
+						//printf("[%02x]", (uint8_t)minibuffer[rc]);
 						rxbuffer[totalRxChars] = minibuffer[rc];
 						totalRxChars++;
 					}
 
-					printf("\n", NULL);
+					//printf("\n", NULL);
 				}
 			}
 		}
@@ -447,11 +447,11 @@ void* serialPollThread(void* threadid)
 			rxPayloadSize = isCompleteCmd(rxbuffer, totalRxChars);
 			if (rxPayloadSize >= 0)
 			{
-				printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
+				//printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
 				if (rxbuffer[0] == MULTIPART_PACKET)
 				{
-					printf("**Partial Payload (with packet header)**\n");
-					printByteArray(rxbuffer, totalRxChars);
+					//printf("**Partial Payload (with packet header)**\n");
+					//printByteArray(rxbuffer, totalRxChars);
 					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex, senderAddress);
 					if (processResult)
 					{
@@ -485,7 +485,7 @@ void* serialPollThread(void* threadid)
 			}
 			else
 			{
-				printf("***Not cmd** totRX=%i\n", totalRxChars);
+				//printf("***Not cmd** totRX=%i\n", totalRxChars);
 			}
 		}
 	} while (pollEnable == 1);
@@ -518,10 +518,10 @@ int isCompleteCmd(uint8_t* inBuf, int charsReceived)
 {
 	if (charsReceived >= HDR_LEN)
 	{
-		printf("int inbuf %i %i %i\n", (int)inBuf[0], (int)inBuf[1], (int)inBuf[2]);
+		//printf("int inbuf %i %i %i\n", (int)inBuf[0], (int)inBuf[1], (int)inBuf[2]);
 		if (isCmd(inBuf[0]) && (int)inBuf[1] == charsReceived - HDR_LEN)
 		{
-			printf("charsReceived: %i\n", charsReceived);
+			//printf("charsReceived: %i\n", charsReceived);
 			return ((int)inBuf[1]);
 		}
 		else
@@ -748,17 +748,26 @@ void enterSetupMode()
 			cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
 			break;
 		case 2:
-			// Send ping
-			cmdSendPingCmd(rmaddr);
+			// Set destination node address
+			// Get user supplied node address
+			getUserSuppliedNodeAddress(rmaddr);
+			printf("Destination address: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 			break;
 		case 3:
+			// Send ping
+			printf("Sending ping to node: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
+			cmdSendPingCmd(rmaddr);
+			break;
+		case 4:
 			// Send Message
 			printf("Sending messages is not currently supported!\n");
 			break;
-		case 4:
+		case 5:
 			// Get Hardware information
 			cmdGetHardwareInfo();
+			break;
 		}
+		sleep(2);
 	}
 }
 
@@ -777,6 +786,7 @@ void enterDogeMode()
 			// Get Dogecoin Balance
 			break;
 		}
+		sleep(2);
 	}
 }
 
@@ -796,6 +806,7 @@ void enterTestMode()
 			multipartCountTest();
 			break;
 		}
+		sleep(2);
 	}
 }
 
