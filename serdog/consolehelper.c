@@ -2,7 +2,7 @@
 
 void printStartScreen()
 {
-	printf("Welcome to RadioDoge! Press ENTER to continue...\n");
+	printf("\nWelcome to RadioDoge! Press ENTER to continue...");
 	getchar();
 }
 
@@ -19,8 +19,8 @@ int getModeSelection()
 int getSetupModeSelection()
 {
 	printf("\n### MUCH SETUP MODE SELECT ###\n");
-	printf("0: Get Node Address\n");
-	printf("1: Set Node Address\n");
+	printf("0: Get Local Node Address\n");
+	printf("1: Set Local Node Address\n");
 	printf("2: Send Ping\n");
 	printf("3: Send Message\n");
 	printf("4: Get Hardware Information\n");
@@ -44,6 +44,23 @@ int getTestModeSelection()
 	printf("1: Multipart Packet Test\n");
 	printf("2: Exit Test Mode\n");
 	return userInputLoop(2);
+}
+
+void getUserSuppliedNodeAddress(uint8_t* address)
+{
+	printf("Enter in the node address (region.community.node):\n");
+	char userString[64];
+	scanf("%s", userString);
+	// Extract the first token
+	char* token = strtok(userString, ".");
+	// loop through the string to extract all tokens
+	int tokenCount = 0;
+	while(token != NULL && tokenCount < 3)
+	{
+		address[tokenCount] = (uint8_t)atoi(token);
+		token = strtok(NULL, ".");
+		tokenCount++;
+	}
 }
 
 int userInputLoop(int upperBound)

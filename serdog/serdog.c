@@ -697,34 +697,112 @@ int sendDogeAddressTest(uint8_t* destAddr)
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
-void EnterSetupMode()
+void modeSelectionLoop()
+{
+	int selectedMode = 0;
+	while (selectedMode >= 0)
+	{
+		selectedMode = getModeSelection();
+		switch (selectedMode)
+		{
+		case 0:
+			// Enter Setup mode
+			enterSetupMode();
+			break;
+		case 1:
+			// Enter Doge mode
+			enterDogeMode();
+			break;
+		case 2:
+			// Enter Test mode
+			enterTestMode();
+			break;
+		}
+	}
+}
+
+void enterSetupMode()
 {
 	int userSelection = 0;
 	while (userSelection >= 0)
 	{
 		userSelection = getSetupModeSelection();
-		// @TODO process the selection
+		switch (userSelection)
+		{
+		case 0:
+			// Get node address
+			cmdGetLocalAddress();
+			break;
+		case 1:
+			// Set node address
+			// Get user supplied node address
+			getUserSuppliedNodeAddress(myaddr);
+			cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
+			break;
+		case 2:
+			// Send ping
+			cmdSendPingCmd(rmaddr);
+			break;
+		case 3:
+			// Send Message
+			printf("Sending messages is not currently supported!\n");
+			break;
+		case 4:
+			// Get Hardware information
+			cmdGetHardwareInfo();
+		}
 	}
 }
 
-void EnterDogeMode()
+void enterDogeMode()
 {
 	int userSelection = 0;
 	while (userSelection >= 0)
 	{
 		userSelection = getDogeModeSelection();
-		// @TODO process the selection
+		switch (userSelection)
+		{
+		case 0:
+			// Get Dogecoin Address
+			break;
+		case 1:
+			// Get Dogecoin Balance
+			break;
+		}
 	}
 }
 
-void EnterTestMode()
+void enterTestMode()
 {
 	int userSelection = 0;
 	while (userSelection >= 0)
 	{
 		userSelection = getTestModeSelection();
-		// @TODO process the selection
+		switch (userSelection)
+		{
+		case 0:
+			// Send Packet Test
+			break;
+		case 1:
+			// Multipart Packet Test
+			multipartCountTest();
+			break;
+		}
 	}
+}
+
+void multipartCountTest()
+{
+	int custSize = 1024;
+	uint8_t customTestPayload[custSize];
+	for (int i = 0; i < custSize; i++)
+	{
+		customTestPayload[i] = (uint8_t)(i % 256);
+	}
+	printf("\nCustom Payload:\n");
+	printByteArray(customTestPayload, custSize);
+	//cmdSendMessage(myaddr, rmaddr, customTestPayload, custSize);
+	cmdSendMultipartMessage(myaddr, rmaddr, customTestPayload, custSize, 123);
 }
 
 void hardwareTests()
@@ -748,24 +826,12 @@ void hardwareTests()
 	cmdGetHardwareInfo();
 
 	getc(stdin);// Wait for keypress for next command
-	printf("Sending Host Created Packet!\n");
-
-	// Create a custom payload to send
-	int custSize = 1024;
-	uint8_t customTestPayload[custSize];
-	for (int i = 0; i < custSize; i++)
-	{
-		customTestPayload[i] = (uint8_t)(i % 256);
-	}
-	printf("\nCustom Payload:\n");
-	printByteArray(customTestPayload, custSize);
-	//cmdSendMessage(myaddr, rmaddr, customTestPayload, custSize);
-	cmdSendMultipartMessage(myaddr, rmaddr, customTestPayload, custSize, 123);
+	multipartCountTest();
 }
 
 main()
 {
-	printStartScreen();
+	printf("Performing startup functions...\n");
 	// Start by attempting to setup serial communication
 	USB = 0;     // File descriptor set to zero.
 	openPort(); // Open the port
@@ -775,6 +841,7 @@ main()
 	pollEnable = 1;
 	pthread_t serThreadID;
 	pthread_create(&serThreadID, NULL, serialPollThread, (void*)&serThreadID);
+	printf("Connection to LoRa hardware successful!\n");
 
 	printf("\nChecking for libdogecoin integration...\n\n", NULL);
 
@@ -794,28 +861,11 @@ main()
 		printf("Libdogecoin not responding or error. \n");
 		exit(EXIT_FAILURE);
 	}
+	printf("Libdogecoin initialization complete!\n");
 
+	printStartScreen();
 	// Enter into mode selection loop
-	int selectedMode = 0;
-	while (selectedMode >= 0)
-	{
-		selectedMode = getModeSelection();
-		switch (selectedMode)
-		{
-		case 0:
-			// Enter Setup mode
-			EnterSetupMode();
-			break;
-		case 1:
-			// Enter Doge mode
-			EnterDogeMode();
-			break;
-		case 2:
-			// Enter Test mode
-			EnterTestMode();
-			break;
-		}
-	}
+	modeSelectionLoop();
 
 	printf("Exiting!\n");
 	pollEnable = 0;
