@@ -17,33 +17,6 @@
             Console.ForegroundColor = ConsoleColor.White;
         }
 
-        internal static void PrintSerialSetupCommandHelp()
-        {
-            WriteEmphasizedLine("Available LoRa Setup Commands:", ConsoleColor.Magenta);
-            foreach (int i in Enum.GetValues(typeof(SerialCommandType)))
-            {
-                if (i < (int)'!' || i > (int)'z')
-                {
-                    WriteEmphasizedLine($"{i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
-                }
-                else
-                {
-                    WriteEmphasizedLine($"{i} or {(char)i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
-                }
-            }
-            WriteEmphasizedLine("Enter 'exit' to return to the mode selection screen or 'help' for available commands\n", ConsoleColor.Magenta);
-        }
-
-        internal static void PrintDogeCommandHelp()
-        {
-            WriteEmphasizedLine("Available Doge Mode Commands:", ConsoleColor.Magenta);
-            foreach (int i in Enum.GetValues(typeof(DogeCommands)))
-            {
-                WriteEmphasizedLine($"{i}: {(DogeCommands)i}", ConsoleColor.Cyan);
-            }
-            WriteEmphasizedLine("Enter 'exit' to return to the mode selection screen or 'help' for available commands\n", ConsoleColor.Magenta);
-        }
-
         internal static ModeSelection GetUserModeSelection()
         {
             while (true)

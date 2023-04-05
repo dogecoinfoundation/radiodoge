@@ -13,7 +13,7 @@
         ResultCode = 0xFE
     }
 
-    internal enum DogeCommands
+    internal enum DogeCommandType
     {
         GetDogeAddress = 120,
         SendDogeAddress = 240,
@@ -34,5 +34,6 @@
     {
         SendMultipartPacket,
         SendSinglePacket,
+        SendCountingTest,
     }
 }

@@ -140,7 +140,7 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
                 PrintPayloadAsHex(payload);
-                ProcessSerialCommandPayload(commandType, payload);
+                ProcessSerialSetupCommandPayload(commandType, payload);
             }
         }
     }
