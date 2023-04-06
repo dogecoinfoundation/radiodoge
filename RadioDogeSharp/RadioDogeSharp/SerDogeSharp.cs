@@ -14,6 +14,7 @@ namespace RadioDoge
         public void Execute()
         {
             ConsoleHelper.PrintTitleScreen();
+            LibDogecoin.DogeTest();
             if (SetupSerialConnection())
             {
                 ModeSelectionLoop();
@@ -155,6 +156,10 @@ namespace RadioDoge
                 {
                     commandFunc(message[0]);
                 }
+
+                // Allow time for device to respond to sent command
+                // Delay in firmware would need to be reduced to further reduce this delay
+                Thread.Sleep(2000);
             }
         }
     }
