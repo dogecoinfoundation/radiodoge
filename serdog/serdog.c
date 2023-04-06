@@ -728,15 +728,15 @@ void modeSelectionLoop()
 		selectedMode = getModeSelection();
 		switch (selectedMode)
 		{
-		case 0:
+		case 1:
 			// Enter Setup mode
 			enterSetupMode();
 			break;
-		case 1:
+		case 2:
 			// Enter Doge mode
 			enterDogeMode();
 			break;
-		case 2:
+		case 3:
 			// Enter Test mode
 			enterTestMode();
 			break;
@@ -752,32 +752,32 @@ void enterSetupMode()
 		userSelection = getSetupModeSelection();
 		switch (userSelection)
 		{
-		case 0:
+		case 1:
 			// Get node address
 			cmdGetLocalAddress();
 			break;
-		case 1:
+		case 2:
 			// Set node address
 			// Get user supplied node address
 			getUserSuppliedNodeAddress(myaddr);
 			cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
 			break;
-		case 2:
+		case 3:
 			// Set destination node address
 			// Get user supplied node address
 			getUserSuppliedNodeAddress(rmaddr);
 			printf("Destination address: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 			break;
-		case 3:
+		case 4:
 			// Send ping
 			printf("Sending ping to node: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
 			cmdSendPingCmd(rmaddr);
 			break;
-		case 4:
+		case 5:
 			// Send Message
 			printf("Sending messages is not currently supported!\n");
 			break;
-		case 5:
+		case 6:
 			// Get Hardware information
 			cmdGetHardwareInfo();
 			break;
@@ -794,13 +794,13 @@ void enterDogeMode()
 		userSelection = getDogeModeSelection();
 		switch (userSelection)
 		{
-		case 0:
+		case 1:
 			// Get Dogecoin Address
 			break;
-		case 1:
+		case 2:
 			// Get Dogecoin Balance
 			break;
-		case 2:
+		case 3:
 			// Display QR code
 			displayDogeQRCode();
 			break;
@@ -817,11 +817,11 @@ void enterTestMode()
 		userSelection = getTestModeSelection();
 		switch (userSelection)
 		{
-		case 0:
+		case 1:
 			// Send Packet Test
 			printf("Not currently supported!\n");
 			break;
-		case 1:
+		case 2:
 			// Multipart Packet Test
 			multipartCountTest();
 			break;
