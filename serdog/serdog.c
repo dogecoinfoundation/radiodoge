@@ -686,7 +686,6 @@ int testLib(char* addrbuffer)
 
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
 	generatePrivPubKeypair(keybuffer, addrbuffer, false);
-
 	//If the returned address starts with "d" then return good/true/"1".
 	return (1-(strncmp(addrbuffer, addrheader, 1)));
 }
@@ -695,29 +694,27 @@ int sendDogeAddressTest(uint8_t* destAddr)
 {
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
 	char addrbuffer[P2PKH_ADDR_STRINGLEN];
-	//create a buffer the size of a private key (wallet import format uncompressed key length)
-	//this constant is in include/constants.h, included via libdogecoin.h
-	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
-	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
-	generatePrivPubKeypair(keybuffer, addrbuffer, false);
+	createTestDogeAddress(addrbuffer);
 	printf("Sending Test Address: % s \n", addrbuffer);
-
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
-void displayDogeQRCode()
+void displayDogeQRCode(char* dogeAddress)
 {
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
-	char addrbuffer[P2PKH_ADDR_STRINGLEN];
+	char qrBuffer[4096];
+	int result = qrgen_p2pkh_to_qr_string(dogeAddress, qrBuffer);
+	printf("Dogecoin Address: % s\n", dogeAddress);
+	printf("%s\n", qrBuffer);
+}
+
+void createTestDogeAddress(char* dogeAddress)
+{
 	//create a buffer the size of a private key (wallet import format uncompressed key length)
 	//this constant is in include/constants.h, included via libdogecoin.h
 	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
-	generatePrivPubKeypair(keybuffer, addrbuffer, false);
-	printf("Random Test Address: % s \n", addrbuffer);
-	char qrBuffer[4096];
-	int result = qrgen_p2pkh_to_qr_string(addrbuffer, qrBuffer);
-	printf("%s\n", qrBuffer);
+	generatePrivPubKeypair(keybuffer, dogeAddress, false);
 }
 
 void modeSelectionLoop()
@@ -804,7 +801,9 @@ void enterDogeMode()
 			break;
 		case 3:
 			// Display QR code
-			displayDogeQRCode();
+			char dogeAddrBuffer[P2PKH_ADDR_STRINGLEN];
+			createTestDogeAddress(dogeAddrBuffer);
+			displayDogeQRCode(dogeAddrBuffer);
 			break;
 		}
 		sleep(2);
