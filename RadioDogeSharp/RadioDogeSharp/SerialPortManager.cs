@@ -125,7 +125,7 @@ namespace RadioDoge
                     Console.WriteLine(currMultipartPacket.ToString());
                     byte[] completePayload = currMultipartPacket.GetPayload();
                     PrintPayloadAsHex(completePayload);
-                    ProcessDogePayload(completePayload);
+                    ProcessDogePayload(currMultipartPacket.senderAddress, completePayload);
                     // @TODO do something useful with the payload
                     currMultipartPacket = new MultipartPacket();
                 }
@@ -134,7 +134,7 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
                 byte[] dataPayload = ExtractHostFormedPacketData(payload, out NodeAddress currSenderAddr);
-                ProcessDogePayload(dataPayload);
+                ProcessDogePayload(currSenderAddr, dataPayload);
             }
             else
             {

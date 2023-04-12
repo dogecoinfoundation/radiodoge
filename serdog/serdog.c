@@ -796,9 +796,11 @@ void enterDogeMode()
 		{
 		case 1:
 			// Get Dogecoin Address
+			cmdRequestDogeAddress(myaddr, rmaddr);
 			break;
 		case 2:
 			// Get Dogecoin Balance
+			printf("Not currently implemented\n");
 			break;
 		case 3:
 			// Display QR code

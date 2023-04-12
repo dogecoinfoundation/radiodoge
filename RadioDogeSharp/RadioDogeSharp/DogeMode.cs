@@ -1,4 +1,6 @@
-﻿namespace RadioDoge
+﻿using System.Text;
+
+namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
@@ -41,7 +43,7 @@
             SendPacket(destNode, payload.ToArray());
         }
 
-        private void ProcessDogePayload(byte[] payload)
+        private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
         {
             DogeCommandType commType = (DogeCommandType)payload[0];
             switch (commType)
@@ -56,13 +58,41 @@
                     break;
                 case DogeCommandType.GetDogeAddress:
                     // This means someone is requesting a dogecoin address so we would send ours out
-                    // @TODO
+                    SendDogeAddress(senderAddress);
                     break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
                     PrintPayloadAsHex(payload);
                     break;
             }
+        }
+
+        private void SendDogeAddress(NodeAddress destNode)
+        {
+            // Generate a test address for now
+            string privatekey;
+            string publickey;
+
+            int len = 256;
+            StringBuilder pvkey = new StringBuilder(len);
+            StringBuilder pubkey = new StringBuilder(len);
+            LibDogecoin.dogecoin_ecc_start();
+            int successret = LibDogecoin.generatePrivPubKeypair(pvkey, pubkey, 0);
+
+            if (successret == 1)
+            {
+                privatekey = pvkey.ToString();
+                publickey = pubkey.ToString();
+                Console.WriteLine($"Public key: {publickey}");
+
+                byte[] dogeCoinAddress = Encoding.ASCII.GetBytes(publickey);
+                List<byte> payload = new List<byte>(dogeCoinAddress.Length + 1);
+                payload.Add((byte)DogeCommandType.SendDogeAddress);
+                payload.AddRange(dogeCoinAddress);
+                SendPacket(destNode, payload.ToArray());
+            }
+
+            LibDogecoin.dogecoin_ecc_stop();
         }
 
         private void PrintDogeCommandHelp()

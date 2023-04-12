@@ -1,12 +1,11 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RadioDoge
 {
     public static class LibDogecoin
     {
-        private const string libToImport = "dogecoin.dll";
+        private const string libToImport = "dogecoin";
 
         public static void DogeTest()
         {
