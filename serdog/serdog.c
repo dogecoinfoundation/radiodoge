@@ -457,7 +457,7 @@ void* serialPollThread(void* threadid)
 					{
 						// @TODO do something with entire payload besides just printing it
 						printf("Fully reassembled payload!\n");
-						printf("Sender: %i.%i.%i\n", senderAddress[0], senderAddress[1], senderAddress[2]);
+						printNodeAddress("Sender", senderAddress);
 						printByteArray(multipartBuffer, multipartIndex);
 						processDogePayload(senderAddress, multipartBuffer, multipartIndex);
 
@@ -506,10 +506,8 @@ void parseHostFormedPacket(uint8_t* senderAddr, uint8_t* extractedDataBuffer, ui
 	// Isolate the payload
 	int dataLen = payloadSize - offset;
 	memcpy(extractedDataBuffer, payloadIn + offset, dataLen);
-	printf("Sender Address:\n");
-	printf("%i.%i.%i\n", senderAddr[0], senderAddr[1], senderAddr[2]);
-	printf("Destination Address:\n");
-	printf("%i.%i.%i\n", destAddr[0], destAddr[1], destAddr[2]);
+	printNodeAddress("Sender", senderAddr);
+	printNodeAddress("Destination", destAddr);
 	printf("Data:\n");
 	printByteArray(extractedDataBuffer, dataLen);
 }
@@ -579,6 +577,8 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		break;
 	case SEND_DOGE_ADDRESS:
 		printf("Received Doge Address!\n");
+		// Printing received Dogecoin address (1st byte in this payload in the opcode)
+		printf("%s\n", payloadIn + 1);
 		break;
 	default:
 		printf("Unknown payload received!\n");
@@ -763,11 +763,11 @@ void enterSetupMode()
 			// Set destination node address
 			// Get user supplied node address
 			getUserSuppliedNodeAddress(rmaddr);
-			printf("Destination address: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
+			printNodeAddress("Destination", rmaddr);
 			break;
 		case 4:
 			// Send ping
-			printf("Sending ping to node: %i.%i.%i\n", rmaddr[0], rmaddr[1], rmaddr[2]);
+			printNodeAddress("Sending Ping To", rmaddr);
 			cmdSendPingCmd(rmaddr);
 			break;
 		case 5:
@@ -848,7 +848,7 @@ void multipartCountTest()
 void hardwareTests()
 {
 	//setLocalAddr
-	printf("CMD TEST: Setting local address to %i.%i.%i.\n", myaddr[0], myaddr[1], myaddr[2]);
+	printNodeAddress("CMD TEST: Setting Local ", myaddr);
 	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
 	//waitForResponse(ADDRESS_SET);
 

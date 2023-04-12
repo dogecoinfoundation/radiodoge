@@ -65,6 +65,11 @@ void getUserSuppliedNodeAddress(uint8_t* address)
 	}
 }
 
+void printNodeAddress(char* nodeTitle, uint8_t* address)
+{
+	printf("%s Node Address: %i.%i.%i\n", nodeTitle, address[0], address[1], address[2]);
+}
+
 int userInputLoop(int upperBound)
 {
 	printf("Enter a value between 1 and %i\n", upperBound);

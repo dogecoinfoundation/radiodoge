@@ -6,6 +6,7 @@
 #include <string.h>
 
 void printStartScreen();
+void printNodeAddress(char* nodeTitle, uint8_t* address);
 int getModeSelection();
 int getSetupModeSelection();
 int getDogeModeSelection();
