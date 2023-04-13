@@ -10,6 +10,8 @@ Instructions for installing the Arduino IDE and required libraries can be found 
   <li>https://heltec.org/wifi_kit_install/</li>
 </ul>
 
+If working in Windows you may need to install USB drivers for the device which can be found https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers?tab=downloads
+
 ## Current Progress
 Currently custom LoRa packets are formed and addressed to individual LoRa modules through the following addressing scheme:
 
