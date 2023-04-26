@@ -31,6 +31,10 @@ namespace RadioDoge
                     }
                     SendMultipartPacket(countBytes);
                     return;
+                case TestFunctions.DisplayTest:
+                    byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
+                    port.Write(displayCommand, 0, displayCommand.Length);
+                    return;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;

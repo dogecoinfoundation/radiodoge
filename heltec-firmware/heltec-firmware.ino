@@ -375,6 +375,10 @@ void HostSerialRead() {
       //Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
       SendHardwareInfoToHost();
       break;
+    case DISPLAY_CONTROL:
+      ProcessDisplayControl(payloadSize);
+      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
+      break;
     case HOST_FORMED_PACKET:
       //ParseHostFormedPacket(payloadSize);
       SetDestinationFromSerialBuffer(5);
@@ -397,6 +401,23 @@ void HostSerialRead() {
       // Indicate that command was not understood (Send NACK)
       Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
       break;
+  }
+}
+
+void ProcessDisplayControl(int payloadSize)
+{
+  // First byte of the payload/serial buffer will indicate what to display
+  switch(serialBuf[0])
+  {
+    case CUSTOM_DISPLAY:
+    // @TODO
+    break;
+    case LOGO_DISPLAY:
+    DrawRadioDogeLogo();
+    break;
+    default:
+    // @TODO
+    break;
   }
 }
 

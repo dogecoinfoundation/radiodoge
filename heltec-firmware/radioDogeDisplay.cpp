@@ -97,6 +97,9 @@ void DisplayCommandAndControl(uint8_t commandVal) {
     case HARDWARE_INFO:
       commandTypeString = "Get Hardware Info";
       break;
+    case DISPLAY_CONTROL:
+      commandTypeString = "Display Control";
+      break;
     case HOST_FORMED_PACKET:
       commandTypeString = "Host formed packet";
       break;
