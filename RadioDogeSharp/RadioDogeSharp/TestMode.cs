@@ -34,6 +34,15 @@ namespace RadioDoge
                 case TestFunctions.DisplayTest:
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
                     port.Write(displayCommand, 0, displayCommand.Length);
+                    Thread.Sleep(2000);
+                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.DogeAnimation };
+                    port.Write(displayCommand, 0, displayCommand.Length);
+                    Thread.Sleep(2000);
+                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.CoinAnimation };
+                    port.Write(displayCommand, 0, displayCommand.Length);
+                    Thread.Sleep(2000);
+                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
+                    port.Write(displayCommand, 0, displayCommand.Length);
                     return;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);

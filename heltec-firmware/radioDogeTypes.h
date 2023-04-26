@@ -11,6 +11,8 @@ enum messageType {
 enum displayType{
   CUSTOM_DISPLAY,
   LOGO_DISPLAY,
+  DOGE_ANIMATION_DISPLAY,
+  COIN_ANIMATION_DISPLAY
 };
 
 enum serialCommand {

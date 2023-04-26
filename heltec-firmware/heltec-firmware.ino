@@ -415,6 +415,12 @@ void ProcessDisplayControl(int payloadSize)
     case LOGO_DISPLAY:
     DrawRadioDogeLogo();
     break;
+    case DOGE_ANIMATION_DISPLAY:
+    DogeAnimation();
+    break;
+    case COIN_ANIMATION_DISPLAY:
+    CoinAnimation();
+    break;
     default:
     // @TODO
     break;

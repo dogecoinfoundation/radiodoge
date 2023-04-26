@@ -18,6 +18,8 @@
     {
         Custom,
         RadioDogeLogo,
+        DogeAnimation,
+        CoinAnimation
     }
 
     internal enum DogeCommandType
