@@ -24,6 +24,7 @@
 
     internal enum DogeCommandType
     {
+        RegisterAddress = 15,
         GetDogeAddress = 120,
         SendDogeAddress = 240,
         GetBalance = 101,

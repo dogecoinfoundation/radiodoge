@@ -9,10 +9,19 @@ enum serialCommand
 	NODE_ADDRESS_SET,
 	PING_REQUEST,
 	MESSAGE_REQUEST,
-	HARDWARE_INFO = 63,        //0x3f = '?'
-	HOST_FORMED_PACKET = 104,  //0x68 = 'h'
+	HARDWARE_INFO = 63, //0x3f = '?'
+	DISPLAY_CONTROL = 100, // 0x64 = 'd'
+	HOST_FORMED_PACKET = 104, //0x68 = 'h'
 	MULTIPART_PACKET = 109, // 0x6D = 'm'
 	RESULT_CODE=254 //0xFE
+};
+
+enum displayType
+{
+	CUSTOM_DISPLAY,
+	RADIO_DOGE_LOGO,
+	DOGE_ANIMATION,
+	COIN_ANIMATION
 };
 
 enum resultCode 

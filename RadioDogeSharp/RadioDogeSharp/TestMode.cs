@@ -32,16 +32,20 @@ namespace RadioDoge
                     SendMultipartPacket(countBytes);
                     return;
                 case TestFunctions.DisplayTest:
+                    // Display Logo
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
                     port.Write(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
-                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.DogeAnimation };
+                    // Display doge animation
+                    displayCommand[2] = (byte)DisplayType.DogeAnimation;
                     port.Write(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
-                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.CoinAnimation };
+                    // Display coin animation
+                    displayCommand[2] = (byte)DisplayType.CoinAnimation;
                     port.Write(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
-                    displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
+                    // Display logo again
+                    displayCommand[2] = (byte)DisplayType.RadioDogeLogo;
                     port.Write(displayCommand, 0, displayCommand.Length);
                     return;
                 default:

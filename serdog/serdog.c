@@ -826,9 +826,35 @@ void enterTestMode()
 			// Multipart Packet Test
 			multipartCountTest();
 			break;
+		case 3:
+			// Display Control Test
+			displayControlTest();
+			break;
 		}
 		sleep(2);
 	}
+}
+
+void displayControlTest()
+{
+	// No payload for this command
+	uint8_t cmdtype = DISPLAY_CONTROL;
+	uint8_t payload[1] = { (uint8_t)RADIO_DOGE_LOGO };
+	printf("Displaying Radio Doge Logo\n");
+	sendCommand(cmdtype, 1, payload);
+	sleep(2);
+	payload[0] = (uint8_t)DOGE_ANIMATION;
+	printf("Displaying Doge Animation\n");
+	sendCommand(cmdtype, 1, payload);
+	sleep(5);
+	payload[0] = (uint8_t)COIN_ANIMATION;
+	printf("Displaying Coin Animation\n");
+	sendCommand(cmdtype, 1, payload);
+	sleep(5);
+	payload[0] = (uint8_t)RADIO_DOGE_LOGO;
+	printf("Displaying Radio Doge Logo\n");
+	sendCommand(cmdtype, 1, payload);
+	sleep(2);
 }
 
 void multipartCountTest()

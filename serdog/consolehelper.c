@@ -44,8 +44,9 @@ int getTestModeSelection()
 	printf("\n### MUCH TEST MODE SELECT ###\n");
 	printf("1: Send Test Packet\n");
 	printf("2: Multipart Packet Test\n");
-	printf("3: Exit Test Mode\n");
-	return userInputLoop(3);
+	printf("3: Display Control Test\n");
+	printf("4: Exit Test Mode\n");
+	return userInputLoop(4);
 }
 
 void getUserSuppliedNodeAddress(uint8_t* address)
