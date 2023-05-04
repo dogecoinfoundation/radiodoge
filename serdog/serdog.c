@@ -329,6 +329,15 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin)
+{
+	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1 + PIN_LENGTH];
+	payload[0] = REGISTER_ADDRESS;
+	memcpy(payload + 1, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	memcpy(payload + 1 + P2PKH_ADDR_STRINGLEN, pin, PIN_LENGTH);
+	cmdSendMessage(inaddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1 + PIN_LENGTH);
+}
+
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
 {
 	uint8_t cmdType = MULTIPART_PACKET;
@@ -805,6 +814,12 @@ void enterDogeMode()
 			createTestDogeAddress(dogeAddrBuffer);
 			displayDogeQRCode(dogeAddrBuffer);
 			break;
+		case 4:
+			// Register Address
+			char registerDogeAddress[P2PKH_ADDR_STRINGLEN];
+			createTestDogeAddress(registerDogeAddress);
+			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
+			cmdRegisterDogeAddress(myaddr, rmaddr, registerDogeAddress, testPin);
 		}
 		sleep(2);
 	}

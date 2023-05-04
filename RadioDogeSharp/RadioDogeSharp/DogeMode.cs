@@ -4,6 +4,9 @@ namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
+        private Dictionary<string, string> dogeAddressBook = new Dictionary<string, string>();
+        private const int PIN_LENGTH = 4;
+        private const int MAX_ADDRESS_LENGTH = 35;
         private byte[] testAddress = { 0x44 };
 
         private void SendDogeCommand(int commandValue)
@@ -51,19 +54,60 @@ namespace RadioDoge
                 case DogeCommandType.SendDogeAddress:
                     // This means we got sent a dogecoin address
                     int addrLength = payload.Length - 1;
-                    char[] dogecoinAddress = new char[addrLength];
-                    Array.Copy(payload, 1, dogecoinAddress, 0, addrLength);
-                    string addressString = new string(dogecoinAddress);
-                    Console.WriteLine($"Received Dogecoin Address: {addressString}");
+                    if (addrLength <= MAX_ADDRESS_LENGTH)
+                    {
+                        string addressString = ExtractDogecoinAddressFromPayload(1, addrLength, payload);
+                        Console.WriteLine($"Received Dogecoin Address: {addressString}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Received an address that was too long!");
+                    }
                     break;
                 case DogeCommandType.GetDogeAddress:
                     // This means someone is requesting a dogecoin address so we would send ours out
                     SendDogeAddress(senderAddress);
                     break;
+                case DogeCommandType.RegisterAddress:
+                    RegisterDogeAddress(payload);
+                    break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
                     PrintPayloadAsHex(payload);
                     break;
+            }
+        }
+
+        private string ExtractDogecoinAddressFromPayload(int offsetIndex, int addrLength, byte[] payload)
+        {
+            char[] dogecoinAddress = new char[addrLength];
+            Array.Copy(payload, offsetIndex, dogecoinAddress, 0, addrLength);
+            return new string(dogecoinAddress);
+        }
+
+        private void RegisterDogeAddress(byte[] payload)
+        {
+            // We are expecting an address and a pin here which we will add to our dictionary
+            int addressLength = payload.Length - (PIN_LENGTH + 1);
+            if (addressLength <= MAX_ADDRESS_LENGTH)
+            {
+                string addressString = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
+                string pin = ExtractDogecoinAddressFromPayload(addressLength + 1, PIN_LENGTH, payload);
+                Console.WriteLine($"Registering Dogecoin Address: {addressString}");
+                Console.WriteLine($"Pin: {pin}");
+                bool alreadyRegistered = dogeAddressBook.ContainsKey(addressString);
+                if (!alreadyRegistered)
+                {
+                    dogeAddressBook.Add(addressString, pin);
+                }
+                else
+                {
+                    Console.WriteLine("Address already registered!");
+                }
+            }
+            else
+            {
+                Console.WriteLine("Failed to register dogecoin address!");
             }
         }
 

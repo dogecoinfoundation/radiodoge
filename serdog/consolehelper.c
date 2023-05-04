@@ -35,8 +35,9 @@ int getDogeModeSelection()
 	printf("1: Get Dogecoin Address\n");
 	printf("2: Get Dogecoin Balance\n");
 	printf("3: Display QR code\n");
-	printf("4: Exit Doge Mode\n");
-	return userInputLoop(4);
+	printf("4: Register Address\n");
+	printf("5: Exit Doge Mode\n");
+	return userInputLoop(5);
 }
 
 int getTestModeSelection()

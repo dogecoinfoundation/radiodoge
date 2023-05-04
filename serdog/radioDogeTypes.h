@@ -33,11 +33,14 @@ enum resultCode
 enum dogeCommand
 {
 	DISPLAY_QR = 1,
+	REGISTER_ADDRESS = 15,
 	GET_DOGE_ADDRESS = 120,
 	SEND_DOGE_ADDRESS = 240,
 	GET_BALANCE = 101,
 	SEND_BALANCE = 202
 };
+
+#define PIN_LENGTH 4
 
 struct nodeAddress {
 	uint8_t region;
