@@ -24,11 +24,13 @@
 
     internal enum DogeCommandType
     {
-        Registeration = 15,
+        Registration = 15,
         GetDogeAddress = 120,
         SendDogeAddress = 240,
-        GetBalance = 101,
-        SendBalance = 202
+        RequestBalance = 101,
+        BalanceReceived = 202,
+        DogeCommandSuccess = 1,
+        DogeCommandFailure = 254
     }
 
     internal enum RegistrationFunction

@@ -332,6 +332,14 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+{
+	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
+	payload[0] = REQUEST_BALANCE;
+	memcpy(payload + 1, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
+}
+
 cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin, bool removeAddress)
 {
 	// 2 bytes for the registration type and 1 for the registration function to be performed
@@ -412,6 +420,17 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 		// Delay each part of the packet
 		sleep(1);
 	}
+}
+
+float deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
+{
+	for (int i = 0; i < PIN_LENGTH; i++)
+	{
+		serializedBalance[i] ^= pin[i];
+	}
+	float balance;
+	memcpy(&balance, serializedBalance, sizeof(balance));
+	return balance;
 }
 
 void printByteArray(uint8_t* arrayIn, int length)
@@ -617,6 +636,11 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		// Printing received Dogecoin address (1st byte in this payload in the opcode)
 		printf("%s\n", payloadIn + 1);
 		break;
+	case BALANCE_RECEIVED:
+		printf("Received Balance!\n");
+		float balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
+		printf("%f\n", balanceReceived);
+		break;
 	default:
 		printf("Unknown payload received!\n");
 		break;
@@ -632,11 +656,11 @@ void processCommandPayload(uint8_t* payloadIn, int payloadSize)
 		break;
 	case NODE_ADDRESS_SET:
 		// Should not see this
-		// This command will just be ACK'd
+		// This command will just be ACK'd by the module
 		break;
 	case PING_REQUEST:
 		// Should not see this
-		// This command will just be ACK'd
+		// This command will just be ACK'd by the module without host intervention
 		break;
 	case MESSAGE_REQUEST:
 		break;
@@ -834,7 +858,7 @@ void enterDogeMode()
 			break;
 		case 2:
 			// Get Dogecoin Balance
-			printf("Not currently implemented\n");
+			cmdRequestBalance(myaddr, rmaddr, testDogeAddress);
 			break;
 		case 3:
 			// Display QR code
@@ -982,6 +1006,7 @@ main()
 	printf("Libdogecoin initialization complete!\n");
 
 	printStartScreen();
+	createTestDogeAddress(testDogeAddress); // Initial test address 
 	// Enter into mode selection loop
 	modeSelectionLoop();
 

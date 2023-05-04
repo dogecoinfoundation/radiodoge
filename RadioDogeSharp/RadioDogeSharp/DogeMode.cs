@@ -19,7 +19,7 @@ namespace RadioDoge
                 case DogeCommandType.GetDogeAddress:
                     RequestDogeCoinAddress(destinationAddress);
                     return;
-                case DogeCommandType.GetBalance:
+                case DogeCommandType.RequestBalance:
                     RequestDogeCoinBalance(destinationAddress, testAddress);
                     break;
                 default:
@@ -41,8 +41,16 @@ namespace RadioDoge
         private void RequestDogeCoinBalance(NodeAddress destNode, byte[] dogeCoinAddress)
         {
             List<byte> payload = new List<byte>(dogeCoinAddress.Length + 1);
-            payload.Add((byte)DogeCommandType.GetBalance);
+            payload.Add((byte)DogeCommandType.RequestBalance);
             payload.AddRange(dogeCoinAddress);
+            SendPacket(destNode, payload.ToArray());
+        }
+
+        private void SendDogeCoinBalance(NodeAddress destNode, byte[] serializedBalance)
+        {
+            List<byte> payload = new List<byte>(serializedBalance.Length + 1);
+            payload.Add((byte)DogeCommandType.BalanceReceived);
+            payload.AddRange(serializedBalance);
             SendPacket(destNode, payload.ToArray());
         }
 
@@ -68,13 +76,44 @@ namespace RadioDoge
                     // This means someone is requesting a dogecoin address so we would send ours out
                     SendDogeAddress(senderAddress);
                     break;
-                case DogeCommandType.Registeration:
+                case DogeCommandType.RequestBalance:
+                    ServiceBalanceRequest(senderAddress, payload);
+                    break;
+                case DogeCommandType.Registration:
                     RegisterDogeAddress(senderAddress, payload);
                     break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
                     PrintPayloadAsHex(payload);
                     break;
+            }
+        }
+
+        private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)
+        {
+            int addressLength = payload.Length - 1;
+            string requestAddress = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
+            if (dogeAddressBook.ContainsKey(requestAddress))
+            {
+                // Get the balance
+                // @TODO
+                float testBalance = 320.2032f;
+
+                // Modify it with the pin
+                byte[] pin = dogeAddressBook[requestAddress].GetPin();
+                byte[] balanceToSend = ObfuscateDogeCoinBalance(testBalance, pin);
+
+                // Printing for debug purposes REMOVE LATER
+                float obfuscatedValue = BitConverter.ToSingle(balanceToSend, 0);
+                Console.WriteLine($"Balance: {testBalance}, Obfuscated: {obfuscatedValue}");
+
+                // Send out obfuscated balance
+                SendDogeCoinBalance(replyAddress, balanceToSend);
+            }
+            else
+            {
+                // Address book does not contain requested address.
+                // wat do?
             }
         }
 
@@ -164,6 +203,29 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Failed to perform registration function: {regOpcode}");
             }
+
+            // Print address book for debugging purposes
+            Console.WriteLine();
+            PrintDogeAddressBook();
+        }
+
+        private byte[] ObfuscateDogeCoinBalance(float balance, byte[] pin)
+        {
+            byte[] serializedBalance = BitConverter.GetBytes(balance);
+            for (int i = 0; i < serializedBalance.Length; i++)
+            {
+                serializedBalance[i] ^= pin[i];
+            }
+            return serializedBalance;
+        }
+
+        private float DeobfuscateDogeCoinBalance(byte[] serializedBalance, byte[] pin)
+        {
+            for (int i = 0; i < serializedBalance.Length; i++)
+            {
+                serializedBalance[i] ^= pin[i];
+            }
+            return BitConverter.ToSingle(serializedBalance, 0);
         }
 
         private string GetStringFromPin(byte[] pin)
@@ -212,6 +274,16 @@ namespace RadioDoge
                 ConsoleHelper.WriteEmphasizedLine($"{i}: {(DogeCommandType)i}", ConsoleColor.Cyan);
             }
             ConsoleHelper.WriteEmphasizedLine("Enter 'exit' to return to the mode selection screen or 'help' for available commands\n", ConsoleColor.Magenta);
+        }
+
+        private void PrintDogeAddressBook()
+        {
+            Console.WriteLine("### Dogecoin Address Book ###");
+            Dictionary<string, AddressBookEntry>.KeyCollection keys = dogeAddressBook.Keys;
+            foreach (string dogeAddress in keys)
+            {
+                Console.WriteLine($"Address: {dogeAddress}, Node: {dogeAddressBook[dogeAddress].GetNodeAddress()}");
+            }
         }
     }
 }

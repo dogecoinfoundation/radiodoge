@@ -9,7 +9,7 @@ namespace RadioDoge
     internal class AddressBookEntry
     {
         private const int PIN_LENGTH = 4;
-        private NodeAddress nodeAddress;
+        private readonly NodeAddress nodeAddress;
         private byte[] pin;
         // Eventually we may want to include an address nickname
         //private string name;
@@ -18,6 +18,11 @@ namespace RadioDoge
         {
             this.nodeAddress = nodeAddress;
             this.pin = pin;
+        }
+
+        public NodeAddress GetNodeAddress()
+        {
+            return nodeAddress;
         }
 
         public bool ResetPin(byte[] oldPin, byte[] newPin)
@@ -50,6 +55,11 @@ namespace RadioDoge
             }
 
             return true;
+        }
+
+        public byte[] GetPin()
+        {
+            return pin;
         }
     }
 }
