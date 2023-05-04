@@ -33,11 +33,18 @@ enum resultCode
 enum dogeCommand
 {
 	DISPLAY_QR = 1,
-	REGISTER_ADDRESS = 15,
+	REGISTRATION = 15,
 	GET_DOGE_ADDRESS = 120,
 	SEND_DOGE_ADDRESS = 240,
 	GET_BALANCE = 101,
 	SEND_BALANCE = 202
+};
+
+enum registrationFunctions
+{
+	ADD_REGISTRATION = 10,
+	REMOVE_REGISTRATION = 20,
+	UPDATE_PIN = 30
 };
 
 #define PIN_LENGTH 4

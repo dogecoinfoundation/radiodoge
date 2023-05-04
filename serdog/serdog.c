@@ -14,6 +14,9 @@
 int pollEnable = 0;
 
 int charsinbuffer = 0;
+char testDogeAddress[P2PKH_ADDR_STRINGLEN];
+uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
+
 
 int openPort()
 {
@@ -329,13 +332,38 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
-cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin)
+cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin, bool removeAddress)
 {
-	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1 + PIN_LENGTH];
-	payload[0] = REGISTER_ADDRESS;
-	memcpy(payload + 1, dogeAddress, P2PKH_ADDR_STRINGLEN);
-	memcpy(payload + 1 + P2PKH_ADDR_STRINGLEN, pin, PIN_LENGTH);
-	cmdSendMessage(inaddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1 + PIN_LENGTH);
+	// 2 bytes for the registration type and 1 for the registration function to be performed
+	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + PIN_LENGTH;
+	uint8_t payload[payloadLength];
+	payload[0] = REGISTRATION;
+	if (removeAddress)
+	{
+		payload[1] = REMOVE_REGISTRATION;
+	}
+	else
+	{
+		payload[1] = ADD_REGISTRATION;
+	}
+	memcpy(payload + 2, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	memcpy(payload + 2 + P2PKH_ADDR_STRINGLEN, pin, PIN_LENGTH);
+	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
+}
+
+cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* oldPin, uint8_t* updatedPin)
+{
+	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + (2 * PIN_LENGTH);
+	uint8_t payload[payloadLength];
+	payload[0] = REGISTRATION;
+	payload[1] = UPDATE_PIN;
+	int offset = 2;
+	memcpy(payload + offset, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	offset += P2PKH_ADDR_STRINGLEN;
+	memcpy(payload + offset, oldPin, PIN_LENGTH);
+	offset += PIN_LENGTH;
+	memcpy(payload + offset, updatedPin, PIN_LENGTH);
+	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
 }
 
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
@@ -816,10 +844,19 @@ void enterDogeMode()
 			break;
 		case 4:
 			// Register Address
-			char registerDogeAddress[P2PKH_ADDR_STRINGLEN];
-			createTestDogeAddress(registerDogeAddress);
+			createTestDogeAddress(testDogeAddress);
 			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
-			cmdRegisterDogeAddress(myaddr, rmaddr, registerDogeAddress, testPin);
+			cmdRegisterDogeAddress(myaddr, rmaddr, testDogeAddress, testPin, false);
+			break;
+		case 5:
+			// Remove Address Registration
+			cmdRegisterDogeAddress(myaddr, rmaddr, testDogeAddress, testPin, true);
+			break;
+		case 6:
+			// Update Registered Pin
+			uint8_t updatedPin[PIN_LENGTH] = { 4, 3, 2, 1 };
+			cmdUpdateRegistrationPin(myaddr, rmaddr, testDogeAddress, testPin, updatedPin);
+			break;
 		}
 		sleep(2);
 	}

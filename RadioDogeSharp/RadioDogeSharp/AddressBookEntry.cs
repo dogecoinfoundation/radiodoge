@@ -38,5 +38,18 @@ namespace RadioDoge
             pin = newPin;
             return true;
         }
+
+        public bool DoesPinMatch(byte[] testPin)
+        {
+            for (int i = 0; i < PIN_LENGTH; i++)
+            {
+                if (testPin[i] != pin[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 }

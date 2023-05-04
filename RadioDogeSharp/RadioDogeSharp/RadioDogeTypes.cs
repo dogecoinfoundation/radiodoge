@@ -24,11 +24,18 @@
 
     internal enum DogeCommandType
     {
-        RegisterAddress = 15,
+        Registeration = 15,
         GetDogeAddress = 120,
         SendDogeAddress = 240,
         GetBalance = 101,
         SendBalance = 202
+    }
+
+    internal enum RegistrationFunction
+    {
+        AddRegistration = 10,
+        RemoveRegistration = 20,
+        UpdatePin = 30
     }
 
     internal enum ModeSelection

@@ -68,7 +68,7 @@ namespace RadioDoge
                     // This means someone is requesting a dogecoin address so we would send ours out
                     SendDogeAddress(senderAddress);
                     break;
-                case DogeCommandType.RegisterAddress:
+                case DogeCommandType.Registeration:
                     RegisterDogeAddress(senderAddress, payload);
                     break;
                 default:
@@ -87,37 +87,93 @@ namespace RadioDoge
 
         private void RegisterDogeAddress(NodeAddress sender, byte[] payload)
         {
-            // We are expecting an address and a pin here which we will add to our dictionary
-            int addressLength = payload.Length - (PIN_LENGTH + 1);
+            // First get the registration function to be performed
+            RegistrationFunction regOpcode = (RegistrationFunction)payload[1];
+            int addressLength = payload.Length;
+            if (regOpcode == RegistrationFunction.UpdatePin)
+            {
+                addressLength -= (2 * PIN_LENGTH) + 2;
+            }
+            else
+            {
+                addressLength -= PIN_LENGTH + 2;
+            }
+
             if (addressLength <= MAX_ADDRESS_LENGTH)
             {
-                string addressString = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
+                string addressString = ExtractDogecoinAddressFromPayload(2, addressLength, payload);
                 // Extract pin from payload
                 byte[] extractedPin = new byte[PIN_LENGTH];
-                Array.Copy(payload, addressLength + 1, extractedPin, 0, PIN_LENGTH);
-                Console.WriteLine($"Registering Dogecoin Address: {addressString}");
-                string pinString = "";
-                for (int i = 0; i < PIN_LENGTH; i++)
+                Array.Copy(payload, addressLength + 2, extractedPin, 0, PIN_LENGTH);
+                switch (regOpcode)
                 {
-                    pinString += extractedPin[i].ToString();
-                }
-
-                Console.WriteLine($"Pin: {pinString}");
-                bool alreadyRegistered = dogeAddressBook.ContainsKey(addressString);
-                if (!alreadyRegistered)
-                {
-                    AddressBookEntry entry = new AddressBookEntry(sender, extractedPin);
-                    dogeAddressBook.Add(addressString, entry);
-                }
-                else
-                {
-                    Console.WriteLine("Address already registered!");
+                    case RegistrationFunction.UpdatePin:
+                        if (dogeAddressBook.ContainsKey(addressString))
+                        {
+                            // Check if old pin matches new pin
+                            byte[] updatedPin = new byte[PIN_LENGTH];
+                            Array.Copy(payload, addressLength + 2 + PIN_LENGTH, updatedPin, 0, PIN_LENGTH);
+                            bool pinUpdateSuccess = dogeAddressBook[addressString].ResetPin(extractedPin, updatedPin);
+                            if (pinUpdateSuccess)
+                            {
+                                Console.WriteLine($"Pin successfully updated for {addressString}");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Pin could not be updated for {addressString}");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("Address has not been previously registered!");
+                        }
+                        break;
+                    case RegistrationFunction.AddRegistration:
+                        bool alreadyRegistered = dogeAddressBook.ContainsKey(addressString);
+                        if (!alreadyRegistered)
+                        {
+                            Console.WriteLine($"Registering Dogecoin Address: {addressString}");
+                            string pinString = GetStringFromPin(extractedPin);
+                            Console.WriteLine($"Pin: {pinString}");
+                            AddressBookEntry entry = new AddressBookEntry(sender, extractedPin);
+                            dogeAddressBook.Add(addressString, entry);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Address already registered!");
+                        }
+                        break;
+                    case RegistrationFunction.RemoveRegistration:
+                        if (dogeAddressBook.ContainsKey(addressString))
+                        {
+                            // Check if pin matches
+                            if (dogeAddressBook[addressString].DoesPinMatch(extractedPin))
+                            {
+                                dogeAddressBook.Remove(addressString);
+                                Console.WriteLine($"Address {addressString} successfully removed!");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Pin does not match for {addressString}. Unable to remove registration!");
+                            }
+                        }
+                        break;
                 }
             }
             else
             {
-                Console.WriteLine("Failed to register dogecoin address!");
+                Console.WriteLine($"Failed to perform registration function: {regOpcode}");
             }
+        }
+
+        private string GetStringFromPin(byte[] pin)
+        {
+            string pinString = "";
+            for (int i = 0; i < PIN_LENGTH; i++)
+            {
+                pinString += pin[i].ToString();
+            }
+            return pinString;
         }
 
         private void SendDogeAddress(NodeAddress destNode)
