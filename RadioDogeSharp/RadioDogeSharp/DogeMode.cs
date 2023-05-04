@@ -4,7 +4,7 @@ namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
-        private Dictionary<string, string> dogeAddressBook = new Dictionary<string, string>();
+        private Dictionary<string, AddressBookEntry> dogeAddressBook = new Dictionary<string, AddressBookEntry>();
         private const int PIN_LENGTH = 4;
         private const int MAX_ADDRESS_LENGTH = 35;
         private byte[] testAddress = { 0x44 };
@@ -69,7 +69,7 @@ namespace RadioDoge
                     SendDogeAddress(senderAddress);
                     break;
                 case DogeCommandType.RegisterAddress:
-                    RegisterDogeAddress(payload);
+                    RegisterDogeAddress(senderAddress, payload);
                     break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
@@ -85,20 +85,29 @@ namespace RadioDoge
             return new string(dogecoinAddress);
         }
 
-        private void RegisterDogeAddress(byte[] payload)
+        private void RegisterDogeAddress(NodeAddress sender, byte[] payload)
         {
             // We are expecting an address and a pin here which we will add to our dictionary
             int addressLength = payload.Length - (PIN_LENGTH + 1);
             if (addressLength <= MAX_ADDRESS_LENGTH)
             {
                 string addressString = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
-                string pin = ExtractDogecoinAddressFromPayload(addressLength + 1, PIN_LENGTH, payload);
+                // Extract pin from payload
+                byte[] extractedPin = new byte[PIN_LENGTH];
+                Array.Copy(payload, addressLength + 1, extractedPin, 0, PIN_LENGTH);
                 Console.WriteLine($"Registering Dogecoin Address: {addressString}");
-                Console.WriteLine($"Pin: {pin}");
+                string pinString = "";
+                for (int i = 0; i < PIN_LENGTH; i++)
+                {
+                    pinString += extractedPin[i].ToString();
+                }
+
+                Console.WriteLine($"Pin: {pinString}");
                 bool alreadyRegistered = dogeAddressBook.ContainsKey(addressString);
                 if (!alreadyRegistered)
                 {
-                    dogeAddressBook.Add(addressString, pin);
+                    AddressBookEntry entry = new AddressBookEntry(sender, extractedPin);
+                    dogeAddressBook.Add(addressString, entry);
                 }
                 else
                 {
