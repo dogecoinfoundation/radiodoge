@@ -25,6 +25,7 @@
  OTHER DEALINGS IN THE SOFTWARE.
 
  */
+#pragma once
 
 #include <limits.h>
 #include <stdint.h>
