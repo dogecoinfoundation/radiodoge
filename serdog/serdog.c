@@ -15,6 +15,7 @@ int pollEnable = 0;
 
 int charsinbuffer = 0;
 char testDogeAddress[P2PKH_ADDR_STRINGLEN];
+char testPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 
 
@@ -103,6 +104,42 @@ int init()
 	{
 		printf("Port flush and setup successful.\n\n");
 	}
+}
+
+void encryptString(char* password, char* string, int stringLength) {
+	int i, j = 0;
+	int passwordLength = strlen(password);
+	for (i = 0; i < stringLength; i++) 
+	{
+		string[i] ^= password[j];
+		j = (j + 1) % passwordLength;
+	}
+}
+
+void readAddressFromFile(char* fileName, char* pubAddress, char* privateKey, char* password) {
+	FILE* file = fopen(fileName, "r");
+	if (file == NULL) 
+	{
+		printf("Error opening file.\n");
+		exit(1);
+	}
+	fgets(pubAddress, P2PKH_ADDR_STRINGLEN, file);
+	fread(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
+	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN);
+	fclose(file);
+}
+
+void writeAddressToFile(char* fileName, char* pubAddress, char* privateKey, char* password) {
+	FILE* file = fopen(fileName, "w");
+	if (file == NULL) 
+	{
+		printf("Error opening file.\n");
+		return;
+	}
+	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN);
+	fprintf(file, "%s", pubAddress, privateKey);
+	fwrite(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
+	fclose(file);
 }
 
 int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
@@ -779,11 +816,9 @@ void displayDogeQRCode(char* dogeAddress)
 
 void createTestDogeAddress(char* dogeAddress)
 {
-	//create a buffer the size of a private key (wallet import format uncompressed key length)
-	//this constant is in include/constants.h, included via libdogecoin.h
-	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+	printf("Generating a new test DogeCoin address!\n");
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
-	generatePrivPubKeypair(keybuffer, dogeAddress, false);
+	generatePrivPubKeypair(testPrivateKey, dogeAddress, false);
 }
 
 void modeSelectionLoop()
@@ -979,6 +1014,29 @@ void hardwareTests()
 	multipartCountTest();
 }
 
+void fileWriteReadTest()
+{
+	printf("Performing address read write test");
+	// First create a test address
+	//create a buffer the size of a private key (wallet import format uncompressed key length)
+	//this constant is in include/constants.h, included via libdogecoin.h
+	char testPassword[10] = "RaDi0D0g3!";
+	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+	char testAddress[P2PKH_ADDR_STRINGLEN];
+	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
+	generatePrivPubKeypair(keybuffer, testAddress, false);
+
+	// Write to a file
+	printf("Saving...\nAddress: %s\n Private Key: %s\n", testAddress, keybuffer);
+	writeAddressToFile("savedAddressTest.txt", testAddress, keybuffer, testPassword);
+
+	// Load from the file
+	char loadedKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+	char loadedAddress[P2PKH_ADDR_STRINGLEN];
+	readAddressFromFile("savedAddressTest.txt", loadedAddress, loadedKey, testPassword);
+	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedAddress, loadedKey);
+}
+
 main()
 {
 	printf("Performing startup functions...\n");
@@ -1013,6 +1071,7 @@ main()
 	}
 	printf("Libdogecoin initialization complete!\n");
 
+	fileWriteReadTest();
 	printStartScreen();
 	createTestDogeAddress(testDogeAddress); // Initial test address 
 	// Enter into mode selection loop
