@@ -641,6 +641,14 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		float balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
 		printf("%f\n", balanceReceived);
 		break;
+	case DOGE_COMMAND_SUCCESS:
+		printf("RadioDoge Hub node executed command successfully!\n");
+		// @TODO provide more info to user
+		break;
+	case DOGE_COMMAND_FAILURE:
+		printf("ERROR: RadioDoge Hub node failed to execute command!\n");
+		// @TODO failure reasoning...
+		break;
 	default:
 		printf("Unknown payload received!\n");
 		break;

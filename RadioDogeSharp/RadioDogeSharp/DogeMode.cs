@@ -54,6 +54,25 @@ namespace RadioDoge
             SendPacket(destNode, payload.ToArray());
         }
 
+        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand, byte[] responseData)
+        {
+            List<byte> payload = new List<byte>(responseData.Length + 2);
+            DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
+            payload.Add((byte)header);
+            payload.Add((byte)responseCommand);
+            payload.AddRange(responseData);
+            SendPacket(destNode, payload.ToArray());
+        }
+
+        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand)
+        {
+            List<byte> payload = new List<byte>(2);
+            DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
+            payload.Add((byte)header);
+            payload.Add((byte)responseCommand);
+            SendPacket(destNode, payload.ToArray());
+        }
+
         private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
         {
             DogeCommandType commType = (DogeCommandType)payload[0];
@@ -70,6 +89,7 @@ namespace RadioDoge
                     else
                     {
                         Console.WriteLine("Received an address that was too long!");
+                        SendGenericDogeResponse(senderAddress, false, DogeCommandType.SendDogeAddress);
                     }
                     break;
                 case DogeCommandType.GetDogeAddress:
@@ -97,7 +117,7 @@ namespace RadioDoge
             {
                 // Get the balance
                 // @TODO
-                float testBalance = 320.2032f;
+                float testBalance = 1234.5678f;
 
                 // Modify it with the pin
                 byte[] pin = dogeAddressBook[requestAddress].GetPin();
@@ -112,8 +132,9 @@ namespace RadioDoge
             }
             else
             {
-                // Address book does not contain requested address.
-                // wat do?
+                // Address book does not contain requested address
+                // We will send a failure message for now
+                SendGenericDogeResponse(replyAddress, false, DogeCommandType.RequestBalance);
             }
         }
 
@@ -137,7 +158,7 @@ namespace RadioDoge
             {
                 addressLength -= PIN_LENGTH + 2;
             }
-
+            bool operationSuccess = false;
             if (addressLength <= MAX_ADDRESS_LENGTH)
             {
                 string addressString = ExtractDogecoinAddressFromPayload(2, addressLength, payload);
@@ -156,6 +177,7 @@ namespace RadioDoge
                             if (pinUpdateSuccess)
                             {
                                 Console.WriteLine($"Pin successfully updated for {addressString}");
+                                operationSuccess = true;
                             }
                             else
                             {
@@ -176,6 +198,7 @@ namespace RadioDoge
                             Console.WriteLine($"Pin: {pinString}");
                             AddressBookEntry entry = new AddressBookEntry(sender, extractedPin);
                             dogeAddressBook.Add(addressString, entry);
+                            operationSuccess = true;
                         }
                         else
                         {
@@ -190,6 +213,7 @@ namespace RadioDoge
                             {
                                 dogeAddressBook.Remove(addressString);
                                 Console.WriteLine($"Address {addressString} successfully removed!");
+                                operationSuccess = true;
                             }
                             else
                             {
@@ -204,6 +228,8 @@ namespace RadioDoge
                 Console.WriteLine($"Failed to perform registration function: {regOpcode}");
             }
 
+            // Send response back to the sender
+            SendGenericDogeResponse(sender, operationSuccess, DogeCommandType.Registration, new byte[] { (byte)regOpcode });
             // Print address book for debugging purposes
             Console.WriteLine();
             PrintDogeAddressBook();
