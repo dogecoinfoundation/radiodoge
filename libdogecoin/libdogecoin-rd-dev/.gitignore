@@ -1,0 +1,154 @@
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+*~
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# autoreconf
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+build-aux/config.guess
+build-aux/config.sub
+build-aux/depcomp
+build-aux/install-sh
+build-aux/ltmain.sh
+build-aux/ar-lib
+build-aux/m4/libtool.m4
+build-aux/m4/lt~obsolete.m4
+build-aux/m4/ltoptions.m4
+build-aux/m4/ltsugar.m4
+build-aux/m4/ltversion.m4
+build-aux/missing
+build-aux/compile
+build-aux/test-driver
+config.log
+config.status
+configure
+libtool
+such
+sendtx
+spvnode
+config/libdogecoin-config.h
+config/libdogecoin-config.h.in
+config/libdogecoin-config.h.in~
+config/stamp-h1
+m4/libtool.m4
+m4/ltoptions.m4
+m4/ltsugar.m4
+m4/ltversion.m4
+m4/lt~obsolete.m4
+src/stamp-h1
+libbtc256k1.pc
+.deps/
+.dirstamp
+
+# Tests
+tests
+tests.*
+test-suite.log
+
+# --
+!.gitignore
+*.DS_Store
+.DS_Store
+*.gcda
+*.gcov
+*.gcno
+.deps
+.libs
+.vscode
+*.log
+*.trs
+*.db
+*.tar.gz
+*.pc
+**/__pycache__/
+*.py[cod]
+libdogecoin.egg-info/
+**/libdogecoin.c
+dist/
+!wrappers/golang/libdogecoin/go.mod
+contrib/gitian/
+contrib/gitian/*
+example
+
+# CMake files
+build/*
+**/cmake-build-debug
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/install_manifest.txt
+**/CMakeFiles/
+**/CTestTestfile.cmake
+**/Makefile
+**/*.cbp
+**/CMakeScripts
+**/compile_commands.json
+Testing/
+/.vs
+/out/build/x64-Debug/.cmake/api/v1
+/out/build/x64-Debug
+/src/libevent/.vs
+/src/libevent/build/.vs/libevent
+/src/libevent/out/build/x64-Debug
+/src/libevent/build
+*.tcl
+include/uni*.h
+include/unistring/
+include/ev*.h
+include/event2/*
+include/include.am
+
+# QR
+qrtest.png
+qrtest.jpg

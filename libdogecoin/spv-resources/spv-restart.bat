@@ -1,0 +1,1 @@
+spvnode.exe -c scan
