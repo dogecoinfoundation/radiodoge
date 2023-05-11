@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 
 namespace RadioDoge
 {
@@ -15,6 +16,7 @@ namespace RadioDoge
         {
             ConsoleHelper.PrintTitleScreen();
             LibDogecoin.DogeTest();
+            TestBalanceInquiry();
             if (SetupSerialConnection())
             {
                 ModeSelectionLoop();

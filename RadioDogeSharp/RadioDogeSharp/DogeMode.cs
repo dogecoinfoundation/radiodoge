@@ -1,4 +1,7 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace RadioDoge
 {
@@ -7,7 +10,7 @@ namespace RadioDoge
         private Dictionary<string, AddressBookEntry> dogeAddressBook = new Dictionary<string, AddressBookEntry>();
         private const int PIN_LENGTH = 4;
         private const int MAX_ADDRESS_LENGTH = 35;
-        private byte[] testAddress = { 0x44 };
+        private string[] testAddresses = new string[] { "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY", "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR", "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y" };
 
         private void SendDogeCommand(int commandValue)
         {
@@ -20,7 +23,7 @@ namespace RadioDoge
                     RequestDogeCoinAddress(destinationAddress);
                     return;
                 case DogeCommandType.RequestBalance:
-                    RequestDogeCoinBalance(destinationAddress, testAddress);
+                    RequestDogeCoinBalance(destinationAddress, Encoding.ASCII.GetBytes(testAddresses[0]));
                     break;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
@@ -310,6 +313,42 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Address: {dogeAddress}, Node: {dogeAddressBook[dogeAddress].GetNodeAddress()}");
             }
+        }
+
+        private void RunSPVCommand()
+        {
+            Console.WriteLine("Running SPV...");
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = false,
+                UseShellExecute = false,
+                CreateNoWindow = false
+            };
+
+            Process process = new Process { StartInfo = startInfo };
+
+            process.Start();
+            string cmdString = "spvnode.exe -c -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -b -p scan";
+            process.StandardInput.WriteLine(cmdString);
+            while (Console.ReadLine() != "exit")
+            {
+                Console.WriteLine("Waiting...");
+                Thread.Sleep(1000);
+            }
+            process.StandardInput.Close();
+        }
+
+        private void TestBalanceInquiry()
+        {
+            Console.WriteLine("Balance Inquiry Test");
+            StringBuilder currTestAddress = new StringBuilder(testAddresses[0]);
+            UInt64 value = LibDogecoin.dogecoin_get_balance(currTestAddress);
+            Console.WriteLine($"Balance Value: {value}");
+            IntPtr balanceStringPointer = LibDogecoin.dogecoin_get_balance_str(currTestAddress);
+            string balanceString = Marshal.PtrToStringAnsi(balanceStringPointer);
+            Console.WriteLine($"Balance String: {balanceString}\n");            
         }
     }
 }
