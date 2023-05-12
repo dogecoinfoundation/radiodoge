@@ -25,6 +25,7 @@ namespace RadioDoge
                 privatekey = pvkey.ToString();
                 publickey = pubkey.ToString();
 
+                Console.WriteLine("Generated test address info:");
                 Console.WriteLine($"Private key: {privatekey}");
                 Console.WriteLine($"Public key: {publickey}");
             }
@@ -67,33 +68,33 @@ namespace RadioDoge
         public static extern int getDerivedHDAddressByPath(string masterkey, string derived_path, StringBuilder outaddress, bool outprivkey);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_register_watch_address_with_node(StringBuilder address);
+        public static extern int dogecoin_register_watch_address_with_node(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_unregister_watch_address_with_node(StringBuilder address);
+        public static extern int dogecoin_unregister_watch_address_with_node(string address);
 
         /*
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_get_utxo_vector(StringBuilder address, vector* utxos);
+        public static extern int dogecoin_get_utxo_vector(string address, vector* utxos);
         */
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern byte[] dogecoin_get_utxos(StringBuilder address);
+        public static extern byte[] dogecoin_get_utxos(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern UInt32 dogecoin_get_utxos_length(StringBuilder address);
+        public static extern UInt32 dogecoin_get_utxos_length(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_utxo_txid_str(StringBuilder address, UInt32 index);
+        public static extern IntPtr dogecoin_get_utxo_txid_str(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern byte[] dogecoin_get_utxo_txid(StringBuilder address, UInt32 index);
+        public static extern byte[] dogecoin_get_utxo_txid(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern UInt64 dogecoin_get_balance(StringBuilder address);
+        public static extern UInt64 dogecoin_get_balance(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_balance_str(StringBuilder address);
+        public static extern IntPtr dogecoin_get_balance_str(string address);
     }
 }
 

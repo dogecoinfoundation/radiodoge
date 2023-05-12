@@ -14,11 +14,11 @@
 
 int pollEnable = 0;
 
-int charsinbuffer = 0;
 char demoAddress1[] = "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY";
 char demoAddress2[] = "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR";
 char demoAddress3[] = "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y";
-char testDogeAddress[P2PKH_ADDR_STRINGLEN];
+int charsinbuffer = 0;
+char loadedDogeAddress[P2PKH_ADDR_STRINGLEN];
 char testPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 
@@ -653,9 +653,11 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		printf("%s\n", payloadIn + 1);
 		break;
 	case BALANCE_RECEIVED:
-		printf("Received Balance!\n");
+		printf("Received Dogecoin Balance!\n");
 		uint64_t balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
-		printf("%i\n", balanceReceived);
+		// Now turn balance into a float
+		float balanceFloat = (float)balanceReceived / (float)100000000;
+		printf("Balance: %f\n", balanceFloat);
 		break;
 	case DOGE_COMMAND_SUCCESS:
 		printf("RadioDoge Hub node executed command successfully!\n");
@@ -880,32 +882,57 @@ void enterDogeMode()
 			break;
 		case 2:
 			// Get Dogecoin Balance
-			cmdRequestBalance(myaddr, rmaddr, testDogeAddress);
+			cmdRequestBalance(myaddr, rmaddr, loadedDogeAddress);
 			break;
 		case 3:
 			// Display QR code
-			char dogeAddrBuffer[P2PKH_ADDR_STRINGLEN];
-			createTestDogeAddress(dogeAddrBuffer);
-			displayDogeQRCode(dogeAddrBuffer);
+			displayDogeQRCode(loadedDogeAddress);
 			break;
 		case 4:
 			// Register Address
-			createTestDogeAddress(testDogeAddress);
 			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
-			cmdRegisterDogeAddress(myaddr, rmaddr, testDogeAddress, testPin, false);
+			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, false);
 			break;
 		case 5:
 			// Remove Address Registration
-			cmdRegisterDogeAddress(myaddr, rmaddr, testDogeAddress, testPin, true);
+			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, true);
 			break;
 		case 6:
 			// Update Registered Pin
 			uint8_t updatedPin[PIN_LENGTH] = { 4, 3, 2, 1 };
-			cmdUpdateRegistrationPin(myaddr, rmaddr, testDogeAddress, testPin, updatedPin);
+			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedPin);
+			break;
+		case 7:
+			// Load Demo Address
+			LoadDemoAddress();
 			break;
 		}
 		sleep(2);
 	}
+}
+
+void LoadDemoAddress()
+{
+	int addressSelection = getDemoAddressSelection();
+	switch (addressSelection)
+	{
+	case 1:
+		strcpy(loadedDogeAddress, demoAddress1);
+		break;
+	case 2:
+		strcpy(loadedDogeAddress, demoAddress2);
+		break;
+	case 3:
+		strcpy(loadedDogeAddress, demoAddress3);
+		break;
+	case 4:
+		createTestDogeAddress(loadedDogeAddress);
+		break;
+	default:
+		printf("No demo address loaded!\n");
+		break;
+	}
+	printf("Currently loaded Dogecoin address: %s\n", loadedDogeAddress);
 }
 
 void enterTestMode()
@@ -1050,9 +1077,9 @@ main()
 	}
 	printf("Libdogecoin initialization complete!\n");
 
-	fileWriteReadTest();
+	//fileWriteReadTest();
 	printStartScreen();
-	createTestDogeAddress(testDogeAddress); // Initial test address 
+	createTestDogeAddress(loadedDogeAddress); // Initial test address 
 	// Enter into mode selection loop
 	modeSelectionLoop();
 

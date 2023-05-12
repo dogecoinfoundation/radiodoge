@@ -11,6 +11,7 @@ int getModeSelection();
 int getSetupModeSelection();
 int getDogeModeSelection();
 int getTestModeSelection();
+int getDemoAddressSelection();
 void getUserSuppliedNodeAddress(uint8_t* address);
 
 #endif

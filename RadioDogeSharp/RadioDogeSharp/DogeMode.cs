@@ -119,8 +119,7 @@ namespace RadioDoge
             if (dogeAddressBook.ContainsKey(requestAddress))
             {
                 // Get the balance
-                // @TODO
-                UInt64 testBalance = 123456789;
+                UInt64 testBalance = LibDogecoin.dogecoin_get_balance(requestAddress);
 
                 // Modify it with the pin
                 byte[] pin = dogeAddressBook[requestAddress].GetPin();
@@ -353,7 +352,7 @@ namespace RadioDoge
         private void TestBalanceInquiry()
         {
             Console.WriteLine("Balance Inquiry Test");
-            StringBuilder currTestAddress = new StringBuilder(testAddresses[0]);
+            string currTestAddress = testAddresses[0];
             UInt64 value = LibDogecoin.dogecoin_get_balance(currTestAddress);
             Console.WriteLine($"Balance Value: {value}");
             IntPtr balanceStringPointer = LibDogecoin.dogecoin_get_balance_str(currTestAddress);

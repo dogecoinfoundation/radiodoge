@@ -38,8 +38,9 @@ int getDogeModeSelection()
 	printf("4: Register Address\n");
 	printf("5: Remove Address Registration\n");
 	printf("6: Update Registered Pin\n");
-	printf("7: Exit Doge Mode\n");
-	return userInputLoop(7);
+	printf("7: Load Dogeaddress\n");
+	printf("8: Exit Doge Mode\n");
+	return userInputLoop(8);
 }
 
 int getTestModeSelection()
@@ -50,6 +51,17 @@ int getTestModeSelection()
 	printf("3: Display Control Test\n");
 	printf("4: Exit Test Mode\n");
 	return userInputLoop(4);
+}
+
+int getDemoAddressSelection()
+{
+	printf("\n### MUCH DEMO ADDRESS SELECT ###\n");
+	printf("1: D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY\n");
+	printf("2: DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR\n");
+	printf("3: DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\n");
+	printf("4: Generate new test address\n");
+	printf("5: Exit Address Selection\n");
+	return userInputLoop(5);
 }
 
 void getUserSuppliedNodeAddress(uint8_t* address)

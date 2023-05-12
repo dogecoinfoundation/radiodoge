@@ -16,7 +16,6 @@ namespace RadioDoge
         {
             ConsoleHelper.PrintTitleScreen();
             LibDogecoin.DogeTest();
-            TestBalanceInquiry();
             if (SetupSerialConnection())
             {
                 ModeSelectionLoop();
