@@ -15,6 +15,7 @@ namespace RadioDoge
         public void Execute()
         {
             ConsoleHelper.PrintTitleScreen();
+            //RunSPVCommand();
             LibDogecoin.DogeTest();
             if (SetupSerialConnection())
             {
