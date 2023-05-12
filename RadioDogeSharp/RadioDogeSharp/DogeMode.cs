@@ -120,7 +120,7 @@ namespace RadioDoge
             {
                 // Get the balance
                 // @TODO
-                float testBalance = 1234.5678f;
+                UInt64 testBalance = 123456789;
 
                 // Modify it with the pin
                 byte[] pin = dogeAddressBook[requestAddress].GetPin();
@@ -238,12 +238,22 @@ namespace RadioDoge
             PrintDogeAddressBook();
         }
 
-        private byte[] ObfuscateDogeCoinBalance(float balance, byte[] pin)
+        private byte[] ObfuscateDogeCoinFloatBalance(float balance, byte[] pin)
         {
             byte[] serializedBalance = BitConverter.GetBytes(balance);
             for (int i = 0; i < serializedBalance.Length; i++)
             {
                 serializedBalance[i] ^= pin[i];
+            }
+            return serializedBalance;
+        }
+
+        private byte[] ObfuscateDogeCoinBalance(UInt64 balance, byte[] pin)
+        {
+            byte[] serializedBalance = BitConverter.GetBytes(balance);
+            for (int i = 0; i < serializedBalance.Length; i++)
+            {
+                serializedBalance[i] ^= pin[i % PIN_LENGTH];
             }
             return serializedBalance;
         }

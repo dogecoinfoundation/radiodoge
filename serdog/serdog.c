@@ -15,6 +15,9 @@
 int pollEnable = 0;
 
 int charsinbuffer = 0;
+char demoAddress1[] = "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY";
+char demoAddress2[] = "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR";
+char demoAddress3[] = "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y";
 char testDogeAddress[P2PKH_ADDR_STRINGLEN];
 char testPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
@@ -424,13 +427,24 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 	}
 }
 
-float deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
+float deobfuscateReceivedFloatBalance(uint8_t* pin, uint8_t* serializedBalance)
 {
 	for (int i = 0; i < PIN_LENGTH; i++)
 	{
 		serializedBalance[i] ^= pin[i];
 	}
 	float balance;
+	memcpy(&balance, serializedBalance, sizeof(balance));
+	return balance;
+}
+
+uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
+{
+	for (int i = 0; i < SERIALIZED_BALANCE_LENGTH; i++)
+	{
+		serializedBalance[i] ^= pin[i % PIN_LENGTH];
+	}
+	uint64_t balance;
 	memcpy(&balance, serializedBalance, sizeof(balance));
 	return balance;
 }
@@ -640,8 +654,8 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		break;
 	case BALANCE_RECEIVED:
 		printf("Received Balance!\n");
-		float balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
-		printf("%f\n", balanceReceived);
+		uint64_t balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
+		printf("%i\n", balanceReceived);
 		break;
 	case DOGE_COMMAND_SUCCESS:
 		printf("RadioDoge Hub node executed command successfully!\n");

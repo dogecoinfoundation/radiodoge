@@ -18,6 +18,8 @@
 // Constants
 #define HDR_LEN 2
 #define ADDR_LEN 3
+#define PIN_LENGTH 4
+#define SERIALIZED_BALANCE_LENGTH 8
 #define MAX_PAYLOAD_LEN 192
 #define SINGLE_PACKET_HDR_LEN 8
 #define MULTIPART_HDR_LEN 12

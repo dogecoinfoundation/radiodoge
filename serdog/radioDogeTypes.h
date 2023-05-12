@@ -49,8 +49,6 @@ enum registrationFunctions
 	UPDATE_PIN = 30
 };
 
-#define PIN_LENGTH 4
-
 struct nodeAddress {
 	uint8_t region;
 	uint8_t community;
