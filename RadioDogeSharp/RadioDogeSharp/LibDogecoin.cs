@@ -36,7 +36,7 @@ namespace RadioDoge
         // @TODO review choice of types used
         // size_t -> UIntPtr
         // const char* -> string
-        // uint8_t* -> byte[]
+        // uint8_t* -> IntPtr -> byte[]
         [DllImport(libToImport)]
         public static extern uint dogecoin_ecc_start();
 
@@ -79,7 +79,7 @@ namespace RadioDoge
         */
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern byte[] dogecoin_get_utxos(string address);
+        public static extern IntPtr dogecoin_get_utxos(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         public static extern UInt32 dogecoin_get_utxos_length(string address);
@@ -88,7 +88,7 @@ namespace RadioDoge
         public static extern IntPtr dogecoin_get_utxo_txid_str(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern byte[] dogecoin_get_utxo_txid(string address, UInt32 index);
+        public static extern IntPtr dogecoin_get_utxo_txid(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         public static extern UInt64 dogecoin_get_balance(string address);

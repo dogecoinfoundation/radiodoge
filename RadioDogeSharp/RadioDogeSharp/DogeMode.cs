@@ -126,7 +126,7 @@ namespace RadioDoge
                 byte[] balanceToSend = ObfuscateDogeCoinBalance(testBalance, pin);
 
                 // Printing for debug purposes REMOVE LATER
-                float obfuscatedValue = BitConverter.ToSingle(balanceToSend, 0);
+                UInt64 obfuscatedValue = BitConverter.ToUInt64(balanceToSend, 0);
                 Console.WriteLine($"Balance: {testBalance}, Obfuscated: {obfuscatedValue}");
 
                 // Send out obfuscated balance
