@@ -21,7 +21,7 @@ namespace RadioDoge
                     ConsoleHelper.WriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMultipartMessage = Console.ReadLine();
                     byte[] convertedMultipartMessageBytes = Encoding.ASCII.GetBytes(readMultipartMessage);
-                    SendMultipartPacket(convertedMultipartMessageBytes);
+                    SendMultipartPacket(destinationAddress, convertedMultipartMessageBytes);
                     return;
                 case TestFunctions.SendCountingTest:
                     byte[] countBytes = new byte[1024];
@@ -29,7 +29,7 @@ namespace RadioDoge
                     {
                         countBytes[i] = (byte)(i % 256);
                     }
-                    SendMultipartPacket(countBytes);
+                    SendMultipartPacket(destinationAddress, countBytes);
                     return;
                 case TestFunctions.DisplayTest:
                     // Display Logo

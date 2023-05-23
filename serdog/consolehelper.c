@@ -34,13 +34,14 @@ int getDogeModeSelection()
 	printf("\n### MUCH DOGE MODE SELECT ###\n");
 	printf("1: Get Dogecoin Address\n");
 	printf("2: Get Dogecoin Balance\n");
-	printf("3: Display QR code\n");
-	printf("4: Register Address\n");
-	printf("5: Remove Address Registration\n");
-	printf("6: Update Registered Pin\n");
-	printf("7: Load Dogeaddress\n");
-	printf("8: Exit Doge Mode\n");
-	return userInputLoop(8);
+	printf("3: Request UTXOs\n");
+	printf("4: Display QR code\n");
+	printf("5: Register Address\n");
+	printf("6: Remove Address Registration\n");
+	printf("7: Update Registered Pin\n");
+	printf("8: Load Dogeaddress\n");
+	printf("9: Exit Doge Mode\n");
+	return userInputLoop(9);
 }
 
 int getTestModeSelection()

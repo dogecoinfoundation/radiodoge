@@ -337,6 +337,14 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+{
+	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
+	payload[0] = REQUEST_UTXOS;
+	memcpy(payload + 1, dogeAddress, P2PKH_ADDR_STRINGLEN);
+	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
+}
+
 cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
@@ -449,6 +457,17 @@ uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
 	return balance;
 }
 
+void processReceivedUTXOs(uint8_t* payloadIn)
+{
+	//First 4 bytes are the number of UTXOs serialized
+	uint32_t numUTXOs;
+	memcpy(&numUTXOs, payloadIn, sizeof(numUTXOs));
+	printf("Received %i UTXOs!\n", numUTXOs);
+
+	// The rest will be serialized UTXOs
+	// @TODO
+}
+
 void printByteArray(uint8_t* arrayIn, int length)
 {
 	for (int nx = 0; nx < length; nx++)
@@ -457,7 +476,6 @@ void printByteArray(uint8_t* arrayIn, int length)
 	}
 	printf("\n");
 }
-
 
 void* serialPollThread(void* threadid)
 {
@@ -658,6 +676,10 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		// Now turn balance into a float
 		float balanceFloat = (float)balanceReceived / (float)100000000;
 		printf("Balance: %f\n", balanceFloat);
+		break;
+	case UTXOS_RECEIVED:
+		// We supply payloadIn + 1 here since the first byte will just be the Command Type (UTXOS_RECEIVED)
+		processReceivedUTXOs(payloadIn + 1);
 		break;
 	case DOGE_COMMAND_SUCCESS:
 		printf("RadioDoge Hub node executed command successfully!\n");
@@ -885,24 +907,28 @@ void enterDogeMode()
 			cmdRequestBalance(myaddr, rmaddr, loadedDogeAddress);
 			break;
 		case 3:
+			// Get UTXOs
+			cmdRequestUTXOs(myaddr, rmaddr, loadedDogeAddress);
+			break;
+		case 4:
 			// Display QR code
 			displayDogeQRCode(loadedDogeAddress);
 			break;
-		case 4:
+		case 5:
 			// Register Address
 			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, false);
 			break;
-		case 5:
+		case 6:
 			// Remove Address Registration
 			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, true);
 			break;
-		case 6:
+		case 7:
 			// Update Registered Pin
 			uint8_t updatedPin[PIN_LENGTH] = { 4, 3, 2, 1 };
 			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedPin);
 			break;
-		case 7:
+		case 8:
 			// Load Demo Address
 			LoadDemoAddress();
 			break;

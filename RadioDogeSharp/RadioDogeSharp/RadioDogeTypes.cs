@@ -27,6 +27,8 @@
         Registration = 15,
         GetDogeAddress = 120,
         SendDogeAddress = 240,
+        GetUTXOs = 111,
+        SendUTXOs = 112,
         RequestBalance = 101,
         BalanceReceived = 202,
         DogeCommandSuccess = 1,

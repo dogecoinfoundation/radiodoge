@@ -17,6 +17,7 @@ namespace RadioDoge
             ConsoleHelper.PrintTitleScreen();
             //RunSPVCommand();
             LibDogecoin.DogeTest();
+            TestGetUTXOs();
             if (SetupSerialConnection())
             {
                 ModeSelectionLoop();
@@ -57,10 +58,10 @@ namespace RadioDoge
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 
-        private void SendMultipartPacket(byte[] multipartPayload)
+        private void SendMultipartPacket(NodeAddress destAddress, byte[] multipartPayload)
         {
             // Create all the packet parts
-            byte[][] allPacketParts = PacketHelper.CreateMultipartPackets(destinationAddress, localAddress, multipartPayload);
+            byte[][] allPacketParts = PacketHelper.CreateMultipartPackets(destAddress, localAddress, multipartPayload);
             // Send out the parts one by one
             for (int i = 0; i < allPacketParts.Length; i++)
             {

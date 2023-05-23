@@ -76,6 +76,17 @@ namespace RadioDoge
             SendPacket(destNode, payload.ToArray());
         }
 
+        private void SendUTXOs(NodeAddress destNode, string address)
+        {
+            byte[] serializedUTXOs = LibDogecoin.GetUTXOs(out UInt32 numUTXOs, address);
+            List<byte> payload = new List<byte>(3 + serializedUTXOs.Length);
+            payload.Add((byte)DogeCommandType.SendUTXOs);
+            byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
+            payload.AddRange(serializedLength);
+            payload.AddRange(serializedUTXOs);
+            SendMultipartPacket(destNode, payload.ToArray());
+        }
+
         private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
         {
             DogeCommandType commType = (DogeCommandType)payload[0];
@@ -105,10 +116,30 @@ namespace RadioDoge
                 case DogeCommandType.Registration:
                     RegisterDogeAddress(senderAddress, payload);
                     break;
+                case DogeCommandType.GetUTXOs:
+                    Console.WriteLine("Servicing UTXO request!");
+                    ServiceUTXORequest(senderAddress, payload);
+                    break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
                     PrintPayloadAsHex(payload);
                     break;
+            }
+        }
+
+        private void ServiceUTXORequest(NodeAddress replyAddress, byte[] payload)
+        {
+            int addressLength = payload.Length - 1;
+            string requestAddress = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
+            if (dogeAddressBook.ContainsKey(requestAddress))
+            {
+                SendUTXOs(replyAddress, requestAddress);
+            }
+            else
+            {
+                // Address book does not contain requested address
+                // We will send a failure message for now
+                SendGenericDogeResponse(replyAddress, false, DogeCommandType.GetUTXOs);
             }
         }
 
@@ -358,6 +389,15 @@ namespace RadioDoge
             IntPtr balanceStringPointer = LibDogecoin.dogecoin_get_balance_str(currTestAddress);
             string balanceString = Marshal.PtrToStringAnsi(balanceStringPointer);
             Console.WriteLine($"Balance String: {balanceString}\n");            
+        }
+
+        private void TestGetUTXOs()
+        {
+            string address = testAddresses[2];
+            byte[] serializedUTXOs = LibDogecoin.GetUTXOs(out UInt32 numUTXOs, address);
+            UnspentTransactionOutput utxo = new UnspentTransactionOutput(serializedUTXOs);
+            uint amount = utxo.GetAmount();
+            Console.WriteLine(amount);
         }
     }
 }
