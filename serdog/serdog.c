@@ -372,6 +372,15 @@ cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, ui
 	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
 }
 
+cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, uint8_t* rawTransaction, int transactionLength, uint8_t requestId)
+{
+	int payloadLength = 1 + transactionLength;
+	uint8_t payload[payloadLength];
+	payload[0] = TRANSACTION_REQUEST;
+	memcpy(payload + 1, rawTransaction, transactionLength);
+	cmdSendMultipartMessage(inaddr, destAddr, payload, payloadLength, requestId);
+}
+
 cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* oldPin, uint8_t* updatedPin)
 {
 	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + (2 * PIN_LENGTH);
@@ -466,6 +475,21 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 
 	// The rest will be serialized UTXOs
 	// @TODO
+}
+
+// This is the general transaction structure that I think we need to follow
+// Finalization is on the hub or here?
+void createTransaction()
+{
+	int start_result = start_transaction();
+	// @TODO add utxos
+	// int utxo_result = add_utxo(int txindex, char* hex_utxo_txid, int vout);
+	// @TODO add output
+	// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
+	// @TODO sign the transaction
+	//int sign_result = sign_transaction(int txindex, char* script_pubkey, char* privkey);
+	// @TODO get the raw transaction
+	//char* get_raw_transaction(int txIndex);
 }
 
 void printByteArray(uint8_t* arrayIn, int length)

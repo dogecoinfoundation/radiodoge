@@ -33,6 +33,7 @@
         BalanceReceived = 202,
         DogeCommandSuccess = 1,
         DogeCommandFailure = 254
+        TransactionRequest = 170,
     }
 
     internal enum RegistrationFunction

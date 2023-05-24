@@ -107,15 +107,26 @@ namespace RadioDoge
         {
             numUTXOs = dogecoin_get_utxos_length(address);
             Console.WriteLine($"UTXO Length: {numUTXOs}");
-            IntPtr utxosPointer = dogecoin_get_utxos(address);
-            int serializedLength = (int)numUTXOs * NUM_BYTES_PER_UTXO;
-            byte[] serializedUTXOs = new byte[serializedLength];
-            Marshal.Copy(utxosPointer, serializedUTXOs, 0, serializedLength);
 
-            IntPtr txIdStringPointer = dogecoin_get_utxo_txid_str(address, 1);
-            string str = Marshal.PtrToStringAnsi(txIdStringPointer);
-            Console.WriteLine(str);
-            return serializedUTXOs;
+            if (numUTXOs > 0 )
+            {
+                // Testing out getting serialized utxos
+                IntPtr utxosPointer = dogecoin_get_utxos(address);
+                int serializedLength = (int)numUTXOs * NUM_BYTES_PER_UTXO;
+                byte[] serializedUTXOs = new byte[serializedLength];
+                Marshal.Copy(utxosPointer, serializedUTXOs, 0, serializedLength);
+
+                // Testing out getting the string version of a utxo
+                IntPtr txIdStringPointer = dogecoin_get_utxo_txid_str(address, 1);
+                string str = Marshal.PtrToStringAnsi(txIdStringPointer);
+                Console.WriteLine(str);
+
+                return serializedUTXOs;
+            }
+            else
+            {
+                return null;
+            }
         }
     }
 }
