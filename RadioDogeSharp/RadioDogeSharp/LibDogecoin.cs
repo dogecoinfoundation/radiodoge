@@ -7,11 +7,11 @@ namespace RadioDoge
     public static class LibDogecoin
     {
         private const string libToImport = "dogecoin";
-        private const int NUM_BYTES_PER_UTXO = 35;
+        private const int NUM_BYTES_PER_UTXO = 55; // Should this be 41
 
         /* This is what makes up one UTXO so should be serialized to 35 bytes
-         uint8_t index;
-         uint16_t amount;
+         uint8_t index; // 1 byte
+         uint16_t amount; // should this be uint64_t???
          uint8_t txid[32]
         */
 
@@ -111,6 +111,10 @@ namespace RadioDoge
             int serializedLength = (int)numUTXOs * NUM_BYTES_PER_UTXO;
             byte[] serializedUTXOs = new byte[serializedLength];
             Marshal.Copy(utxosPointer, serializedUTXOs, 0, serializedLength);
+
+            IntPtr txIdStringPointer = dogecoin_get_utxo_txid_str(address, 1);
+            string str = Marshal.PtrToStringAnsi(txIdStringPointer);
+            Console.WriteLine(str);
             return serializedUTXOs;
         }
     }

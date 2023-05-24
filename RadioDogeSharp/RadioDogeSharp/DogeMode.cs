@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -393,11 +392,8 @@ namespace RadioDoge
 
         private void TestGetUTXOs()
         {
-            string address = testAddresses[2];
+            string address = testAddresses[1];
             byte[] serializedUTXOs = LibDogecoin.GetUTXOs(out UInt32 numUTXOs, address);
-            UnspentTransactionOutput utxo = new UnspentTransactionOutput(serializedUTXOs);
-            uint amount = utxo.GetAmount();
-            Console.WriteLine(amount);
         }
     }
 }

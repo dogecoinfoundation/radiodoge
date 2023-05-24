@@ -4,11 +4,12 @@ namespace RadioDoge
 {
     public class UnspentTransactionOutput
     {
-        private const int SERIALIZED_LENGTH = 35;
+        private const int SERIALIZED_LENGTH = 41;
         private const int ID_LENGTH = 32;
+        private const int AMOUNT_LENGTH = 8;
         private readonly byte index;
         private readonly byte[] txId;
-        private readonly uint amount; // should only be 16 bits
+        private readonly UInt64 amount; 
 
         public UnspentTransactionOutput(byte[] serializedUTXO)
         {
@@ -18,10 +19,11 @@ namespace RadioDoge
             }
 
             index = serializedUTXO[0];
-            amount = (uint)serializedUTXO[1] << 8;
-            amount |= (uint)serializedUTXO[2];
             txId = new byte[ID_LENGTH];
-            Array.Copy(serializedUTXO, 3, txId, 0, ID_LENGTH);
+            Array.Copy(serializedUTXO, 1, txId, 0, ID_LENGTH);
+            byte[] serializedAmount = new byte[AMOUNT_LENGTH];
+            Array.Copy(serializedUTXO, 33, serializedAmount, 0, AMOUNT_LENGTH);
+            amount = BitConverter.ToUInt64(serializedAmount);
         }
 
         public byte GetIndex()
@@ -29,7 +31,7 @@ namespace RadioDoge
             return index;
         }
 
-        public uint GetAmount()
+        public UInt64 GetAmount()
         {
             return amount;
         }
