@@ -17,9 +17,12 @@ int pollEnable = 0;
 char demoAddress1[] = "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY";
 char demoAddress2[] = "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR";
 char demoAddress3[] = "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y";
+char demoPair1[] = "demo1.txt";
+char demoPair2[] = "demo2.txt";
+char demoPair3[] = "demo3.txt";
 int charsinbuffer = 0;
 char loadedDogeAddress[P2PKH_ADDR_STRINGLEN];
-char testPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 
 
@@ -845,7 +848,7 @@ void createTestDogeAddress(char* dogeAddress)
 {
 	printf("Generating a new test DogeCoin address!\n");
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
-	generatePrivPubKeypair(testPrivateKey, dogeAddress, false);
+	generatePrivPubKeypair(loadedPrivateKey, dogeAddress, false);
 }
 
 void modeSelectionLoop()
@@ -1092,9 +1095,40 @@ void fileWriteReadTest()
 	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedAddress, loadedKey);
 }
 
-void 
+void GenerateDemoPairFiles()
+{
+	printf("Generating demo pair files\n");
+	char priv1[] = "";
+	char priv2[] = "";
+	char priv3[] = "";
 
-main()
+	saveDogecoinAddress(demoPair1, demoAddress1, priv1);
+	saveDogecoinAddress(demoPair2, demoAddress2, priv2);
+	saveDogecoinAddress(demoPair3, demoAddress3, priv3);
+	printf("Files created!");
+}
+
+void LoadDemoPairFile(int pairIndex)
+{
+	char* filename;
+	switch (pairIndex)
+	{
+	case 0:
+		filename = demoPair1;
+		break;
+	case 1:
+		filename = demoPair2;
+		break;
+	case 2:
+		filename = demoPair3;
+		break;
+	}
+	loadDogecoinAddress(filename, loadedDogeAddress, loadedPrivateKey);
+	// @TODO debug and demo purposes only remove later
+	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedDogeAddress, loadedPrivateKey);
+}
+
+int main()
 {
 	printf("Performing startup functions...\n");
 	// Start by attempting to setup serial communication
@@ -1128,7 +1162,6 @@ main()
 	}
 	printf("Libdogecoin initialization complete!\n");
 
-	//fileWriteReadTest();
 	printStartScreen();
 	createTestDogeAddress(loadedDogeAddress); // Initial test address 
 	// Enter into mode selection loop
