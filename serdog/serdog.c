@@ -1076,7 +1076,6 @@ void fileWriteReadTest()
 	// First create a test address
 	//create a buffer the size of a private key (wallet import format uncompressed key length)
 	//this constant is in include/constants.h, included via libdogecoin.h
-	char testPassword[10] = "RaDi0D0g3!";
 	char keybuffer[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 	char testAddress[P2PKH_ADDR_STRINGLEN];
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
@@ -1084,14 +1083,16 @@ void fileWriteReadTest()
 
 	// Write to a file
 	printf("Saving...\nAddress: %s\n Private Key: %s\n", testAddress, keybuffer);
-	writeAddressToFile("savedAddressTest.txt", testAddress, keybuffer, testPassword);
+	saveDogecoinAddress("savedAddressTest.txt", testAddress, keybuffer);
 
 	// Load from the file
 	char loadedKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 	char loadedAddress[P2PKH_ADDR_STRINGLEN];
-	readAddressFromFile("savedAddressTest.txt", loadedAddress, loadedKey, testPassword);
+	loadDogecoinAddress("savedAddressTest.txt", loadedAddress, loadedKey);
 	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedAddress, loadedKey);
 }
+
+void 
 
 main()
 {

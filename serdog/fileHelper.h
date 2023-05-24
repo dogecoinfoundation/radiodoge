@@ -6,8 +6,7 @@
 #include <string.h>
 #include "libdogecoin.h"
 
-void encryptString(char* password, char* string, int stringLength);
-void readAddressFromFile(char* fileName, char* pubAddress, char* privateKey, char* password);
-void writeAddressToFile(char* fileName, char* pubAddress, char* privateKey, char* password);
+void saveDogecoinAddress(char* filename, char* pubAddress, char* privateKey);
+void loadDogecoinAddress(char* filename, char* pubAddress, char* privateKey);
 
 #endif

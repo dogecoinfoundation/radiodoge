@@ -35,3 +35,30 @@ void writeAddressToFile(char* fileName, char* pubAddress, char* privateKey, char
 	fwrite(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
 	fclose(file);
 }
+
+void getUserPassword(char* userInputBuffer, bool isLoad)
+{
+	if (isLoad)
+	{
+		printf("Please enter the password used to encrypt the file:\n");
+	}
+	else
+	{
+		printf("Please enter a password to encrypt the private key:\n");
+	}
+	scanf("%s", userInputBuffer);
+}
+
+void saveDogecoinAddress(char* filename, char* pubAddress, char* privateKey)
+{
+	char passwordBuffer[32];
+	getUserPassword(passwordBuffer, false);
+	writeAddressToFile(filename, pubAddress, privateKey, passwordBuffer);
+}
+
+void loadDogecoinAddress(char* filename, char* pubAddress, char* privateKey)
+{
+	char passwordBuffer[32];
+	getUserPassword(passwordBuffer, true);
+	readAddressFromFile(filename, pubAddress, privateKey, passwordBuffer);
+}
