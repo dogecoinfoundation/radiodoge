@@ -86,7 +86,8 @@ void getUserSuppliedNodeAddress(uint8_t* address)
 
 void getUserSuppliedDogecoinAmount(char* dogeAmount)
 {
-	// @TODO
+	printf("Please enter in the amount you would like to send:\n");
+	scanf("%s", dogeAmount);
 }
 
 void printNodeAddress(char* nodeTitle, uint8_t* address)

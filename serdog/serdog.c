@@ -495,16 +495,18 @@ void createTransaction()
 	printf("Sender: %s\n", loadedDogeAddress);
 	printf("Destination: %s\n", destinationDogeAddress);
 
+	// Get input from user on how much to send
+	char amount_to_send[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
+	getUserSuppliedDogecoinAmount(amount_to_send);
+	printf("Amount to send: %s\n", amount_to_send);
+
+	// Check that there is at least one utxo stored
 	if (numUTXOs < 1)
 	{
-		printf("There are no UTXOs stored for %s\n", loadDogecoinAddress);
+		printf("There are no UTXOs stored for %s\n", loadedDogeAddress);
 		return;
 	}
 
-	// Get input from user on how much to send
-	char amount_to_send[32];
-	getUserSuppliedDogecoinAmount(amount_to_send);
-	printf("Amount to send: %s", amount_to_send);
 	// @TODO
 
 	int curr_tx_index = start_transaction();
