@@ -86,28 +86,41 @@ namespace RadioDoge
         */
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_utxos(string address);
+        private static extern IntPtr dogecoin_get_utxos(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern UInt32 dogecoin_get_utxos_length(string address);
+        private static extern UInt32 dogecoin_get_utxos_length(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_utxo_txid_str(string address, UInt32 index);
+        private static extern IntPtr dogecoin_get_utxo_txid_str(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_utxo_txid(string address, UInt32 index);
+        private static extern IntPtr dogecoin_get_utxo_txid(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern UInt64 dogecoin_get_balance(string address);
+        private static extern UInt64 dogecoin_get_balance(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr dogecoin_get_balance_str(string address);
+        private static extern IntPtr dogecoin_get_balance_str(string address);
 
-        public static byte[] GetUTXOs(out UInt32 numUTXOs, string address)
+        public static UInt64 GetBalance(string address)
         {
-            numUTXOs = dogecoin_get_utxos_length(address);
-            Console.WriteLine($"UTXO Length: {numUTXOs}");
+            return dogecoin_get_balance(address);
+        }
 
+        public static string GetBalanceString(string address)
+        {
+            IntPtr balanceStringPointer = dogecoin_get_balance_str(address);
+            return Marshal.PtrToStringAnsi(balanceStringPointer);
+        }
+
+        public static UInt32 GetNumberOfUTXOs(string address)
+        {
+            return dogecoin_get_utxos_length(address);
+        }
+
+        public static byte[] GetAllSerializedUTXOs(UInt32 numUTXOs, string address)
+        {
             if (numUTXOs > 0 )
             {
                 // Testing out getting serialized utxos
@@ -115,18 +128,24 @@ namespace RadioDoge
                 int serializedLength = (int)numUTXOs * NUM_BYTES_PER_UTXO;
                 byte[] serializedUTXOs = new byte[serializedLength];
                 Marshal.Copy(utxosPointer, serializedUTXOs, 0, serializedLength);
-
-                // Testing out getting the string version of a utxo
-                IntPtr txIdStringPointer = dogecoin_get_utxo_txid_str(address, 1);
-                string str = Marshal.PtrToStringAnsi(txIdStringPointer);
-                Console.WriteLine(str);
-
                 return serializedUTXOs;
             }
             else
             {
                 return null;
             }
+        }
+
+        public static string GetTXIDString(string address, uint index)
+        {
+            // Indexing begins at 1
+            if (index < 1)
+            {
+                throw new ArgumentException("Invalid index");
+            }
+
+            IntPtr txidStringPointer = dogecoin_get_utxo_txid_str(address, index);
+            return Marshal.PtrToStringAnsi(txidStringPointer);
         }
     }
 }

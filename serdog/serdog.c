@@ -482,11 +482,12 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 
 // This is the general transaction structure that I think we need to follow
 // Finalization is on the hub or here?
+// Seems like finalization will be here since it will be in this memory space
 void createTransaction()
 {
 	int start_result = start_transaction();
 	// @TODO add utxos
-	// int utxo_result = add_utxo(int txindex, char* hex_utxo_txid, int vout);
+	// int curr_tx_index = add_utxo(int txindex, char* hex_utxo_txid, int vout);
 	// @TODO add output
 	// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
 	// @TODO sign the transaction

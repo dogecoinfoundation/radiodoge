@@ -77,7 +77,8 @@ namespace RadioDoge
 
         private void SendUTXOs(NodeAddress destNode, string address)
         {
-            byte[] serializedUTXOs = LibDogecoin.GetUTXOs(out UInt32 numUTXOs, address);
+            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+            byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
             List<byte> payload = new List<byte>(3 + serializedUTXOs.Length);
             payload.Add((byte)DogeCommandType.SendUTXOs);
             byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
@@ -149,7 +150,7 @@ namespace RadioDoge
             if (dogeAddressBook.ContainsKey(requestAddress))
             {
                 // Get the balance
-                UInt64 testBalance = LibDogecoin.dogecoin_get_balance(requestAddress);
+                UInt64 testBalance = LibDogecoin.GetBalance(requestAddress);
 
                 // Modify it with the pin
                 byte[] pin = dogeAddressBook[requestAddress].GetPin();
@@ -383,17 +384,23 @@ namespace RadioDoge
         {
             Console.WriteLine("Balance Inquiry Test");
             string currTestAddress = testAddresses[0];
-            UInt64 value = LibDogecoin.dogecoin_get_balance(currTestAddress);
+            UInt64 value = LibDogecoin.GetBalance(currTestAddress);
             Console.WriteLine($"Balance Value: {value}");
-            IntPtr balanceStringPointer = LibDogecoin.dogecoin_get_balance_str(currTestAddress);
-            string balanceString = Marshal.PtrToStringAnsi(balanceStringPointer);
+            string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
             Console.WriteLine($"Balance String: {balanceString}\n");            
         }
 
         private void TestGetUTXOs()
         {
             string address = testAddresses[1];
-            byte[] serializedUTXOs = LibDogecoin.GetUTXOs(out UInt32 numUTXOs, address);
+            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+            if (numUTXOs > 0)
+            {
+                byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+
+                string txidString = LibDogecoin.GetTXIDString(address, 1);
+                Console.WriteLine($"TXID String: {txidString}");
+            }
         }
     }
 }

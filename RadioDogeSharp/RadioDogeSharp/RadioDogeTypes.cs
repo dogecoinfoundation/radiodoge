@@ -32,7 +32,7 @@
         RequestBalance = 101,
         BalanceReceived = 202,
         DogeCommandSuccess = 1,
-        DogeCommandFailure = 254
+        DogeCommandFailure = 254,
         TransactionRequest = 170,
     }
 
