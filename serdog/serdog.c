@@ -14,16 +14,20 @@
 
 int pollEnable = 0;
 
-char demoAddress1[] = "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY";
-char demoAddress2[] = "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR";
-char demoAddress3[] = "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y";
+char demo_address1[] = "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY";
+char demo_address2[] = "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR";
+char demo_address3[] = "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y";
 char demoPair1[] = "demo1.txt";
 char demoPair2[] = "demo2.txt";
 char demoPair3[] = "demo3.txt";
 int charsinbuffer = 0;
 char loadedDogeAddress[P2PKH_ADDR_STRINGLEN];
 char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+char generatedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
+char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
+char curr_txid[TXID_STRING_LENGTH];
+uint32_t numUTXOs;
 
 
 int openPort()
@@ -472,12 +476,14 @@ uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
 void processReceivedUTXOs(uint8_t* payloadIn)
 {
 	//First 4 bytes are the number of UTXOs serialized
-	uint32_t numUTXOs;
 	memcpy(&numUTXOs, payloadIn, sizeof(numUTXOs));
 	printf("Received %i UTXOs!\n", numUTXOs);
 
 	// The rest will be serialized UTXOs
 	// @TODO
+	// For now we will just grab the first one as a test
+	memcpy(curr_txid, payloadIn + 4, 64);
+	printf("%s\n", curr_txid);
 }
 
 // This is the general transaction structure that I think we need to follow
@@ -485,7 +491,14 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 // Seems like finalization will be here since it will be in this memory space
 void createTransaction()
 {
-	int start_result = start_transaction();
+	printf("*** Creating a transaction to send dogecoin ***\n");
+	printf("Sender: %s\n", loadedDogeAddress);
+	printf("Destination: %s\n", destinationDogeAddress);
+
+	// Get input from user on how much to send
+	// @TODO
+
+	//int start_result = start_transaction();
 	// @TODO add utxos
 	// int curr_tx_index = add_utxo(int txindex, char* hex_utxo_txid, int vout);
 	// @TODO add output
@@ -831,7 +844,7 @@ int sendDogeAddressTest(uint8_t* destAddr)
 {
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
 	char addrbuffer[P2PKH_ADDR_STRINGLEN];
-	createTestDogeAddress(addrbuffer);
+	createTestDogeAddress(addrbuffer, generatedPrivateKey);
 	printf("Sending Test Address: % s \n", addrbuffer);
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
@@ -845,11 +858,11 @@ void displayDogeQRCode(char* dogeAddress)
 	printf("%s\n", qrBuffer);
 }
 
-void createTestDogeAddress(char* dogeAddress)
+void createTestDogeAddress(char* dogeAddress, char* generatedPrivKey)
 {
 	printf("Generating a new test DogeCoin address!\n");
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
-	generatePrivPubKeypair(loadedPrivateKey, dogeAddress, false);
+	generatePrivPubKeypair(generatedPrivKey, dogeAddress, false);
 }
 
 void modeSelectionLoop()
@@ -939,54 +952,85 @@ void enterDogeMode()
 			cmdRequestUTXOs(myaddr, rmaddr, loadedDogeAddress);
 			break;
 		case 4:
+			// Send Dogecoin
+			// @TODO
+			createTransaction();
+			printf("Sending dogecoin is not currently implemented\n");
+			break;
+		case 5:
 			// Display QR code
 			displayDogeQRCode(loadedDogeAddress);
 			break;
-		case 5:
+		case 6:
 			// Register Address
 			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, false);
 			break;
-		case 6:
+		case 7:
 			// Remove Address Registration
 			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, true);
 			break;
-		case 7:
+		case 8:
 			// Update Registered Pin
 			uint8_t updatedPin[PIN_LENGTH] = { 4, 3, 2, 1 };
 			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedPin);
 			break;
-		case 8:
-			// Load Demo Address
-			LoadDemoAddress();
+		case 9:
+			// Load demo address pair
+			LoadDemoAddressPair();
+			printf("Currently loaded Dogecoin address: %s\n", loadedDogeAddress);
+			break;
+		case 10:
+			// Load Destination Demo Address
+			LoadDestinationAddress(destinationDogeAddress);
+			printf("Currently loaded Destination Dogecoin address: %s\n", destinationDogeAddress);
 			break;
 		}
 		sleep(2);
 	}
 }
 
-void LoadDemoAddress()
+void LoadDestinationAddress(char* addressBuffer)
 {
 	int addressSelection = getDemoAddressSelection();
 	switch (addressSelection)
 	{
 	case 1:
-		strcpy(loadedDogeAddress, demoAddress1);
+		strcpy(addressBuffer, demo_address1);
 		break;
 	case 2:
-		strcpy(loadedDogeAddress, demoAddress2);
+		strcpy(addressBuffer, demo_address2);
 		break;
 	case 3:
-		strcpy(loadedDogeAddress, demoAddress3);
+		strcpy(addressBuffer, demo_address3);
 		break;
 	case 4:
-		createTestDogeAddress(loadedDogeAddress);
+		createTestDogeAddress(addressBuffer, generatedPrivateKey);
 		break;
 	default:
 		printf("No demo address loaded!\n");
 		break;
 	}
-	printf("Currently loaded Dogecoin address: %s\n", loadedDogeAddress);
+}
+
+void LoadDemoAddressPair()
+{
+	int addressSelection = getDemoAddressSelection();
+	switch (addressSelection)
+	{
+	case 1:
+		loadDogecoinAddress(demoPair1, loadedDogeAddress, loadedPrivateKey);
+		break;
+	case 2:
+		loadDogecoinAddress(demoPair2, loadedDogeAddress, loadedPrivateKey);
+		break;
+	case 3:
+		loadDogecoinAddress(demoPair3, loadedDogeAddress, loadedPrivateKey);
+		break;
+	case 4:
+		createTestDogeAddress(loadedDogeAddress, loadedPrivateKey);
+		break;
+	}
 }
 
 void enterTestMode()
@@ -1103,13 +1147,17 @@ void GenerateDemoPairFiles()
 	char priv2[] = "";
 	char priv3[] = "";
 
-	saveDogecoinAddress(demoPair1, demoAddress1, priv1);
-	saveDogecoinAddress(demoPair2, demoAddress2, priv2);
-	saveDogecoinAddress(demoPair3, demoAddress3, priv3);
+	saveDogecoinAddress(demoPair1, demo_address1, priv1);
+	saveDogecoinAddress(demoPair2, demo_address2, priv2);
+	saveDogecoinAddress(demoPair3, demo_address3, priv3);
 	printf("Files created!");
 }
 
-void LoadDemoPairFile(int pairIndex)
+/// <summary>
+/// For testing loading of generated address pair files
+/// </summary>
+/// <param name="pairIndex"></param>
+void LoadDemoPairFileHelper(int pairIndex)
 {
 	char* filename;
 	switch (pairIndex)
@@ -1164,7 +1212,7 @@ int main()
 	printf("Libdogecoin initialization complete!\n");
 
 	printStartScreen();
-	createTestDogeAddress(loadedDogeAddress); // Initial test address 
+	createTestDogeAddress(loadedDogeAddress, generatedPrivateKey); // Initial test address 
 	// Enter into mode selection loop
 	modeSelectionLoop();
 
