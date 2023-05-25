@@ -79,11 +79,30 @@ namespace RadioDoge
         {
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
             byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
-            List<byte> payload = new List<byte>(3 + serializedUTXOs.Length);
+            // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
+            List<byte> payload = new List<byte>(5 + serializedUTXOs.Length);
             payload.Add((byte)DogeCommandType.SendUTXOs);
             byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
             payload.AddRange(serializedLength);
             payload.AddRange(serializedUTXOs);
+            SendMultipartPacket(destNode, payload.ToArray());
+        }
+
+        private void SendTXIDStrings(NodeAddress destNode, string address)
+        {
+            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+            StringBuilder allTXIDs = new StringBuilder();
+            for (uint i = 1; i <= numUTXOs; i++)
+            {
+                allTXIDs.Append(LibDogecoin.GetTXIDString(address, i));
+            }
+            string tempString = allTXIDs.ToString();
+            byte[] serializedTXIDs = Encoding.ASCII.GetBytes(tempString);
+            List<byte> payload = new List<byte>(5 + serializedTXIDs.Length);
+            payload.Add((byte)DogeCommandType.SendUTXOs);
+            byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
+            payload.AddRange(serializedLength);
+            payload.AddRange(serializedTXIDs);
             SendMultipartPacket(destNode, payload.ToArray());
         }
 
@@ -130,10 +149,10 @@ namespace RadioDoge
         private void ServiceUTXORequest(NodeAddress replyAddress, byte[] payload)
         {
             int addressLength = payload.Length - 1;
-            string requestAddress = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
-            if (dogeAddressBook.ContainsKey(requestAddress))
+            string requestedDogecoinAddress = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
+            if (dogeAddressBook.ContainsKey(requestedDogecoinAddress))
             {
-                SendUTXOs(replyAddress, requestAddress);
+                SendTXIDStrings(replyAddress, requestedDogecoinAddress);
             }
             else
             {
