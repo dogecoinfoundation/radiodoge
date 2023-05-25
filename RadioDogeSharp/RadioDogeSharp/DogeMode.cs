@@ -411,11 +411,14 @@ namespace RadioDoge
 
         private void TestGetUTXOs()
         {
-            string address = testAddresses[1];
+            string address = testAddresses[0];
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
             if (numUTXOs > 0)
             {
                 byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+                string utxoHex = Convert.ToHexString(serializedUTXOs);
+                Console.WriteLine($"Serialized UTXO: {utxoHex}");
+
 
                 string txidString = LibDogecoin.GetTXIDString(address, 1);
                 Console.WriteLine($"TXID String: {txidString}");

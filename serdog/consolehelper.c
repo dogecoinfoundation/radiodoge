@@ -84,6 +84,11 @@ void getUserSuppliedNodeAddress(uint8_t* address)
 	}
 }
 
+void getUserSuppliedDogecoinAmount(char* dogeAmount)
+{
+	// @TODO
+}
+
 void printNodeAddress(char* nodeTitle, uint8_t* address)
 {
 	printf("%s Node Address: %i.%i.%i\n", nodeTitle, address[0], address[1], address[2]);

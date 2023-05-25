@@ -13,5 +13,6 @@ int getDogeModeSelection();
 int getTestModeSelection();
 int getDemoAddressSelection();
 void getUserSuppliedNodeAddress(uint8_t* address);
+void getUserSuppliedDogecoinAmount(char* dogeAmount);
 
 #endif

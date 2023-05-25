@@ -482,7 +482,7 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 	// The rest will be serialized UTXOs
 	// @TODO
 	// For now we will just grab the first one as a test
-	memcpy(curr_txid, payloadIn + 4, 64);
+	memcpy(curr_txid, payloadIn + SERIALIZED_NUM_UTXO_LENGTH, TXID_STRING_LENGTH);
 	printf("%s\n", curr_txid);
 }
 
@@ -495,18 +495,32 @@ void createTransaction()
 	printf("Sender: %s\n", loadedDogeAddress);
 	printf("Destination: %s\n", destinationDogeAddress);
 
+	if (numUTXOs < 1)
+	{
+		printf("There are no UTXOs stored for %s\n", loadDogecoinAddress);
+		return;
+	}
+
 	// Get input from user on how much to send
+	char amount_to_send[32];
+	getUserSuppliedDogecoinAmount(amount_to_send);
+	printf("Amount to send: %s", amount_to_send);
 	// @TODO
 
-	//int start_result = start_transaction();
-	// @TODO add utxos
-	// int curr_tx_index = add_utxo(int txindex, char* hex_utxo_txid, int vout);
-	// @TODO add output
-	// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
-	// @TODO sign the transaction
-	//int sign_result = sign_transaction(int txindex, char* script_pubkey, char* privkey);
-	// @TODO get the raw transaction
-	//char* get_raw_transaction(int txIndex);
+	int curr_tx_index = start_transaction();
+
+	// @TODO add utxo(s)
+	// For now we will just add one utxo 
+	int add_result = add_utxo(curr_tx_index, curr_txid, 0);
+	if (add_result)
+	{
+		// @TODO add output
+		// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
+		// @TODO sign the transaction
+		//int sign_result = sign_transaction(int txindex, char* script_pubkey, char* privkey);
+		// @TODO get the raw transaction
+		//char* get_raw_transaction(int txIndex);
+	}
 }
 
 void printByteArray(uint8_t* arrayIn, int length)
