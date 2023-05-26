@@ -135,10 +135,10 @@ namespace RadioDoge
 
         private void EnterMode(Action helpFunction, Action<int> commandFunc)
         {
-            helpFunction();
             bool keepGoing = true;
             while (keepGoing)
             {
+                helpFunction();
                 ConsoleHelper.WriteEmphasizedLine("===================\n|||Enter Command|||\n===================", ConsoleColor.Yellow);
                 string message = Console.ReadLine();
                 bool parseSuccess = Int32.TryParse(message, out int commandType);

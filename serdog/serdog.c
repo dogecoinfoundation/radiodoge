@@ -516,6 +516,8 @@ void createTransaction()
 	int add_result = add_utxo(curr_tx_index, curr_txid, 0);
 	if (add_result)
 	{
+		// For now we will charge a fixed fee of 1 dogecoin
+		char fixed_fee[3] = "1.0";
 		// @TODO add output
 		// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
 		// @TODO sign the transaction
