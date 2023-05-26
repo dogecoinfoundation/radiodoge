@@ -406,7 +406,12 @@ namespace RadioDoge
             UInt64 value = LibDogecoin.GetBalance(currTestAddress);
             Console.WriteLine($"Balance Value: {value}");
             string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
-            Console.WriteLine($"Balance String: {balanceString}\n");            
+            Console.WriteLine($"Balance String: {balanceString}");
+
+            // Test converting koinu amount to string
+            UInt64 testBalance = 123456789;
+            bool result = LibDogecoin.ConvertKoinuAmountToString(testBalance, out string convertedString);
+            Console.WriteLine($"Converted amount: {convertedString}\n");
         }
 
         private void TestGetUTXOs()

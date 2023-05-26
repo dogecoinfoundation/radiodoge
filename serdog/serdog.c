@@ -519,9 +519,17 @@ void createTransaction()
 		// For now we will charge a fixed fee of 1 dogecoin
 		char fixed_fee[3] = "1.0";
 		// @TODO add output
-		// int output_result = add_output(int txindex, char* destinationaddress, char* amount);
+		// Amount here is how much to send
+		int output_result = add_output(curr_tx_index, destinationDogeAddress, amount_to_send);
+		// @TODO finalize the transaction
+		// out_dogeamount_for verification here is the total amount of the utxos
+		// will need to add them all up and then turn into a string using:
+		// char utxo_total_amount_str[21];
+		// uint64_t utxo_total_amount;
+		// int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
+		// char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
 		// @TODO sign the transaction
-		//int sign_result = sign_transaction(int txindex, char* script_pubkey, char* privkey);
+		//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);
 		// @TODO get the raw transaction
 		//char* get_raw_transaction(int txIndex);
 	}

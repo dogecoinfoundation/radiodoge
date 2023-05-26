@@ -103,6 +103,9 @@ namespace RadioDoge
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_balance_str(string address);
 
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int koinu_to_coins_str(UInt64 koinu_amount, StringBuilder amount_string);
+
         public static UInt64 GetBalance(string address)
         {
             return dogecoin_get_balance(address);
@@ -146,6 +149,14 @@ namespace RadioDoge
 
             IntPtr txidStringPointer = dogecoin_get_utxo_txid_str(address, index);
             return Marshal.PtrToStringAnsi(txidStringPointer);
+        }
+
+        public static bool ConvertKoinuAmountToString(UInt64 koinuAmount, out string coinString)
+        {
+            StringBuilder resultString = new StringBuilder();
+            int resultCode = koinu_to_coins_str(koinuAmount, resultString);
+            coinString = resultString.ToString();
+            return resultCode == 1;
         }
     }
 }
