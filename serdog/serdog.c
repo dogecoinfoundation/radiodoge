@@ -524,8 +524,8 @@ void createTransaction()
 		// @TODO finalize the transaction
 		// out_dogeamount_for verification here is the total amount of the utxos
 		// will need to add them all up and then turn into a string using:
-		// char utxo_total_amount_str[21];
-		// uint64_t utxo_total_amount;
+		char utxo_total_amount_str[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
+		uint64_t utxo_total_amount; // actually accumulate the utxo amounts into this
 		// int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
 		// char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
 		// @TODO sign the transaction
