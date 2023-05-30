@@ -1,34 +1,27 @@
 ﻿using System;
+using System.Text;
 
 namespace RadioDoge
 {
     public class UnspentTransactionOutput
     {
-        private const int SERIALIZED_LENGTH = 41;
-        private const int ID_LENGTH = 32;
+        private const int VOUT_LENGTH = 4;
+        private const int ID_LENGTH = 64;
         private const int AMOUNT_LENGTH = 8;
-        private readonly byte index;
-        private readonly byte[] txId;
+        private readonly int vout;
+        private readonly string txId;
         private readonly UInt64 amount; 
 
-        public UnspentTransactionOutput(byte[] serializedUTXO)
+        public UnspentTransactionOutput(int vout, string txId, UInt64 amount)
         {
-            if (serializedUTXO.Length != SERIALIZED_LENGTH)
-            {
-                throw new ArgumentException("Invalid number of serialized bytes supplied!");
-            }
-
-            index = serializedUTXO[0];
-            txId = new byte[ID_LENGTH];
-            Array.Copy(serializedUTXO, 1, txId, 0, ID_LENGTH);
-            byte[] serializedAmount = new byte[AMOUNT_LENGTH];
-            Array.Copy(serializedUTXO, 33, serializedAmount, 0, AMOUNT_LENGTH);
-            amount = BitConverter.ToUInt64(serializedAmount);
+            this.vout = vout;
+            this.txId = txId;
+            this.amount = amount;
         }
 
-        public byte GetIndex()
+        public int GetVout()
         {
-            return index;
+            return vout;
         }
 
         public UInt64 GetAmount()
@@ -36,14 +29,21 @@ namespace RadioDoge
             return amount;
         }
 
+        public string GetTxId()
+        {
+            return txId;
+        }
+
         public byte[] Serialize()
         {
-            byte[] serialized = new byte[SERIALIZED_LENGTH];
-            serialized[0] = index;
-            serialized[1] = (byte)((amount >> 8) & 0xff);
-            serialized[2] = (byte)(amount & 0xff);
-            Array.Copy(txId, 0, serialized, 3, txId.Length);
-            return serialized;
+            List<byte> bytes = new List<byte>();
+            byte[] voutBytes = BitConverter.GetBytes(vout);
+            bytes.AddRange(voutBytes);
+            byte[] idBytes = Encoding.ASCII.GetBytes(GetTxId());
+            bytes.AddRange(idBytes);
+            byte[] amountBytes = BitConverter.GetBytes(amount);
+            bytes.AddRange(amountBytes);
+            return bytes.ToArray();
         }
     }
 }

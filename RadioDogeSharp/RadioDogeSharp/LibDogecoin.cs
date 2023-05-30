@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -7,7 +8,7 @@ namespace RadioDoge
     public static class LibDogecoin
     {
         private const string libToImport = "dogecoin";
-        private const int NUM_BYTES_PER_UTXO = 55; // Should this be 41
+        private const int NUM_BYTES_PER_UTXO = 76;
 
         /* This is what makes up one UTXO so should be serialized to 35 bytes
          uint8_t index; // 1 byte
@@ -80,11 +81,6 @@ namespace RadioDoge
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         public static extern int dogecoin_unregister_watch_address_with_node(string address);
 
-        /*
-        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_get_utxo_vector(string address, vector* utxos);
-        */
-
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_utxos(string address);
 
@@ -93,6 +89,12 @@ namespace RadioDoge
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_utxo_txid_str(string address, UInt32 index);
+
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int dogecoin_get_utxo_vout(string address, UInt32 index);
+
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr dogecoin_get_utxo_amount(string address, UInt32 index);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_utxo_txid(string address, UInt32 index);
@@ -105,6 +107,9 @@ namespace RadioDoge
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern int koinu_to_coins_str(UInt64 koinu_amount, StringBuilder amount_string);
+
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern UInt64 coins_to_koinu_str(string coins);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern byte dogecoin_p2pkh_address_to_pubkey_hash(string address, StringBuilder pubkeyResult);
@@ -125,21 +130,42 @@ namespace RadioDoge
             return dogecoin_get_utxos_length(address);
         }
 
-        public static byte[] GetAllSerializedUTXOs(UInt32 numUTXOs, string address)
+        public static UnspentTransactionOutput[] GetAllUTXOs(UInt32 numUTXOs, string address)
         {
-            if (numUTXOs > 0 )
+            if (numUTXOs > 0)
             {
-                // Testing out getting serialized utxos
-                IntPtr utxosPointer = dogecoin_get_utxos(address);
-                int serializedLength = (int)numUTXOs * NUM_BYTES_PER_UTXO;
-                byte[] serializedUTXOs = new byte[serializedLength];
-                Marshal.Copy(utxosPointer, serializedUTXOs, 0, serializedLength);
-                return serializedUTXOs;
+                UnspentTransactionOutput[] outputs = new UnspentTransactionOutput[numUTXOs];
+                string currTXID;
+                string currAmountString;
+                UInt64 currAmount;
+                int currVout;
+                for (uint i = 0; i <  numUTXOs; i++)
+                {
+                    IntPtr txidStringPointer = dogecoin_get_utxo_txid_str(address, i);
+                    currTXID = Marshal.PtrToStringAnsi(txidStringPointer);
+                    IntPtr amountStringPointer = dogecoin_get_utxo_amount(address, i);
+                    currAmountString = Marshal.PtrToStringAnsi(amountStringPointer);
+                    currAmount = coins_to_koinu_str(currAmountString);
+                    currVout = dogecoin_get_utxo_vout(address, i);
+                    outputs[i] = new UnspentTransactionOutput(currVout, currTXID, currAmount);
+                }
+                return outputs;
             }
             else
             {
                 return null;
             }
+        }
+
+        public static byte[] GetAllSerializedUTXOs(UInt32 numUTXOs, string address)
+        {
+            UnspentTransactionOutput[] outputs = GetAllUTXOs(numUTXOs, address);
+            List<byte> serializedOutputs = new List<byte>();
+            for (int i = 0; i < outputs.Length; i++)
+            {
+                serializedOutputs.AddRange(outputs[i].Serialize());
+            }
+            return serializedOutputs.ToArray();
         }
 
         public static string GetTXIDString(string address, uint index)
