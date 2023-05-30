@@ -229,3 +229,5 @@ char* sign_message(char* privkey, char* msg);
 
 /* verify a message with a address */
 int verify_message(char* sig, char* msg, char* address);
+
+uint8_t dogecoin_p2pkh_address_to_pubkey_hash(char* address, char* result);

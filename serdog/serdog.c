@@ -528,6 +528,10 @@ void createTransaction()
 		uint64_t utxo_total_amount; // actually accumulate the utxo amounts into this
 		// int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
 		// char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
+		// Get the script pubkey
+		char script_pubkey[PUBKEY_HASH_LENGTH];
+		dogecoin_p2pkh_address_to_pubkey_hash(loadedDogeAddress, script_pubkey);
+		printf("Script PubKey: %s\n", script_pubkey);
 		// @TODO sign the transaction
 		//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);
 		// @TODO get the raw transaction
