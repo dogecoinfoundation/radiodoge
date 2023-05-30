@@ -612,7 +612,7 @@ void* serialPollThread(void* threadid)
 					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex, senderAddress);
 					if (processResult)
 					{
-						// @TODO do something with entire payload besides just printing it
+
 						printf("Fully reassembled payload!\n");
 						printNodeAddress("Sender", senderAddress);
 						printByteArray(multipartBuffer, multipartIndex);
@@ -1163,7 +1163,7 @@ void fileWriteReadTest()
 	char loadedKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 	char loadedAddress[P2PKH_ADDR_STRINGLEN];
 	loadDogecoinAddress("savedAddressTest.txt", loadedAddress, loadedKey);
-	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedAddress, loadedKey);
+	printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedAddress, loadedKey);
 }
 
 void GenerateDemoPairFiles()
@@ -1200,7 +1200,7 @@ void LoadDemoPairFileHelper(int pairIndex)
 	}
 	loadDogecoinAddress(filename, loadedDogeAddress, loadedPrivateKey);
 	// @TODO debug and demo purposes only remove later
-	printf("Loaded...\nAddress: %s\n Private Key: %s\n", loadedDogeAddress, loadedPrivateKey);
+	printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedDogeAddress, loadedPrivateKey);
 }
 
 int main()

@@ -1,9 +1,9 @@
 #include "fileHelper.h"
 
-void encryptString(char* password, char* string, int stringLength) {
+void encryptString(char* password, char* string, int stringLength, int startingIndex) {
 	int i, j = 0;
 	int passwordLength = strlen(password);
-	for (i = 0; i < stringLength; i++)
+	for (i = startingIndex; i < stringLength; i++)
 	{
 		string[i] ^= password[j];
 		j = (j + 1) % passwordLength;
@@ -19,7 +19,8 @@ void readAddressFromFile(char* fileName, char* pubAddress, char* privateKey, cha
 	}
 	fgets(pubAddress, P2PKH_ADDR_STRINGLEN, file);
 	fread(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
-	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN);
+	// Don't want to encrypt/decrypt the Q as it could then be easier to figure out password
+	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, 1);
 	fclose(file);
 }
 
@@ -30,7 +31,8 @@ void writeAddressToFile(char* fileName, char* pubAddress, char* privateKey, char
 		printf("Error opening file.\n");
 		return;
 	}
-	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN);
+	// Don't want to encrypt/decrypt the Q as it could then be easier to figure out password
+	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, 1);
 	fprintf(file, "%s", pubAddress, privateKey);
 	fwrite(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
 	fclose(file);
