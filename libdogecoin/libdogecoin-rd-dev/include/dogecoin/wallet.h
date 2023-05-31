@@ -33,20 +33,20 @@
 
 LIBDOGECOIN_BEGIN_DECL
 
-#include <dogecoin/blockchain.h>
 #include <dogecoin/bip32.h>
+#include <dogecoin/blockchain.h>
 #include <dogecoin/buffer.h>
 #include <dogecoin/constants.h>
 #include <dogecoin/tx.h>
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /** single key/value record */
 typedef struct dogecoin_wallet_ {
-    FILE *dbfile;
+    FILE* dbfile;
     dogecoin_hdnode* masterkey;
-    uint32_t next_childindex; //cached next child index
+    uint32_t next_childindex; // cached next child index
     const dogecoin_chainparams* chain;
     uint32_t bestblockheight;
 
@@ -56,9 +56,9 @@ typedef struct dogecoin_wallet_ {
     void* unspent_rbtree;
     vector* spends;
     void* spends_rbtree;
-    vector *vec_wtxes;
+    vector* vec_wtxes;
     void* wtxes_rbtree;
-    vector *waddr_vector; //points to the addr objects managed by the waddr_rbtree [in order]
+    vector* waddr_vector; // points to the addr objects managed by the waddr_rbtree [in order]
     void* waddr_rbtree;
 } dogecoin_wallet;
 
@@ -67,7 +67,7 @@ typedef struct dogecoin_wtx_ {
     uint256 blockhash;
     uint32_t height;
     dogecoin_tx* tx;
-    dogecoin_bool ignore; //if set, transaction will be ignored (soft-delete)
+    dogecoin_bool ignore; // if set, transaction will be ignored (soft-delete)
 } dogecoin_wtx;
 
 typedef struct dogecoin_utxo_ {
@@ -82,7 +82,7 @@ typedef struct dogecoin_utxo_ {
     dogecoin_bool solvable;
 } dogecoin_utxo;
 
-typedef struct dogecoin_wallet_addr_{
+typedef struct dogecoin_wallet_addr_ {
     uint160 pubkeyhash;
     uint8_t type;
     uint32_t childindex;
@@ -109,7 +109,7 @@ LIBDOGECOIN_API void dogecoin_wallet_scrape_utxos(dogecoin_wallet* wallet, dogec
 /** wallet addr functions */
 LIBDOGECOIN_API extern dogecoin_wallet_addr* dogecoin_wallet_addr_new();
 LIBDOGECOIN_API void dogecoin_wallet_addr_free(dogecoin_wallet_addr* waddr);
-LIBDOGECOIN_API extern int dogecoin_wallet_addr_compare(const void *l, const void *r);
+LIBDOGECOIN_API extern int dogecoin_wallet_addr_compare(const void* l, const void* r);
 /** ------------------------------------ */
 
 /** wallet outputs (prev wtx + n) functions */
@@ -117,11 +117,11 @@ LIBDOGECOIN_API dogecoin_output* dogecoin_wallet_output_new();
 LIBDOGECOIN_API void dogecoin_wallet_output_free(dogecoin_output* output);
 /** ------------------------------------ */
 
-LIBDOGECOIN_API dogecoin_wallet* dogecoin_wallet_new(const dogecoin_chainparams *params);
+LIBDOGECOIN_API dogecoin_wallet* dogecoin_wallet_new(const dogecoin_chainparams* params);
 LIBDOGECOIN_API void dogecoin_wallet_free(dogecoin_wallet* wallet);
 
 /** load the wallet, sets masterkey, sets next_childindex */
-LIBDOGECOIN_API dogecoin_bool dogecoin_wallet_load(dogecoin_wallet* wallet, const char* file_path, int *error, dogecoin_bool *created);
+LIBDOGECOIN_API dogecoin_bool dogecoin_wallet_load(dogecoin_wallet* wallet, const char* file_path, int* error, dogecoin_bool* created);
 
 /** writes the wallet state to disk */
 LIBDOGECOIN_API dogecoin_bool dogecoin_wallet_flush(dogecoin_wallet* wallet);
@@ -150,7 +150,7 @@ LIBDOGECOIN_API int64_t dogecoin_wallet_get_balance(dogecoin_wallet* wallet);
 /** gets credit from given transaction */
 LIBDOGECOIN_API int64_t dogecoin_wallet_wtx_get_credit(dogecoin_wallet* wallet, dogecoin_wtx* wtx);
 
-LIBDOGECOIN_API int64_t dogecoin_wallet_get_debit_tx(dogecoin_wallet *wallet, const dogecoin_tx *tx);
+LIBDOGECOIN_API int64_t dogecoin_wallet_get_debit_tx(dogecoin_wallet* wallet, const dogecoin_tx* tx);
 LIBDOGECOIN_API int64_t dogecoin_wallet_wtx_get_available_credit(dogecoin_wallet* wallet, dogecoin_wtx* wtx);
 
 /** checks if a transaction outpoint is owned by the wallet */
@@ -163,13 +163,13 @@ LIBDOGECOIN_API dogecoin_bool dogecoin_wallet_get_unspents(dogecoin_wallet* wall
 LIBDOGECOIN_API dogecoin_bool dogecoin_wallet_get_unspent(dogecoin_wallet* wallet, vector* unspent);
 
 /** checks a transaction or relevance to the wallet */
-LIBDOGECOIN_API void dogecoin_wallet_check_transaction(void *ctx, dogecoin_tx *tx, unsigned int pos, dogecoin_blockindex *pindex);
+LIBDOGECOIN_API void dogecoin_wallet_check_transaction(void* ctx, dogecoin_tx* tx, unsigned int pos, dogecoin_blockindex* pindex);
 
 /** returns wtx based on given hash
  * may return NULL if transaction could not be found
  * memory is managed by the transaction tree
  */
-LIBDOGECOIN_API dogecoin_wtx * dogecoin_wallet_get_wtx(dogecoin_wallet* wallet, const uint256 hash);
+LIBDOGECOIN_API dogecoin_wtx* dogecoin_wallet_get_wtx(dogecoin_wallet* wallet, const uint256 hash);
 
 LIBDOGECOIN_API dogecoin_wallet* dogecoin_wallet_read(char* address);
 LIBDOGECOIN_API int dogecoin_register_watch_address_with_node(char* address);
@@ -179,6 +179,8 @@ LIBDOGECOIN_API uint8_t* dogecoin_get_utxos(char* address);
 LIBDOGECOIN_API unsigned int dogecoin_get_utxos_length(char* address);
 LIBDOGECOIN_API char* dogecoin_get_utxo_txid_str(char* address, unsigned int index);
 LIBDOGECOIN_API uint8_t* dogecoin_get_utxo_txid(char* address, unsigned int index);
+LIBDOGECOIN_API int dogecoin_get_utxo_vout(char* address, unsigned int index);
+LIBDOGECOIN_API char* dogecoin_get_utxo_amount(char* address, unsigned int index);
 LIBDOGECOIN_API uint64_t dogecoin_get_balance(char* address);
 LIBDOGECOIN_API char* dogecoin_get_balance_str(char* address);
 

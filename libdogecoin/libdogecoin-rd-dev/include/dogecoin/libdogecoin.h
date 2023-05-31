@@ -27,22 +27,23 @@
  */
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
-#include "dogecoin.h"
 #include "constants.h"
+#include "dogecoin.h"
 #include "uthash.h"
 
 /* basic address functions: return 1 if succesful
    ----------------------------------------------
-*///!init static ecc context
+*/
+//! init static ecc context
 void dogecoin_ecc_start(void);
 
-//!destroys the static ecc context
+//! destroys the static ecc context
 void dogecoin_ecc_stop(void);
 
 /* generates a private and public keypair (a wallet import format private key and a p2pkh ready-to-use corresponding dogecoin address)*/
@@ -75,27 +76,27 @@ int getDerivedHDAddressByPath(const char* masterkey, const char* derived_path, c
 
 /* BIP 39 entropy */
 #define ENT_STRING_SIZE 3
-typedef char ENTROPY_SIZE [ENT_STRING_SIZE];
+typedef char ENTROPY_SIZE[ENT_STRING_SIZE];
 
 /* BIP 39 hex entropy */
 #define MAX_HEX_ENT_SIZE 64 + 1
-typedef char HEX_ENTROPY [MAX_HEX_ENT_SIZE];
+typedef char HEX_ENTROPY[MAX_HEX_ENT_SIZE];
 
 /* BIP 39 mnemonic */
 #define MAX_MNEMONIC_SIZE 1024
-typedef char MNEMONIC [MAX_MNEMONIC_SIZE];
+typedef char MNEMONIC[MAX_MNEMONIC_SIZE];
 
 /* BIP 39 passphrase */
 #define MAX_PASS_SIZE 256
-typedef char PASS [MAX_PASS_SIZE];
+typedef char PASS[MAX_PASS_SIZE];
 
 /* BIP 32 512-bit seed */
 #define MAX_SEED_SIZE 64
-typedef uint8_t SEED [MAX_SEED_SIZE];
+typedef uint8_t SEED[MAX_SEED_SIZE];
 
 /* BIP 32 change level */
 #define CHG_LEVEL_STRING_SIZE 2
-typedef char CHANGE_LEVEL [CHG_LEVEL_STRING_SIZE];
+typedef char CHANGE_LEVEL[CHG_LEVEL_STRING_SIZE];
 
 /* Generates an English mnemonic phrase from given hex entropy */
 int generateEnglishMnemonic(const HEX_ENTROPY entropy, const ENTROPY_SIZE size, MNEMONIC mnemonic);
@@ -129,6 +130,9 @@ char* finalize_transaction(int txindex, char* destinationaddress, char* subtract
 /* sign a raw transaction in memory at (txindex), sign (inputindex) with (scripthex) of (sighashtype), with (privkey) */
 int sign_transaction(int txindex, char* script_pubkey, char* privkey);
 
+/* Sign a formed transaction with working transaction index (txindex), prevout.n index (vout_index) and private key (privkey) */
+int sign_transaction_w_privkey(int txindex, int vout_index, char* privkey);
+
 /* clear all internal working transactions */
 void remove_all();
 
@@ -142,7 +146,7 @@ void clear_transaction(int txindex);
 ---------------------------------
 */
 
-//TODO: These are strings not just P2PKH but we need to set a min and max, perhaps only accept wif and p2pkh.
+// TODO: These are strings not just P2PKH but we need to set a min and max, perhaps only accept wif and p2pkh.
 
 /*populate an array of bits that represent qrcode pixels*/
 /* returns size(L or W) in pixels of QR.*/
@@ -171,6 +175,13 @@ int sign_raw_transaction(int inputindex, char* incomingrawtx, char* scripthex, i
 
 /*Store a raw transaction that's already formed, and give it a txindex in memory. (txindex) is returned as int. */
 int store_raw_transaction(char* incomingrawtx);
+
+
+/* Koinu functions
+--------------------------------------------------------------------------
+*/
+int koinu_to_coins_str(uint64_t koinu, char* str);
+uint64_t coins_to_koinu_str(char* coins);
 
 
 /* Memory functions
@@ -205,20 +216,20 @@ typedef struct eckey {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
-static eckey *keys = NULL;
+static eckey* keys = NULL;
 #pragma GCC diagnostic pop
 
 // instantiates a new eckey
 eckey* new_eckey();
 
 // adds eckey structure to hash table
-void add_eckey(eckey *key);
+void add_eckey(eckey* key);
 
 // find eckey from the hash table
 eckey* find_eckey(int idx);
 
 // remove eckey from the hash table
-void remove_eckey(eckey *key);
+void remove_eckey(eckey* key);
 
 // instantiates and adds key to the hash table
 int start_key();
@@ -228,3 +239,45 @@ char* sign_message(char* privkey, char* msg);
 
 /* verify a message with a address */
 int verify_message(char* sig, char* msg, char* address);
+
+
+/* Vector API
+--------------------------------------------------------------------------
+*/
+
+typedef struct vector {
+    void** data;  /* array of pointers */
+    size_t len;   /* array element count */
+    size_t alloc; /* allocated array elements */
+
+    void (*elem_free_f)(void*);
+} vector;
+
+#define vector_idx(vec, idx) vec->data[idx]
+
+vector* vector_new(size_t res, void (*free_f)(void*));
+void vector_free(vector* vec, dogecoin_bool free_array);
+
+dogecoin_bool vector_add(vector* vec, void* data);
+dogecoin_bool vector_remove(vector* vec, void* data);
+void vector_remove_idx(vector* vec, size_t idx);
+void vector_remove_range(vector* vec, size_t idx, size_t len);
+dogecoin_bool vector_resize(vector* vec, size_t newsz);
+
+ssize_t vector_find(vector* vec, void* data);
+
+
+/* Wallet API
+--------------------------------------------------------------------------
+*/
+
+int dogecoin_unregister_watch_address_with_node(char* address);
+int dogecoin_get_utxo_vector(char* address, vector* utxos);
+uint8_t* dogecoin_get_utxos(char* address);
+unsigned int dogecoin_get_utxos_length(char* address);
+char* dogecoin_get_utxo_txid_str(char* address, unsigned int index);
+uint8_t* dogecoin_get_utxo_txid(char* address, unsigned int index);
+uint64_t dogecoin_get_balance(char* address);
+char* dogecoin_get_balance_str(char* address);
+uint64_t dogecoin_get_balance(char* address);
+char* dogecoin_get_balance_str(char* address);
