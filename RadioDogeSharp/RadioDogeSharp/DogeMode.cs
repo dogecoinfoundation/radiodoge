@@ -78,13 +78,13 @@ namespace RadioDoge
         private void SendUTXOs(NodeAddress destNode, string address)
         {
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-            byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+            byte[] serializedUTXOBytes = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
             // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
-            List<byte> payload = new List<byte>(5 + serializedUTXOs.Length);
+            List<byte> payload = new List<byte>(5 + serializedUTXOBytes.Length);
             payload.Add((byte)DogeCommandType.SendUTXOs);
             byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
             payload.AddRange(serializedLength);
-            payload.AddRange(serializedUTXOs);
+            payload.AddRange(serializedUTXOBytes);
             SendMultipartPacket(destNode, payload.ToArray());
         }
 
@@ -152,7 +152,7 @@ namespace RadioDoge
             string requestedDogecoinAddress = ExtractDogecoinAddressFromPayload(1, addressLength, payload);
             if (dogeAddressBook.ContainsKey(requestedDogecoinAddress))
             {
-                SendTXIDStrings(replyAddress, requestedDogecoinAddress);
+                SendUTXOs(replyAddress, requestedDogecoinAddress);
             }
             else
             {

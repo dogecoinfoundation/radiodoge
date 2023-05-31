@@ -26,7 +26,7 @@ char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char generatedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
-char curr_txid[TXID_STRING_LENGTH];
+struct utxoInfo currUTXOs[32];
 uint32_t numUTXOs;
 
 
@@ -469,8 +469,24 @@ uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
 		serializedBalance[i] ^= pin[i % PIN_LENGTH];
 	}
 	uint64_t balance;
+	printByteArray(serializedBalance, sizeof(balance));
 	memcpy(&balance, serializedBalance, sizeof(balance));
 	return balance;
+}
+
+void deserializeUTXOs(uint8_t* serializedUTXOs)
+{
+	int currOffset = 0;
+	for (int i = 0; i < numUTXOs; i++)
+	{
+		memcpy(&currUTXOs[i].vout, serializedUTXOs + currOffset, 4);
+		currOffset += 4;
+		memcpy(currUTXOs[i].txId, serializedUTXOs + currOffset, TXID_STRING_LENGTH);
+		currOffset += TXID_STRING_LENGTH;
+		printByteArray(serializedUTXOs + currOffset, SERIALIZED_BALANCE_LENGTH);
+		memcpy(&currUTXOs[i].amount, serializedUTXOs + currOffset, SERIALIZED_BALANCE_LENGTH);
+		currOffset += SERIALIZED_BALANCE_LENGTH;
+	}
 }
 
 void processReceivedUTXOs(uint8_t* payloadIn)
@@ -479,11 +495,11 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 	memcpy(&numUTXOs, payloadIn, sizeof(numUTXOs));
 	printf("Received %i UTXOs!\n", numUTXOs);
 
-	// The rest will be serialized UTXOs
-	// @TODO
-	// For now we will just grab the first one as a test
-	memcpy(curr_txid, payloadIn + SERIALIZED_NUM_UTXO_LENGTH, TXID_STRING_LENGTH);
-	printf("%s\n", curr_txid);
+	// The rest will be serialized UTXOs so we need to deserialize
+	deserializeUTXOs(payloadIn + SERIALIZED_NUM_UTXO_LENGTH);
+	printf("TXID: %s\n", currUTXOs[0].txId);
+	printf("Vout: %i\n", currUTXOs[0].vout);
+	printf("Amount: %u\n", currUTXOs[0].amount);
 }
 
 // This is the general transaction structure that I think we need to follow
@@ -513,7 +529,7 @@ void createTransaction()
 
 	// @TODO add utxo(s)
 	// For now we will just add one utxo 
-	int add_result = add_utxo(curr_tx_index, curr_txid, 0);
+	int add_result = add_utxo(curr_tx_index, currUTXOs[0].txId, currUTXOs[0].vout);
 	if (add_result)
 	{
 		// For now we will charge a fixed fee of 1 dogecoin
@@ -530,7 +546,7 @@ void createTransaction()
 		// char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
 		// Get the script pubkey
 		char script_pubkey[PUBKEY_HASH_LENGTH];
-		dogecoin_p2pkh_address_to_pubkey_hash(loadedDogeAddress, script_pubkey);
+		//dogecoin_p2pkh_address_to_pubkey_hash(loadedDogeAddress, script_pubkey);
 		printf("Script PubKey: %s\n", script_pubkey);
 		// @TODO sign the transaction
 		//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);

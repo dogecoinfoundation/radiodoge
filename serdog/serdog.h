@@ -53,6 +53,13 @@ int isCmd(uint8_t inByte);
 
 //command processing convenience utils
 
+struct utxoInfo 
+{
+    int vout;
+    char* txId[64];
+    uint64_t amount;
+};
+
 char* charcat(char* target, char c) {
 	size_t len;
 	if (target != NULL) {

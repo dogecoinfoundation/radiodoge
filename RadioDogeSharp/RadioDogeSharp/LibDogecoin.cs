@@ -139,15 +139,16 @@ namespace RadioDoge
                 string currAmountString;
                 UInt64 currAmount;
                 int currVout;
-                for (uint i = 0; i <  numUTXOs; i++)
+                for (uint i = 0; i < numUTXOs; i++)
                 {
-                    IntPtr txidStringPointer = dogecoin_get_utxo_txid_str(address, i);
+                    IntPtr txidStringPointer = dogecoin_get_utxo_txid_str(address, i + 1);
                     currTXID = Marshal.PtrToStringAnsi(txidStringPointer);
-                    IntPtr amountStringPointer = dogecoin_get_utxo_amount(address, i);
+                    IntPtr amountStringPointer = dogecoin_get_utxo_amount(address, i + 1);
                     currAmountString = Marshal.PtrToStringAnsi(amountStringPointer);
                     currAmount = coins_to_koinu_str(currAmountString);
-                    currVout = dogecoin_get_utxo_vout(address, i);
+                    currVout = dogecoin_get_utxo_vout(address, i + 1);
                     outputs[i] = new UnspentTransactionOutput(currVout, currTXID, currAmount);
+                    Console.WriteLine(outputs[i].ToString() + "\n");
                 }
                 return outputs;
             }

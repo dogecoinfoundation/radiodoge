@@ -45,5 +45,10 @@ namespace RadioDoge
             bytes.AddRange(amountBytes);
             return bytes.ToArray();
         }
+
+        public override string ToString()
+        {
+            return $"TXID: {txId}\nVout: {vout}\nAmount: {amount}";
+        }
     }
 }
