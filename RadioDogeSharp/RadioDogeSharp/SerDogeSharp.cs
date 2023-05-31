@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RadioDoge
@@ -11,9 +12,15 @@ namespace RadioDoge
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private MultipartPacket currMultipartPacket = new MultipartPacket();
+        private bool isLinuxOS = false;
 
         public void Execute()
         {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                isLinuxOS = true;
+            }
+
             ConsoleHelper.PrintTitleScreen();
             //RunSPVCommand();          
             LibDogecoin.DogeTest();

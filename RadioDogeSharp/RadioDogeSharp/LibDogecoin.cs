@@ -10,10 +10,10 @@ namespace RadioDoge
         private const string libToImport = "dogecoin";
         private const int NUM_BYTES_PER_UTXO = 76;
 
-        /* This is what makes up one UTXO so should be serialized to 35 bytes
-         uint8_t index; // 1 byte
-         uint16_t amount; // should this be uint64_t???
-         uint8_t txid[32]
+        /* The serialized UXTO sent should have the following info
+         int vout; // 4 bytes
+         char* txid[64]; // 64 bytes (comes over as raw bytes but should be treated as a char array/ string)
+         uint64_t amount; // 8 bytes
         */
 
         public static void DogeTest()
@@ -191,7 +191,7 @@ namespace RadioDoge
         public static bool GetPubKeyHash(string address, out string pubkeyHash)
         {
             StringBuilder pubkey = new StringBuilder();
-            byte result = LibDogecoin.dogecoin_p2pkh_address_to_pubkey_hash(address, pubkey);
+            byte result = dogecoin_p2pkh_address_to_pubkey_hash(address, pubkey);
             pubkeyHash = pubkey.ToString();
             Console.WriteLine($"PubKey Hash: {pubkeyHash}");
             return result == 1;
