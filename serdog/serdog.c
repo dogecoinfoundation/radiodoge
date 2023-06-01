@@ -519,8 +519,6 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 }
 
 // This is the general transaction structure that I think we need to follow
-// Finalization is on the hub or here?
-// Seems like finalization will be here since it will be in this memory space
 bool createTransaction()
 {
 	printf("*** Creating a transaction to send dogecoin ***\n");
@@ -570,17 +568,18 @@ bool createTransaction()
 	// Finalize the transaction
 	finalize_transaction(curr_tx_index, destinationDogeAddress, fixed_fee, utxo_total_amount_str, loadedDogeAddress);
 
-	// Sign the transaction
-	// @TODO what should vout_index here be???
-	int vout_index = 0;
-	if (!sign_transaction_w_privkey(curr_tx_index, vout_index, loadedPrivateKey))
+	// Sign the transaction for each UTXO
+	for (int i = 0; i < numUTXOs; i++)
 	{
-		printf("Failed to sign transaction!\n");
-		return false;
+		if (!sign_transaction_w_privkey(curr_tx_index, currUTXOs[i].vout, loadedPrivateKey))
+		{
+			printf("Failed to sign transaction for UTXO with vout=%i\n", i);
+			return false;
+		}
 	}
-	
 	currentTransaction = get_raw_transaction(curr_tx_index);
 	printf("Raw Transaction: %s\n", currentTransaction);
+	// @TODO do something with raw transaction
 
 	clear_transaction(curr_tx_index);
 	return true;
