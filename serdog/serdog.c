@@ -479,13 +479,30 @@ void deserializeUTXOs(uint8_t* serializedUTXOs)
 	int currOffset = 0;
 	for (int i = 0; i < numUTXOs; i++)
 	{
-		memcpy(&currUTXOs[i].vout, serializedUTXOs + currOffset, 4);
-		currOffset += 4;
+		// Extract the vout value
+		memcpy(&currUTXOs[i].vout, serializedUTXOs + currOffset, SERIALIZED_VOUT_LENGTH);
+		currOffset += SERIALIZED_VOUT_LENGTH;
+		// Extract the TXID string
 		memcpy(currUTXOs[i].txId, serializedUTXOs + currOffset, TXID_STRING_LENGTH);
 		currOffset += TXID_STRING_LENGTH;
+		// Extract the amount
 		printByteArray(serializedUTXOs + currOffset, SERIALIZED_BALANCE_LENGTH);
 		memcpy(&currUTXOs[i].amount, serializedUTXOs + currOffset, SERIALIZED_BALANCE_LENGTH);
 		currOffset += SERIALIZED_BALANCE_LENGTH;
+	}
+}
+
+void printAllUTXOs()
+{
+	for (int i = 0; i < numUTXOs; i++)
+	{
+		printf("\n### UTXO %i ###\n", i);
+		printf("TXID: %s\n", currUTXOs[i].txId);
+		printf("Vout: %i\n", currUTXOs[i].vout);
+		char coinString[21];
+		koinu_to_coins_str(currUTXOs[i].amount, coinString);
+		printf("Amount (Coins): %s\n", coinString);
+		printf("Amount (Koinu): %lu\n", currUTXOs[i].amount);
 	}
 }
 
@@ -497,9 +514,7 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 
 	// The rest will be serialized UTXOs so we need to deserialize
 	deserializeUTXOs(payloadIn + SERIALIZED_NUM_UTXO_LENGTH);
-	printf("TXID: %s\n", currUTXOs[0].txId);
-	printf("Vout: %i\n", currUTXOs[0].vout);
-	printf("Amount: %u\n", currUTXOs[0].amount);
+	printAllUTXOs();
 }
 
 // This is the general transaction structure that I think we need to follow
