@@ -88,24 +88,6 @@ namespace RadioDoge
             SendMultipartPacket(destNode, payload.ToArray());
         }
 
-        private void SendTXIDStrings(NodeAddress destNode, string address)
-        {
-            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-            StringBuilder allTXIDs = new StringBuilder();
-            for (uint i = 1; i <= numUTXOs; i++)
-            {
-                allTXIDs.Append(LibDogecoin.GetTXIDString(address, i));
-            }
-            string tempString = allTXIDs.ToString();
-            byte[] serializedTXIDs = Encoding.ASCII.GetBytes(tempString);
-            List<byte> payload = new List<byte>(5 + serializedTXIDs.Length);
-            payload.Add((byte)DogeCommandType.SendUTXOs);
-            byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
-            payload.AddRange(serializedLength);
-            payload.AddRange(serializedTXIDs);
-            SendMultipartPacket(destNode, payload.ToArray());
-        }
-
         private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
         {
             DogeCommandType commType = (DogeCommandType)payload[0];
@@ -136,8 +118,13 @@ namespace RadioDoge
                     RegisterDogeAddress(senderAddress, payload);
                     break;
                 case DogeCommandType.GetUTXOs:
-                    Console.WriteLine("Servicing UTXO request!");
+                    Console.WriteLine("Servicing UTXO Request!");
                     ServiceUTXORequest(senderAddress, payload);
+                    break;
+                case DogeCommandType.TransactionRequest:
+                    // @TODO
+                    Console.WriteLine("Servicing Transaction Request!");
+                    ServiceTransactionRequest(senderAddress, payload);
                     break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
@@ -160,6 +147,16 @@ namespace RadioDoge
                 // We will send a failure message for now
                 SendGenericDogeResponse(replyAddress, false, DogeCommandType.GetUTXOs);
             }
+        }
+
+        private void ServiceTransactionRequest(NodeAddress replyAddress, byte[] payload)
+        {
+            int transactionLength = payload.Length - 1;
+            char[] rawTransaction = new char[transactionLength];
+            Array.Copy(payload, 1, rawTransaction, 0, transactionLength);
+            string transactionString = new string(rawTransaction);
+            Console.WriteLine($"Raw Transaction: {transactionString}");
+            // @TODO actually do something with transaction
         }
 
         private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)

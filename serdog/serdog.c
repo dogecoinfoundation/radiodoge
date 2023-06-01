@@ -28,6 +28,7 @@ char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
 uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 struct utxoInfo currUTXOs[32];
 uint32_t numUTXOs;
+char* currentTransaction;
 
 
 int openPort()
@@ -520,7 +521,7 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 // This is the general transaction structure that I think we need to follow
 // Finalization is on the hub or here?
 // Seems like finalization will be here since it will be in this memory space
-void createTransaction()
+bool createTransaction()
 {
 	printf("*** Creating a transaction to send dogecoin ***\n");
 	printf("Sender: %s\n", loadedDogeAddress);
@@ -535,7 +536,7 @@ void createTransaction()
 	if (numUTXOs < 1)
 	{
 		printf("There are no UTXOs stored for %s\n", loadedDogeAddress);
-		return;
+		return false;
 	}
 
 	int curr_tx_index = start_transaction();
@@ -549,7 +550,7 @@ void createTransaction()
 		if (!add_utxo_result)
 		{
 			printf("Error adding UTXO %i!\n", i);
-			return;
+			return false;
 		}
 	}
 	char utxo_total_amount_str[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
@@ -561,17 +562,28 @@ void createTransaction()
 	if (!output_result)
 	{
 		printf("Error adding output!\n");
-		return;
+		return false;
 	}
 
 	// For now we will charge a fixed fee of 1 dogecoin
 	char fixed_fee[3] = "1.0";
 	// Finalize the transaction
-	//char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
-	// @TODO sign the transaction
-	//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);
-	// @TODO get the raw transaction
-	//char* get_raw_transaction(int txIndex);
+	finalize_transaction(curr_tx_index, destinationDogeAddress, fixed_fee, utxo_total_amount_str, loadedDogeAddress);
+
+	// Sign the transaction
+	// @TODO what should vout_index here be???
+	int vout_index = 0;
+	if (!sign_transaction_w_privkey(curr_tx_index, vout_index, loadedPrivateKey))
+	{
+		printf("Failed to sign transaction!\n");
+		return false;
+	}
+	
+	currentTransaction = get_raw_transaction(curr_tx_index);
+	printf("Raw Transaction: %s\n", currentTransaction);
+
+	clear_transaction(curr_tx_index);
+	return true;
 }
 
 void printByteArray(uint8_t* arrayIn, int length)
@@ -1019,8 +1031,14 @@ void enterDogeMode()
 		case 4:
 			// Send Dogecoin
 			// @TODO
-			createTransaction();
-			printf("Sending dogecoin is not currently fully implemented\n");
+			if (createTransaction())
+			{
+				printf("Raw Transaction Again: %s\n", currentTransaction);
+			}
+			else
+			{
+				printf("Failed to create a transaction!\n");
+			}
 			break;
 		case 5:
 			// Display QR code
