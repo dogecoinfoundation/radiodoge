@@ -34,9 +34,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "constants.h"
-#include "dogecoin.h"
-#include "uthash.h"
+#include "include/constants.h"
+#include "include/dogecoin.h"
+#include "include/uthash.h"
 
 /* basic address functions: return 1 if succesful
    ----------------------------------------------
