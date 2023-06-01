@@ -538,36 +538,40 @@ void createTransaction()
 		return;
 	}
 
-	// @TODO
-
 	int curr_tx_index = start_transaction();
 
-	// @TODO add utxo(s)
-	// For now we will just add one utxo 
-	int add_result = add_utxo(curr_tx_index, currUTXOs[0].txId, currUTXOs[0].vout);
-	if (add_result)
+	// Add all available utxos
+	uint64_t utxo_total_amount = 0;
+	for (int i = 0; i < numUTXOs; i++)
 	{
-		// For now we will charge a fixed fee of 1 dogecoin
-		char fixed_fee[3] = "1.0";
-		// @TODO add output
-		// Amount here is how much to send
-		int output_result = add_output(curr_tx_index, destinationDogeAddress, amount_to_send);
-		// @TODO finalize the transaction
-		// out_dogeamount_for verification here is the total amount of the utxos
-		// will need to add them all up and then turn into a string using:
-		char utxo_total_amount_str[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
-		uint64_t utxo_total_amount; // actually accumulate the utxo amounts into this
-		// int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
-		// char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
-		// Get the script pubkey
-		char script_pubkey[PUBKEY_HASH_LENGTH];
-		//dogecoin_p2pkh_address_to_pubkey_hash(loadedDogeAddress, script_pubkey);
-		printf("Script PubKey: %s\n", script_pubkey);
-		// @TODO sign the transaction
-		//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);
-		// @TODO get the raw transaction
-		//char* get_raw_transaction(int txIndex);
+		int add_utxo_result = add_utxo(curr_tx_index, currUTXOs[i].txId, currUTXOs[i].vout);
+		utxo_total_amount += currUTXOs[i].amount;
+		if (!add_utxo_result)
+		{
+			printf("Error adding UTXO %i!\n", i);
+			return;
+		}
 	}
+	char utxo_total_amount_str[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
+	int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
+	printf("UTXO total amount: %s\n", utxo_total_amount_str);
+
+	// Add output
+	int output_result = add_output(curr_tx_index, destinationDogeAddress, amount_to_send);
+	if (!output_result)
+	{
+		printf("Error adding output!\n");
+		return;
+	}
+
+	// For now we will charge a fixed fee of 1 dogecoin
+	char fixed_fee[3] = "1.0";
+	// Finalize the transaction
+	//char* finalize_transaction(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress);
+	// @TODO sign the transaction
+	//int sign_result = sign_transaction(curr_tx_index, char* script_pubkey, loadedPrivateKey);
+	// @TODO get the raw transaction
+	//char* get_raw_transaction(int txIndex);
 }
 
 void printByteArray(uint8_t* arrayIn, int length)
@@ -1016,7 +1020,7 @@ void enterDogeMode()
 			// Send Dogecoin
 			// @TODO
 			createTransaction();
-			printf("Sending dogecoin is not currently implemented\n");
+			printf("Sending dogecoin is not currently fully implemented\n");
 			break;
 		case 5:
 			// Display QR code
