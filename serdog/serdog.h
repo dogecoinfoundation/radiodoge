@@ -31,8 +31,8 @@
 #define MULTIPART_PIECE_INFO_LEN 4
 
 //node settings (for now)
-uint8_t myaddr[] = { 0x0A, 0x05, 0x04 };
-uint8_t rmaddr[] = { 0x0A, 0x05, 0x01 };
+uint8_t myaddr[] = { 0x0A, 0x00, 0x02 };
+uint8_t rmaddr[] = { 0x0A, 0x00, 0x01 };
 
 int USB = 0;
 char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport

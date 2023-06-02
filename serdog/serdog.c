@@ -29,6 +29,7 @@ uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
 struct utxoInfo currUTXOs[32];
 uint32_t numUTXOs;
 char* currentTransaction;
+bool demoMode = true;
 
 
 int openPort()
@@ -1222,7 +1223,7 @@ void fileWriteReadTest()
 	printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedAddress, loadedKey);
 }
 
-void GenerateDemoPairFiles()
+void generateDemoPairFiles()
 {
 	printf("Generating demo pair files\n");
 	char priv1[] = "";
@@ -1235,11 +1236,17 @@ void GenerateDemoPairFiles()
 	printf("Files created!");
 }
 
+void demoSetupNodeAddress()
+{
+	printf("Setting up demo node addresses...\n");
+	cmdSetLocalAddress(myaddr[0], myaddr[1], myaddr[2]);
+}
+
 /// <summary>
 /// For testing loading of generated address pair files
 /// </summary>
 /// <param name="pairIndex"></param>
-void LoadDemoPairFileHelper(int pairIndex)
+void loadDemoPairFileHelper(int pairIndex)
 {
 	char* filename;
 	switch (pairIndex)
@@ -1295,6 +1302,10 @@ int main()
 
 	printStartScreen();
 	createTestDogeAddress(loadedDogeAddress, generatedPrivateKey); // Initial test address 
+	if (demoMode)
+	{
+		demoSetupNodeAddress();
+	}
 	// Enter into mode selection loop
 	modeSelectionLoop();
 
