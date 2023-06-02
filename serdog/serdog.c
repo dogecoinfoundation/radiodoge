@@ -381,8 +381,9 @@ cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, ui
 	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
 }
 
-cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, uint8_t* rawTransaction, int transactionLength, uint8_t requestId)
+cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uint8_t requestId)
 {
+	int transactionLength = strlen(rawTransaction);
 	int payloadLength = 1 + transactionLength;
 	uint8_t payload[payloadLength];
 	payload[0] = TRANSACTION_REQUEST;
@@ -579,9 +580,6 @@ bool createTransaction()
 		}
 	}
 	currentTransaction = get_raw_transaction(curr_tx_index);
-	printf("Raw Transaction: %s\n", currentTransaction);
-	// @TODO do something with raw transaction
-
 	clear_transaction(curr_tx_index);
 	return true;
 }
@@ -1030,10 +1028,11 @@ void enterDogeMode()
 			break;
 		case 4:
 			// Send Dogecoin
-			// @TODO
 			if (createTransaction())
 			{
-				printf("Raw Transaction Again: %s\n", currentTransaction);
+				uint8_t transactionId = 123; // @TODO set this to something unique?
+				printf("Raw Transaction: %s\n", currentTransaction);
+				cmdSendTransaction(myaddr, rmaddr, currentTransaction, transactionId);
 			}
 			else
 			{

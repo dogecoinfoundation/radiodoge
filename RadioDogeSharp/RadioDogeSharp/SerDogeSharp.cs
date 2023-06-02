@@ -23,7 +23,7 @@ namespace RadioDoge
             }
 
             ConsoleHelper.PrintTitleScreen();
-            RunSPVCommand();          
+            //RunSPVCommand();          
             LibDogecoin.DogeTest();
             TestBalanceInquiry();
             TestGetUTXOs();
