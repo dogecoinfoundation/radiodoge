@@ -390,10 +390,41 @@ namespace RadioDoge
             process.StandardInput.WriteLine(cmdString);
             while (Console.ReadLine() != "exit")
             {
+                Console.WriteLine("Waiting for 'exit'...");
+                Thread.Sleep(1000);
+            }
+            process.StandardInput.Close();
+            process.Kill(true);
+            process.Close();
+            Console.WriteLine("Quitting SPV");
+        }
+
+        private void RunDogecoinSendTXCommand(string transaction)
+        {
+            Console.WriteLine("Running SendTX...");
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = false,
+                UseShellExecute = false,
+                CreateNoWindow = false
+            };
+
+            Process process = new Process { StartInfo = startInfo };
+
+            process.Start();
+            string cmdString = $"sendtx.exe {transaction}";
+            process.StandardInput.WriteLine(cmdString);
+            while (Console.ReadLine() != "exit")
+            {
                 Console.WriteLine("Waiting...");
                 Thread.Sleep(1000);
             }
             process.StandardInput.Close();
+            process.Kill(true);
+            process.Close();
+            Console.WriteLine("Quitting Send TX");
         }
 
         private void TestBalanceInquiry()

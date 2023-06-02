@@ -13,6 +13,7 @@ namespace RadioDoge
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private MultipartPacket currMultipartPacket = new MultipartPacket();
         private bool isLinuxOS = false;
+        private bool demoMode = true;
 
         public void Execute()
         {
@@ -22,12 +23,16 @@ namespace RadioDoge
             }
 
             ConsoleHelper.PrintTitleScreen();
-            //RunSPVCommand();          
+            RunSPVCommand();          
             LibDogecoin.DogeTest();
             TestBalanceInquiry();
             TestGetUTXOs();
             if (SetupSerialConnection())
             {
+                if (demoMode)
+                {
+                    DemoNodeSetup();
+                }
                 ModeSelectionLoop();
                 ClosePort();
             }

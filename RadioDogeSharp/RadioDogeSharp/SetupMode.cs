@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Data;
+using System.Text;
 
 namespace RadioDoge
 {
@@ -20,6 +21,16 @@ namespace RadioDoge
                 }
             }
             ConsoleHelper.WriteEmphasizedLine("Enter 'exit' to return to the mode selection screen or 'help' for available commands\n", ConsoleColor.Magenta);
+        }
+
+        private void CommandSetNodeAddress(NodeAddress setAddress)
+        {
+            List<byte> commandBytes = new List<byte>();
+            byte[] setHeader = PacketHelper.CreateCommandHeader((byte)SerialCommandType.SetNodeAddresses, 3);
+            commandBytes.AddRange(setHeader);
+            commandBytes.AddRange(setAddress.ToByteArray());
+            byte[] commandToSend = commandBytes.ToArray();
+            port.Write(commandToSend, 0, commandToSend.Length);
         }
 
         private void SendSetupCommand(int commandValue)
