@@ -45,7 +45,7 @@ enum NODE_STATE {
     NODE_ERRORED = (1 << 2),
     NODE_TIMEOUT = (1 << 3),
     NODE_HEADERSYNC = (1 << 4),
-    NODE_BLOCKSYNC	= (1 << 5),
+    NODE_BLOCKSYNC = (1 << 5),
     NODE_MISSBEHAVED = (1 << 6),
     NODE_DISCONNECTED = (1 << 7),
     NODE_DISCONNECTED_FROM_REMOTE_PEER = (1 << 8),
@@ -159,7 +159,7 @@ LIBDOGECOIN_API void dogecoin_node_connection_state_changed(dogecoin_node* node)
 /* DNS */
 /* =================================== */
 
-LIBDOGECOIN_API dogecoin_bool dogecoin_node_group_add_peers_by_ip_or_seed(dogecoin_node_group *group, const char *ips);
+LIBDOGECOIN_API dogecoin_bool dogecoin_node_group_add_peers_by_ip_or_seed(dogecoin_node_group* group, const char* ips);
 LIBDOGECOIN_API size_t dogecoin_get_peers_from_dns(const char* seed, vector* ips_out, int port, int family);
 
 struct broadcast_ctx {
@@ -175,8 +175,9 @@ struct broadcast_ctx {
     uint64_t start_time;
 };
 
-//!broadcast utilities
+//! broadcast utilities
 LIBDOGECOIN_API dogecoin_bool broadcast_tx(const dogecoin_chainparams* chain, const dogecoin_tx* tx, const char* ips, int maxpeers, int timeout, dogecoin_bool debug);
+LIBDOGECOIN_API dogecoin_bool broadcast_raw_tx(const dogecoin_chainparams* chain, const char* raw_hex_tx);
 
 LIBDOGECOIN_END_DECL
 
