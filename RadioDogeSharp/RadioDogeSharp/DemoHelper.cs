@@ -14,5 +14,12 @@
             destinationAddress = demoDestinationAddress;
             Thread.Sleep(2500);
         }
+
+        private void LibdogecoinFunctionalityTesting()
+        {
+            LibDogecoin.DogeTest();
+            TestBalanceInquiry();
+            TestGetUTXOs();
+        }
     }
 }

@@ -157,6 +157,7 @@ namespace RadioDoge
             string transactionString = new string(rawTransaction);
             Console.WriteLine($"Raw Transaction: {transactionString}");
             // @TODO actually do something with transaction
+            RunDogecoinSendTXCommand(transactionString);
         }
 
         private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)
@@ -404,21 +405,19 @@ namespace RadioDoge
             Console.WriteLine("Running SendTX...");
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
+                FileName = "sendtx.exe",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = false,
                 UseShellExecute = false,
-                CreateNoWindow = false
+                CreateNoWindow = false,
+                Arguments = transaction
             };
-
             Process process = new Process { StartInfo = startInfo };
 
             process.Start();
-            string cmdString = $"sendtx.exe {transaction}";
-            process.StandardInput.WriteLine(cmdString);
             while (Console.ReadLine() != "exit")
             {
-                Console.WriteLine("Waiting...");
+                Console.WriteLine("Waiting for 'exit'...");
                 Thread.Sleep(1000);
             }
             process.StandardInput.Close();

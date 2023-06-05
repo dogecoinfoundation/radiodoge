@@ -48,6 +48,9 @@ namespace RadioDoge
                     displayCommand[2] = (byte)DisplayType.RadioDogeLogo;
                     port.Write(displayCommand, 0, displayCommand.Length);
                     return;
+                case TestFunctions.RunSPV:
+                    RunSPVCommand();
+                    break;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;

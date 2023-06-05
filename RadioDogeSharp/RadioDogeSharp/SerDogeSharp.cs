@@ -22,11 +22,7 @@ namespace RadioDoge
                 isLinuxOS = true;
             }
 
-            ConsoleHelper.PrintTitleScreen();
-            //RunSPVCommand();          
-            LibDogecoin.DogeTest();
-            TestBalanceInquiry();
-            TestGetUTXOs();
+            ConsoleHelper.PrintTitleScreen();   
             if (SetupSerialConnection())
             {
                 if (demoMode)

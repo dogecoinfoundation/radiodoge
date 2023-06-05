@@ -114,6 +114,12 @@ namespace RadioDoge
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern byte dogecoin_p2pkh_address_to_pubkey_hash(string address, StringBuilder pubkeyResult);
 
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr chain_from_b58_prefix(string address);
+
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern bool broadcast_raw_tx(IntPtr chainParameters, string rawTransaction);
+
         public static UInt64 GetBalance(string address)
         {
             return dogecoin_get_balance(address);
@@ -196,6 +202,12 @@ namespace RadioDoge
             pubkeyHash = pubkey.ToString();
             Console.WriteLine($"PubKey Hash: {pubkeyHash}");
             return result == 1;
+        }
+
+        public static bool BroadcastTransaction(string address, string rawTransaction)
+        {
+            IntPtr chainParams = chain_from_b58_prefix(address);
+            return broadcast_raw_tx(chainParams, rawTransaction);
         }
     }
 }

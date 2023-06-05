@@ -566,9 +566,8 @@ bool createTransaction()
 	}
 
 	// For now we will charge a fixed fee of 1 dogecoin
-	char fixed_fee[3] = "1.0";
 	// Finalize the transaction
-	finalize_transaction(curr_tx_index, destinationDogeAddress, fixed_fee, utxo_total_amount_str, loadedDogeAddress);
+	finalize_transaction(curr_tx_index, destinationDogeAddress, "1.0", utxo_total_amount_str, loadedDogeAddress);
 
 	// Sign the transaction for each UTXO
 	for (int i = 0; i < numUTXOs; i++)
@@ -1054,8 +1053,8 @@ void enterDogeMode()
 			break;
 		case 8:
 			// Update Registered Pin
-			uint8_t updatedPin[PIN_LENGTH] = { 4, 3, 2, 1 };
-			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedPin);
+			uint8_t updatedTestPin[PIN_LENGTH] = { 4, 3, 2, 1 };
+			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedTestPin);
 			break;
 		case 9:
 			// Load demo address pair
@@ -1113,6 +1112,9 @@ void LoadDemoAddressPair()
 		createTestDogeAddress(loadedDogeAddress, loadedPrivateKey);
 		break;
 	}
+
+	// @TODO remove. Only used right now for debugging purposes
+	//printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedDogeAddress, loadedPrivateKey);
 }
 
 void enterTestMode()
