@@ -49,6 +49,8 @@ void getUserPassword(char* userInputBuffer, bool isLoad)
 		printf("Please enter a password to encrypt the private key:\n");
 	}
 	scanf("%s", userInputBuffer);
+	// Clear input buffer
+	while (getchar() != '\n');
 }
 
 void saveDogecoinAddress(char* filename, char* pubAddress, char* privateKey)

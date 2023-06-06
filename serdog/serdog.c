@@ -25,7 +25,7 @@ char loadedDogeAddress[P2PKH_ADDR_STRINGLEN];
 char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char generatedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
-uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
+uint8_t userPin[PIN_LENGTH] = { 0, 0, 0, 0 };
 struct utxoInfo currUTXOs[32];
 uint32_t numUTXOs;
 char* currentTransaction;
@@ -787,7 +787,7 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		break;
 	case BALANCE_RECEIVED:
 		printf("Received Dogecoin Balance!\n");
-		uint64_t balanceReceived = deobfuscateReceivedBalance(testPin, payloadIn + 1);
+		uint64_t balanceReceived = deobfuscateReceivedBalance(userPin, payloadIn + 1);
 		// Now turn balance into a float
 		float balanceFloat = (float)balanceReceived / (float)100000000;
 		printf("Balance: %f\n", balanceFloat);
@@ -1044,17 +1044,22 @@ void enterDogeMode()
 			break;
 		case 6:
 			// Register Address
-			uint8_t testPin[PIN_LENGTH] = { 1, 2, 3, 4 };
-			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, false);
+			getUserSuppliedPin(userPin);
+			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, userPin, false);
 			break;
 		case 7:
 			// Remove Address Registration
-			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, testPin, true);
+			cmdRegisterDogeAddress(myaddr, rmaddr, loadedDogeAddress, userPin, true);
 			break;
 		case 8:
 			// Update Registered Pin
-			uint8_t updatedTestPin[PIN_LENGTH] = { 4, 3, 2, 1 };
-			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, testPin, updatedTestPin);
+			uint8_t updatedPin[PIN_LENGTH];
+			getUserSuppliedPin(updatedPin);
+			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, userPin, updatedPin);
+			for (int i = 0; i < PIN_LENGTH; i++)
+			{
+				userPin[i] = updatedPin[i];
+			}
 			break;
 		case 9:
 			// Load demo address pair

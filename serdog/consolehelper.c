@@ -84,6 +84,14 @@ void getUserSuppliedNodeAddress(uint8_t* address)
 	}
 }
 
+void getUserSuppliedPin(uint8_t* pin)
+{
+	printf("Please enter a 4-digit PIN: ");
+	scanf("%1hhu%1hhu%1hhu%1hhu", &pin[0], &pin[1], &pin[2], &pin[3]);
+	// Clear the input buffer
+	while (getchar() != '\n');
+}
+
 void getUserSuppliedDogecoinAmount(char* dogeAmount)
 {
 	printf("Please enter in the amount you would like to send:\n");
