@@ -1071,6 +1071,21 @@ void enterDogeMode()
 			LoadDestinationAddress(destinationDogeAddress);
 			printf("Currently loaded Destination Dogecoin address: %s\n", destinationDogeAddress);
 			break;
+		case 11:
+			printf("Current pin: ");
+			for (int i = 0; i < PIN_LENGTH; i++)
+			{
+				printf("%i", userPin[i]);
+			}
+			printf("\n");
+			getUserSuppliedPin(userPin);
+			printf("Updated pin: ");
+			for (int i = 0; i < PIN_LENGTH; i++)
+			{
+				printf("%i", userPin[i]);
+			}
+			printf("\n");
+			break;
 		}
 		sleep(2);
 	}

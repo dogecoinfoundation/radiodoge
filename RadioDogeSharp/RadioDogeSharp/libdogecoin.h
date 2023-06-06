@@ -220,7 +220,7 @@ dogecoin_bool broadcast_raw_tx(const dogecoin_chainparams* chain, const char* ra
 
 /* This expects a finalized and signed raw hex tx string, and 0 if mainnet.
 Returns TXID string in proper network order. */
-char* broadcast_raw_tx_on_net(const char* raw_hex_tx, dogecoin_bool is_testnet)
+char* broadcast_raw_tx_on_net(char* raw_hex_tx, uint8_t is_testnet)
 
 
 /* Koinu functions

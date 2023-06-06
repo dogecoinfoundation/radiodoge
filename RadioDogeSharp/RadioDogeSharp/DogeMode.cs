@@ -156,12 +156,12 @@ namespace RadioDoge
             string transactionString = new string(rawTransaction);
             Console.WriteLine($"Raw Transaction: {transactionString}");
             // @TODO actually do something with transaction
-            RunDogecoinSendTXCommand(transactionString);
-            /*
+            //RunDogecoinSendTXCommand(transactionString);
+            
             Console.WriteLine("Sending transaction...");
             string transactionId = LibDogecoin.BroadcastTransaction(transactionString);
             Console.WriteLine($"TXID: {transactionId}");
-            */
+            
         }
 
         private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)

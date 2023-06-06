@@ -209,7 +209,7 @@ namespace RadioDoge
 
         public static string BroadcastTransaction(string rawTransaction)
         {
-            byte dogecoin_bool = 1;
+            byte dogecoin_bool = 0;
             IntPtr stringPtr = broadcast_raw_tx_on_net(rawTransaction, dogecoin_bool);
             return Marshal.PtrToStringAnsi(stringPtr);
         }
