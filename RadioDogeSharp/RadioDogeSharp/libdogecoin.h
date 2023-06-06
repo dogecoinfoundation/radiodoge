@@ -218,6 +218,10 @@ int store_raw_transaction(char* incomingrawtx);
 
 dogecoin_bool broadcast_raw_tx(const dogecoin_chainparams* chain, const char* raw_hex_tx);
 
+/* This expects a finalized and signed raw hex tx string, and 0 if mainnet.
+Returns TXID string in proper network order. */
+char* broadcast_raw_tx_on_net(const char* raw_hex_tx, dogecoin_bool is_testnet)
+
 
 /* Koinu functions
 --------------------------------------------------------------------------

@@ -120,6 +120,9 @@ namespace RadioDoge
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern bool broadcast_raw_tx(IntPtr chainParameters, string rawTransaction);
 
+        [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr broadcast_raw_tx_on_net(string raw_hex_tx, byte is_testnet);
+
         public static UInt64 GetBalance(string address)
         {
             return dogecoin_get_balance(address);
@@ -204,10 +207,11 @@ namespace RadioDoge
             return result == 1;
         }
 
-        public static bool BroadcastTransaction(string address, string rawTransaction)
+        public static string BroadcastTransaction(string rawTransaction)
         {
-            IntPtr chainParams = chain_from_b58_prefix(address);
-            return broadcast_raw_tx(chainParams, rawTransaction);
+            byte dogecoin_bool = 1;
+            IntPtr stringPtr = broadcast_raw_tx_on_net(rawTransaction, dogecoin_bool);
+            return Marshal.PtrToStringAnsi(stringPtr);
         }
     }
 }

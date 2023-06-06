@@ -122,7 +122,6 @@ namespace RadioDoge
                     ServiceUTXORequest(senderAddress, payload);
                     break;
                 case DogeCommandType.TransactionRequest:
-                    // @TODO
                     Console.WriteLine("Servicing Transaction Request!");
                     ServiceTransactionRequest(senderAddress, payload);
                     break;
@@ -158,6 +157,11 @@ namespace RadioDoge
             Console.WriteLine($"Raw Transaction: {transactionString}");
             // @TODO actually do something with transaction
             RunDogecoinSendTXCommand(transactionString);
+            /*
+            Console.WriteLine("Sending transaction...");
+            string transactionId = LibDogecoin.BroadcastTransaction(transactionString);
+            Console.WriteLine($"TXID: {transactionId}");
+            */
         }
 
         private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)
@@ -375,20 +379,20 @@ namespace RadioDoge
         private void RunSPVCommand()
         {
             Console.WriteLine("Running SPV...");
+            string cmdString = "-c -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -b -p scan";
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
+                FileName = "spvnode.exe",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = false,
                 UseShellExecute = false,
-                CreateNoWindow = false
+                CreateNoWindow = false,
+                Arguments = cmdString
             };
 
             Process process = new Process { StartInfo = startInfo };
 
             process.Start();
-            string cmdString = "spvnode.exe -c -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -b -p scan";
-            process.StandardInput.WriteLine(cmdString);
             while (Console.ReadLine() != "exit")
             {
                 Console.WriteLine("Waiting for 'exit'...");
