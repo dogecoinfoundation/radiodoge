@@ -91,6 +91,7 @@ namespace RadioDoge
             }
             else
             {
+                Console.WriteLine($"No UTXOs for {address} found!");
                 SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs);
             }
         }
@@ -398,10 +399,10 @@ namespace RadioDoge
         private void RunSPVCommand()
         {
             Console.WriteLine("Running SPV...");
-            string cmdString = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
+            string cmdString = "-c -b -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
-                FileName = "spvnode.exe",
+                FileName = "spvnode",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = false,
                 UseShellExecute = false,
@@ -428,7 +429,7 @@ namespace RadioDoge
             Console.WriteLine("Running SendTX...");
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
-                FileName = "sendtx.exe",
+                FileName = "sendtx",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = false,
                 UseShellExecute = false,
@@ -467,7 +468,9 @@ namespace RadioDoge
         private void TestGetUTXOs()
         {
             string address = testAddresses[0];
+            Console.WriteLine($"Testing getting UTXOs for {address}");
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+            Console.WriteLine($"Found {numUTXOs} for {address}");
             if (numUTXOs > 0)
             {
                 byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
@@ -477,6 +480,10 @@ namespace RadioDoge
 
                 string txidString = LibDogecoin.GetTXIDString(address, 1);
                 Console.WriteLine($"TXID String: {txidString}");
+            }
+            else
+            {
+                Console.WriteLine($"No UTXOs found for {address}");
             }
         }
     }
