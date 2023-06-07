@@ -34,6 +34,7 @@
         DogeCommandSuccess = 1,
         DogeCommandFailure = 254,
         TransactionRequest = 170,
+        TransactionResult = 171,
     }
 
     internal enum RegistrationFunction

@@ -78,14 +78,21 @@ namespace RadioDoge
         private void SendUTXOs(NodeAddress destNode, string address)
         {
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-            byte[] serializedUTXOBytes = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
-            // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
-            List<byte> payload = new List<byte>(5 + serializedUTXOBytes.Length);
-            payload.Add((byte)DogeCommandType.SendUTXOs);
-            byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
-            payload.AddRange(serializedLength);
-            payload.AddRange(serializedUTXOBytes);
-            SendMultipartPacket(destNode, payload.ToArray());
+            if (numUTXOs > 0)
+            {
+                byte[] serializedUTXOBytes = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+                // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
+                List<byte> payload = new List<byte>(5 + serializedUTXOBytes.Length);
+                payload.Add((byte)DogeCommandType.SendUTXOs);
+                byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
+                payload.AddRange(serializedLength);
+                payload.AddRange(serializedUTXOBytes);
+                SendMultipartPacket(destNode, payload.ToArray());
+            }
+            else
+            {
+                SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs);
+            }
         }
 
         private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
@@ -148,6 +155,15 @@ namespace RadioDoge
             }
         }
 
+        private void SendTransactionResult(NodeAddress destNode, string txid)
+        {
+            byte[] serializedTXID = Encoding.ASCII.GetBytes(txid);
+            List<byte> payload = new List<byte>(serializedTXID.Length + 1);
+            payload.Add((byte)DogeCommandType.TransactionResult);
+            payload.AddRange(serializedTXID);
+            SendPacket(destNode, payload.ToArray());
+        }
+
         private void ServiceTransactionRequest(NodeAddress replyAddress, byte[] payload)
         {
             // Extract transaction from payload
@@ -163,7 +179,8 @@ namespace RadioDoge
             string transactionId = LibDogecoin.BroadcastTransaction(transactionString);
             Console.WriteLine($"TXID: {transactionId}");
 
-            // @TODO give the sender back the txid
+            // Send back the txid as a receipt (0 if failure)
+            SendTransactionResult(replyAddress, transactionId);
         }
 
         private void ServiceBalanceRequest(NodeAddress replyAddress, byte[] payload)
@@ -381,7 +398,7 @@ namespace RadioDoge
         private void RunSPVCommand()
         {
             Console.WriteLine("Running SPV...");
-            string cmdString = "-c -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -b -p scan";
+            string cmdString = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = "spvnode.exe",

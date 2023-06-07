@@ -520,6 +520,26 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 	printAllUTXOs();
 }
 
+void processTransactionResult(uint8_t* payloadIn, int payloadSize)
+{
+	if (payloadSize == 2)
+	{
+		// This is a failed transaction
+		printf("Transaction failed: %u\n", payloadIn[0]);
+	}
+	else if (payloadSize == 1 + TXID_STRING_LENGTH)
+	{
+		char receivedTXID[TXID_STRING_LENGTH];
+		memcpy(receivedTXID, payloadIn, TXID_STRING_LENGTH);
+		printf("Result TXID: %s\n", receivedTXID);
+	}
+	else
+	{
+		printf("Unknown transaction result!\n");
+	}
+
+}
+
 // This is the general transaction structure that I think we need to follow
 bool createTransaction()
 {
@@ -804,6 +824,9 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		printf("ERROR: RadioDoge Hub node failed to execute command!\n");
 		// @TODO failure reasoning...
 		break;
+	case TRANSACTION_RESULT:
+		printf("Transaction result received!\n");
+		processTransactionResult(payloadIn + 1, payloadSize);
 	default:
 		printf("Unknown payload received!\n");
 		break;
@@ -939,6 +962,18 @@ void createTestDogeAddress(char* dogeAddress, char* generatedPrivKey)
 	generatePrivPubKeypair(generatedPrivKey, dogeAddress, false);
 }
 
+void updateRegisteredPin()
+{
+	// Update Registered Pin
+	uint8_t updatedPin[PIN_LENGTH];
+	getUserSuppliedPin(updatedPin);
+	cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, userPin, updatedPin);
+	for (int i = 0; i < PIN_LENGTH; i++)
+	{
+		userPin[i] = updatedPin[i];
+	}
+}
+
 void modeSelectionLoop()
 {
 	int selectedMode = 0;
@@ -1053,13 +1088,7 @@ void enterDogeMode()
 			break;
 		case 8:
 			// Update Registered Pin
-			uint8_t updatedPin[PIN_LENGTH];
-			getUserSuppliedPin(updatedPin);
-			cmdUpdateRegistrationPin(myaddr, rmaddr, loadedDogeAddress, userPin, updatedPin);
-			for (int i = 0; i < PIN_LENGTH; i++)
-			{
-				userPin[i] = updatedPin[i];
-			}
+			updateRegisteredPin();
 			break;
 		case 9:
 			// Load demo address pair

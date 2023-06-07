@@ -170,6 +170,10 @@ namespace RadioDoge
         public static byte[] GetAllSerializedUTXOs(UInt32 numUTXOs, string address)
         {
             UnspentTransactionOutput[] outputs = GetAllUTXOs(numUTXOs, address);
+            if (outputs == null)
+            {
+                return null;
+            }
             List<byte> serializedOutputs = new List<byte>();
             for (int i = 0; i < outputs.Length; i++)
             {
