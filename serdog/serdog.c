@@ -26,7 +26,7 @@ char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char generatedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
 uint8_t userPin[PIN_LENGTH] = { 0, 0, 0, 0 };
-struct utxoInfo currUTXOs[64];
+struct utxoInfo currUTXOs[MAX_NUM_UTXOS];
 uint32_t numUTXOs;
 char* currentTransaction;
 bool demoMode = true;
@@ -527,15 +527,28 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 	printAllUTXOs();
 }
 
+/// <summary>
+/// Get user input to manually add a utxo
+/// </summary>
 void manuallyAddUTXO()
 {
+	if (numUTXOs == MAX_NUM_UTXOS)
+	{
+		printf("The UTXO storage is currently full! A new UTXO can't be added!\n");
+		return;
+	}
 	printf("Manually adding a UTXO\n");
 	// Get the TXID
 	printf("Please enter the TXID:\n");
 	scanf("%s", currUTXOs[numUTXOs].txId);
 	// Get the Vout
 	printf("Enter the vout:\n");
-	scanf("%d", &currUTXOs[numUTXOs].vout);
+	int vout_success = scanf("%d", &currUTXOs[numUTXOs].vout);
+	if (!vout_success)
+	{
+		printf("Invalid vout value!\n");
+		return;
+	}
 	// Get the amount
 	printf("Enter the UTXO amount:\n");
 	char tempAmount[21];
