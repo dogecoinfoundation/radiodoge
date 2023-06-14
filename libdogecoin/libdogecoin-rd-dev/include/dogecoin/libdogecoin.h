@@ -27,14 +27,14 @@
  */
 
 #include <limits.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
-#include "constants.h"
 #include "dogecoin.h"
+#include "constants.h"
 #include "uthash.h"
 
 
@@ -50,7 +50,7 @@ typedef struct dogecoin_chainparams_ {
     uint8_t b58prefix_pubkey_address;
     uint8_t b58prefix_script_address;
     const char bech32_hrp[5];
-    uint8_t b58prefix_secret_address; //! private key
+    uint8_t b58prefix_secret_address; //!private key
     uint32_t b58prefix_bip32_privkey;
     uint32_t b58prefix_bip32_pubkey;
     const unsigned char netmagic[4];
@@ -79,8 +79,7 @@ int chain_from_b58_prefix_bool(char* address);
 
 /* basic address functions: return 1 if succesful
    ----------------------------------------------
-*/
-//! init static ecc context
+*///!init static ecc context
 void dogecoin_ecc_start(void);
 
 //! destroys the static ecc context
@@ -116,27 +115,27 @@ int getDerivedHDAddressByPath(const char* masterkey, const char* derived_path, c
 
 /* BIP 39 entropy */
 #define ENT_STRING_SIZE 3
-typedef char ENTROPY_SIZE[ENT_STRING_SIZE];
+typedef char ENTROPY_SIZE [ENT_STRING_SIZE];
 
 /* BIP 39 hex entropy */
 #define MAX_HEX_ENT_SIZE 64 + 1
-typedef char HEX_ENTROPY[MAX_HEX_ENT_SIZE];
+typedef char HEX_ENTROPY [MAX_HEX_ENT_SIZE];
 
 /* BIP 39 mnemonic */
 #define MAX_MNEMONIC_SIZE 1024
-typedef char MNEMONIC[MAX_MNEMONIC_SIZE];
+typedef char MNEMONIC [MAX_MNEMONIC_SIZE];
 
 /* BIP 39 passphrase */
 #define MAX_PASS_SIZE 256
-typedef char PASS[MAX_PASS_SIZE];
+typedef char PASS [MAX_PASS_SIZE];
 
 /* BIP 32 512-bit seed */
 #define MAX_SEED_SIZE 64
-typedef uint8_t SEED[MAX_SEED_SIZE];
+typedef uint8_t SEED [MAX_SEED_SIZE];
 
 /* BIP 32 change level */
 #define CHG_LEVEL_STRING_SIZE 2
-typedef char CHANGE_LEVEL[CHG_LEVEL_STRING_SIZE];
+typedef char CHANGE_LEVEL [CHG_LEVEL_STRING_SIZE];
 
 /* Generates an English mnemonic phrase from given hex entropy */
 int generateEnglishMnemonic(const HEX_ENTROPY entropy, const ENTROPY_SIZE size, MNEMONIC mnemonic);
@@ -186,7 +185,7 @@ void clear_transaction(int txindex);
 ---------------------------------
 */
 
-// TODO: These are strings not just P2PKH but we need to set a min and max, perhaps only accept wif and p2pkh.
+//TODO: These are strings not just P2PKH but we need to set a min and max, perhaps only accept wif and p2pkh.
 
 /*populate an array of bits that represent qrcode pixels*/
 /* returns size(L or W) in pixels of QR.*/
@@ -217,6 +216,10 @@ int sign_raw_transaction(int inputindex, char* incomingrawtx, char* scripthex, i
 int store_raw_transaction(char* incomingrawtx);
 
 dogecoin_bool broadcast_raw_tx(const dogecoin_chainparams* chain, const char* raw_hex_tx);
+
+/* This expects a finalized and signed raw hex tx string, and 0 if mainnet.
+Returns TXID string in proper network order. */
+const char* broadcast_raw_tx_on_net(const char* raw_hex_tx, uint8_t is_testnet);
 
 
 /* Koinu functions
@@ -258,20 +261,20 @@ typedef struct eckey {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
-static eckey* keys = NULL;
+static eckey *keys = NULL;
 #pragma GCC diagnostic pop
 
 // instantiates a new eckey
 eckey* new_eckey();
 
 // adds eckey structure to hash table
-void add_eckey(eckey* key);
+void add_eckey(eckey *key);
 
 // find eckey from the hash table
 eckey* find_eckey(int idx);
 
 // remove eckey from the hash table
-void remove_eckey(eckey* key);
+void remove_eckey(eckey *key);
 
 // instantiates and adds key to the hash table
 int start_key();

@@ -1,6 +1,6 @@
 /*
  The MIT License (MIT)
-
+ 
  Copyright (c) 2022 bluezr
  Copyright (c) 2022 The Dogecoin Foundation
 
@@ -24,13 +24,13 @@
 #ifndef __LIBDOGECOIN_TRANSACTION_H__
 #define __LIBDOGECOIN_TRANSACTION_H__
 
+#include <stdlib.h>    /* malloc       */
+#include <stddef.h>    /* offsetof     */
+#include <stdio.h>     /* printf       */
+#include <string.h>    /* memset       */
+#include <dogecoin/uthash.h>
 #include <dogecoin/dogecoin.h>
 #include <dogecoin/tx.h>
-#include <dogecoin/uthash.h>
-#include <stddef.h> /* offsetof     */
-#include <stdio.h>  /* printf       */
-#include <stdlib.h> /* malloc       */
-#include <string.h> /* memset       */
 
 LIBDOGECOIN_BEGIN_DECL
 
@@ -43,16 +43,16 @@ typedef struct working_transaction {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
-static working_transaction* transactions = NULL;
+static working_transaction *transactions = NULL;
 #pragma GCC diagnostic pop
 // instantiates a new transaction
 LIBDOGECOIN_API working_transaction* new_transaction();
 
-LIBDOGECOIN_API void add_transaction(working_transaction* working_tx);
+LIBDOGECOIN_API void add_transaction(working_transaction *working_tx);
 
 LIBDOGECOIN_API working_transaction* find_transaction(int idx);
 
-LIBDOGECOIN_API void remove_transaction(working_transaction* working_tx);
+LIBDOGECOIN_API void remove_transaction(working_transaction *working_tx);
 
 LIBDOGECOIN_API void remove_all();
 
@@ -62,13 +62,13 @@ LIBDOGECOIN_API void count_transactions();
 
 LIBDOGECOIN_API int by_id();
 
-LIBDOGECOIN_API const char* getl(const char* prompt);
+LIBDOGECOIN_API const char *getl(const char *prompt);
 
-LIBDOGECOIN_API const char* get_raw_tx(const char* prompt_tx);
+LIBDOGECOIN_API const char *get_raw_tx(const char *prompt_tx);
 
-LIBDOGECOIN_API const char* get_private_key(const char* prompt_key);
+LIBDOGECOIN_API const char *get_private_key(const char *prompt_key);
 
-LIBDOGECOIN_API int start_transaction(); // #returns  an index of a transaction to build in memory.  (1, 2, etc) ..
+LIBDOGECOIN_API int start_transaction(); // #returns  an index of a transaction to build in memory.  (1, 2, etc) ..   
 
 LIBDOGECOIN_API int save_raw_transaction(int txindex, const char* hexadecimal_transaction);
 
