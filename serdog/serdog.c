@@ -689,7 +689,7 @@ void processTransactionResult(uint8_t* payloadIn, int payloadSize)
 	if (payloadSize == 2)
 	{
 		// This is a failed transaction
-		printf("Transaction failed: %u\n", payloadIn[0]);
+		printf("Transaction failed! TXID: %c\n", payloadIn[0]);
 	}
 	else if (payloadSize == 1 + TXID_STRING_LENGTH)
 	{
@@ -991,6 +991,7 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 	case TRANSACTION_RESULT:
 		printf("Transaction result received!\n");
 		processTransactionResult(payloadIn + 1, payloadSize);
+		break;
 	default:
 		printf("Unknown payload received!\n");
 		break;
