@@ -34,7 +34,7 @@ int getDogeModeSelection()
 	printf("\n### MUCH DOGE MODE SELECT ###\n");
 	printf("1: Get Dogecoin Address\n");
 	printf("2: Get Dogecoin Balance\n");
-	printf("3: Request UTXOs\n");
+	printf("3: Request UTXOs From Host\n");
 	printf("4: Send Dogecoin\n");
 	printf("5: Display QR code\n");
 	printf("6: Register Address\n");
@@ -43,8 +43,9 @@ int getDogeModeSelection()
 	printf("9: Load Demo Dogecoin Address Pair\n");
 	printf("10: Load Destination Dogecoin Address\n");
 	printf("11: Set user pin\n");
-	printf("12: Exit Doge Mode\n");
-	return userInputLoop(12);
+	printf("12: Manually edit UTXOs\n");
+	printf("13: Exit Doge Mode\n");
+	return userInputLoop(13);
 }
 
 int getTestModeSelection()
@@ -66,6 +67,17 @@ int getDemoAddressSelection()
 	printf("4: Generate new test address\n");
 	printf("5: Exit Address Selection\n");
 	return userInputLoop(5);
+}
+
+
+int getManualUtxosEditingSelection()
+{
+	printf("\n### MUCH UTXO EDIT SELECT ###\n");
+	printf("1: Clear UTXOs\n");
+	printf("2: Add UTXO\n");
+	printf("3: Display UTXOs\n");
+	printf("4: Exit UTXO Editing\n");
+	return userInputLoop(4);
 }
 
 void getUserSuppliedNodeAddress(uint8_t* address)

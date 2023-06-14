@@ -26,7 +26,7 @@ char loadedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char generatedPrivateKey[WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN];
 char destinationDogeAddress[P2PKH_ADDR_STRINGLEN];
 uint8_t userPin[PIN_LENGTH] = { 0, 0, 0, 0 };
-struct utxoInfo currUTXOs[32];
+struct utxoInfo currUTXOs[64];
 uint32_t numUTXOs;
 char* currentTransaction;
 bool demoMode = true;
@@ -497,15 +497,22 @@ void deserializeUTXOs(uint8_t* serializedUTXOs)
 
 void printAllUTXOs()
 {
-	for (int i = 0; i < numUTXOs; i++)
+	if (numUTXOs > 0)
 	{
-		printf("\n### UTXO %i ###\n", i);
-		printf("TXID: %s\n", currUTXOs[i].txId);
-		printf("Vout: %i\n", currUTXOs[i].vout);
-		char coinString[21];
-		koinu_to_coins_str(currUTXOs[i].amount, coinString);
-		printf("Amount (Coins): %s\n", coinString);
-		printf("Amount (Koinu): %lu\n", currUTXOs[i].amount);
+		for (int i = 0; i < numUTXOs; i++)
+		{
+			printf("\n### UTXO %i ###\n", i);
+			printf("TXID: %s\n", currUTXOs[i].txId);
+			printf("Vout: %i\n", currUTXOs[i].vout);
+			char coinString[21];
+			koinu_to_coins_str(currUTXOs[i].amount, coinString);
+			printf("Amount (Coins): %s\n", coinString);
+			printf("Amount (Koinu): %lu\n", currUTXOs[i].amount);
+		}
+	}
+	else
+	{
+		printf("There currently are no stored UTXOs!\n");
 	}
 }
 
@@ -518,6 +525,51 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 	// The rest will be serialized UTXOs so we need to deserialize
 	deserializeUTXOs(payloadIn + SERIALIZED_NUM_UTXO_LENGTH);
 	printAllUTXOs();
+}
+
+void manuallyAddUTXO()
+{
+	printf("Manually adding a UTXO\n");
+	// Get the TXID
+	printf("Please enter the TXID:\n");
+	scanf("%s", currUTXOs[numUTXOs].txId);
+	// Get the Vout
+	printf("Enter the vout:\n");
+	scanf("%d", &currUTXOs[numUTXOs].vout);
+	// Get the amount
+	printf("Enter the UTXO amount:\n");
+	char tempAmount[21];
+	scanf("%s", tempAmount);
+	currUTXOs[numUTXOs].amount = coins_to_koinu_str(tempAmount);
+
+	// Increase the number of UTXOS
+	numUTXOs++;
+}
+
+void enterUTXOsEditingMode()
+{
+	int userSelection = 0;
+	while (userSelection >= 0)
+	{
+		userSelection = getManualUtxosEditingSelection();
+		switch (userSelection)
+		{
+		// Clear UTXOs
+		case 1:
+			// Just setting this to 0 will essentially "clear" the utxo storage as any additional utxos will overwrite old ones
+			numUTXOs = 0;
+			printf("The stored UTXOs have been cleared!\n");
+			break;
+		// Add UTXO
+		case 2:
+			manuallyAddUTXO();
+			break;
+		//Display UTXOs
+		case 3:
+			printAllUTXOs();
+			break;
+		}
+	}
 }
 
 void processTransactionResult(uint8_t* payloadIn, int payloadSize)
@@ -1114,6 +1166,9 @@ void enterDogeMode()
 				printf("%i", userPin[i]);
 			}
 			printf("\n");
+			break;
+		case 12:
+			enterUTXOsEditingMode();
 			break;
 		}
 		sleep(2);
