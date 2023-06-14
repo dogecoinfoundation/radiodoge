@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -75,6 +76,11 @@ namespace RadioDoge
             SendPacket(destNode, payload.ToArray());
         }
 
+        /// <summary>
+        /// Send UTXOs for the specified Dogecoin address to a another node
+        /// </summary>
+        /// <param name="destNode"></param>
+        /// <param name="address"></param>
         private void SendUTXOs(NodeAddress destNode, string address)
         {
             UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
@@ -399,7 +405,7 @@ namespace RadioDoge
         private void RunSPVCommand()
         {
             Console.WriteLine("Running SPV...");
-            string cmdString = "-c -b -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
+            string cmdString = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = "spvnode",

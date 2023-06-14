@@ -140,3 +140,12 @@ int userInputLoop(int upperBound)
 		}
 	}
 }
+
+void printByteArray(uint8_t* arrayIn, int length)
+{
+	for (int nx = 0; nx < length; nx++)
+	{
+		printf("[%02X]", arrayIn[nx]);
+	}
+	printf("\n");
+}

@@ -123,22 +123,43 @@ namespace RadioDoge
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr broadcast_raw_tx_on_net(string raw_hex_tx, byte is_testnet);
 
+        /// <summary>
+        /// Get Dogecoin balance in Koinu for the specified address
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns></returns>
         public static UInt64 GetBalance(string address)
         {
             return dogecoin_get_balance(address);
         }
 
+        /// <summary>
+        /// Get Dogecoin balance in coins for the specified address
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns></returns>
         public static string GetBalanceString(string address)
         {
             IntPtr balanceStringPointer = dogecoin_get_balance_str(address);
             return Marshal.PtrToStringAnsi(balanceStringPointer);
         }
 
+        /// <summary>
+        /// Get the number of UTXOs for the specified Dogecoin address
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns></returns>
         public static UInt32 GetNumberOfUTXOs(string address)
         {
             return dogecoin_get_utxos_length(address);
         }
 
+        /// <summary>
+        /// Get all of the UTXOs for the specified dogecoin address
+        /// </summary>
+        /// <param name="numUTXOs"></param>
+        /// <param name="address"></param>
+        /// <returns></returns>
         public static UnspentTransactionOutput[] GetAllUTXOs(UInt32 numUTXOs, string address)
         {
             if (numUTXOs > 0)
@@ -182,6 +203,13 @@ namespace RadioDoge
             return serializedOutputs.ToArray();
         }
 
+        /// <summary>
+        /// Get the TXID of a specific UTXO for the specified Dogecoin address
+        /// </summary>
+        /// <param name="address"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
         public static string GetTXIDString(string address, uint index)
         {
             // Indexing begins at 1
@@ -194,6 +222,12 @@ namespace RadioDoge
             return Marshal.PtrToStringAnsi(txidStringPointer);
         }
 
+        /// <summary>
+        /// Convert a Koinu balance (UInt64) into a balance in coins (string)
+        /// </summary>
+        /// <param name="koinuAmount"></param>
+        /// <param name="coinString"></param>
+        /// <returns></returns>
         public static bool ConvertKoinuAmountToString(UInt64 koinuAmount, out string coinString)
         {
             StringBuilder resultString = new StringBuilder();
@@ -211,6 +245,11 @@ namespace RadioDoge
             return result == 1;
         }
 
+        /// <summary>
+        /// Broadcast a raw transaction on the Dogecoin network
+        /// </summary>
+        /// <param name="rawTransaction"></param>
+        /// <returns></returns>
         public static string BroadcastTransaction(string rawTransaction)
         {
             byte dogecoin_bool = 0;

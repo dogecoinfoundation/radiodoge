@@ -119,6 +119,72 @@ int init()
 	}
 }
 
+int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
+{
+	int n_read = 0;
+	int idx = 0;
+	char buf = '\0';
+	int resptype = 0;
+
+	//get resptype
+	if (read(USB, &resptype, 1))
+	{
+		printf("response type is [%02X]\n", resptype);
+		respCmdType = resptype;
+	}
+	else
+	{
+		printf("Error getting response type.\n");
+		return -1;
+	}
+
+	//get resplen
+	if (read(USB, &resplen, 1))
+	{
+		printf("response length is [%02X]\n", (uint8_t)resplen);
+	}
+	else
+	{
+		printf("Error getting response length.\n");
+		resplen = -1;
+		return -1;
+	}
+
+	/* Remaining response */
+	memset(respbuf, '\0', resplen);
+	do {
+		n_read = read(USB, &buf, 1);
+		{
+			printf("nread=%i,read=%02X\n", n_read, buf);
+			sprintf(&respbuf[idx], "%c", buf);
+		};
+		idx += n_read;
+	} while (idx < resplen);
+
+	printf("exited read at index %i\n", idx);
+
+	if (n_read < 0)
+	{
+		printf("Error reading port.\n");
+		return -1;
+	}
+	else if (n_read == 0) {
+		printf("Nothing read...\n");
+		return 0;
+	}
+	else
+	{
+		return sizeof respbuf;
+	}
+};
+
+/// <summary>
+/// Helper function for sending a specific command and payload to the connected radio hardware.
+/// </summary>
+/// <param name=""></param>
+/// <param name="payloadsize"></param>
+/// <param name="payload"></param>
+/// <returns></returns>
 int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 {
 	int n_written = 0;
@@ -214,6 +280,13 @@ int sendCommand(enum serialCommand cmdtype, int payloadsize, uint8_t* payload)
 	//printf("[%i] total bytes written to [%s]\n", total_written, device);
 }
 
+/// <summary>
+/// Sets the local node address of the connected radio hardware
+/// </summary>
+/// <param name="region"></param>
+/// <param name="community"></param>
+/// <param name="node"></param>
+/// <returns></returns>
 int cmdSetLocalAddress(int region, int community, int node)
 {
 	int cmdtype = NODE_ADDRESS_SET; //we're working with address set for all of this
@@ -221,66 +294,10 @@ int cmdSetLocalAddress(int region, int community, int node)
 	sendCommand(cmdtype, 3, payload);
 }
 
-int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
-{
-	int n_read = 0;
-	int idx = 0;
-	char buf = '\0';
-	int resptype = 0;
-
-	//get resptype
-	if (read(USB, &resptype, 1))
-	{
-		printf("response type is [%02X]\n", resptype);
-		respCmdType = resptype;
-	}
-	else
-	{
-		printf("Error getting response type.\n");
-		return -1;
-	}
-
-	//get resplen
-	if (read(USB, &resplen, 1))
-	{
-		printf("response length is [%02X]\n", (uint8_t)resplen);
-	}
-	else
-	{
-		printf("Error getting response length.\n");
-		resplen = -1;
-		return -1;
-	}
-
-	/* Remaining response */
-	memset(respbuf, '\0', resplen);
-	do {
-		n_read = read(USB, &buf, 1);
-		{
-			printf("nread=%i,read=%02X\n", n_read, buf);
-			sprintf(&respbuf[idx], "%c", buf);
-		};
-		idx += n_read;
-	} while (idx < resplen);
-
-	printf("exited read at index %i\n", idx);
-
-	if (n_read < 0)
-	{
-		printf("Error reading port.\n");
-		return -1;
-	}
-	else if (n_read == 0) {
-		printf("Nothing read...\n");
-		return 0;
-	}
-	else
-	{
-		return sizeof respbuf;
-	}
-
-};
-
+/// <summary>
+/// Request the node address of the connected LoRa module
+/// </summary>
+/// <returns></returns>
 int cmdGetLocalAddress()
 {
 	//no payload = 0.
@@ -288,6 +305,10 @@ int cmdGetLocalAddress()
 	sendCommand(cmdtype, 0, 0);
 };
 
+/// <summary>
+/// Request hardware information from the connected LoRa module.
+/// </summary>
+/// <returns></returns>
 int cmdGetHardwareInfo()
 {
 	// No payload for this command
@@ -295,6 +316,11 @@ int cmdGetHardwareInfo()
 	sendCommand(cmdtype, 0, 0);
 }
 
+/// <summary>
+/// Request the connected radio module to send a ping to the specified node address.
+/// </summary>
+/// <param name="inAddr"></param>
+/// <returns></returns>
 int cmdSendPingCmd(uint8_t* inAddr)
 {
 	uint8_t cmdtype = PING_REQUEST;
@@ -332,12 +358,23 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 	free(combinedPayload);
 };
 
+/// <summary>
+/// Request the stored Dogecoin address from a specific node.
+/// </summary>
+/// <param name="inAddr">The connect radio module's node address (Own address)</param>
+/// <param name="destAddr">The desired destination node address </param>
 cmdRequestDogeAddress(uint8_t* inAddr, uint8_t* destAddr)
 {
 	uint8_t requestPayload[1] = { GET_DOGE_ADDRESS };
 	cmdSendMessage(inAddr, destAddr, requestPayload, 1);
 }
 
+/// <summary>
+/// Send the specified dogecoin address to another node. 
+/// </summary>
+/// <param name="inAddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="dogeAddress"></param>
 cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
@@ -346,6 +383,13 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+/// <summary>
+/// Request UTXOs for a specific Dogecoin address from another node.
+/// Generally UTXOs should be requested from a node that is running as a host and has internet access. 
+/// </summary>
+/// <param name="inAddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="dogeAddress"></param>
 cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
@@ -354,6 +398,13 @@ cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+/// <summary>
+/// Request the balance of a specific Dogecoin address from another node.
+/// Generally balance requests should be sent to a node that is running as a host and has internet access.
+/// </summary>
+/// <param name="inAddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="dogeAddress"></param>
 cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
@@ -362,6 +413,14 @@ cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 	cmdSendMessage(inAddr, destAddr, payload, P2PKH_ADDR_STRINGLEN + 1);
 }
 
+/// <summary>
+/// Register or remove registration of a Dogecoin address with a host node.
+/// </summary>
+/// <param name="inaddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="dogeAddress"></param>
+/// <param name="pin"></param>
+/// <param name="removeAddress"></param>
 cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin, bool removeAddress)
 {
 	// 2 bytes for the registration type and 1 for the registration function to be performed
@@ -381,6 +440,13 @@ cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, ui
 	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
 }
 
+/// <summary>
+/// Send a raw (signed) Dogecoin transaction to a host node for transmission on the Dogecoin network.
+/// </summary>
+/// <param name="inaddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="rawTransaction"></param>
+/// <param name="requestId"></param>
 cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uint8_t requestId)
 {
 	int transactionLength = strlen(rawTransaction);
@@ -391,6 +457,15 @@ cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uin
 	cmdSendMultipartMessage(inaddr, destAddr, payload, payloadLength, requestId);
 }
 
+
+/// <summary>
+/// Update the registered pin stored at a host node.
+/// </summary>
+/// <param name="inaddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="dogeAddress"></param>
+/// <param name="oldPin"></param>
+/// <param name="updatedPin"></param>
 cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* oldPin, uint8_t* updatedPin)
 {
 	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + (2 * PIN_LENGTH);
@@ -406,6 +481,15 @@ cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, 
 	cmdSendMessage(inaddr, destAddr, payload, payloadLength);
 }
 
+/// <summary>
+/// Send a multipart packet/message to a specific node.
+/// </summary>
+/// <param name="inAddr"></param>
+/// <param name="destAddr"></param>
+/// <param name="customPayload"></param>
+/// <param name="customPayloadLen"></param>
+/// <param name="messageID"></param>
+/// <returns></returns>
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID)
 {
 	uint8_t cmdType = MULTIPART_PACKET;
@@ -454,17 +538,12 @@ int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customP
 	}
 }
 
-float deobfuscateReceivedFloatBalance(uint8_t* pin, uint8_t* serializedBalance)
-{
-	for (int i = 0; i < PIN_LENGTH; i++)
-	{
-		serializedBalance[i] ^= pin[i];
-	}
-	float balance;
-	memcpy(&balance, serializedBalance, sizeof(balance));
-	return balance;
-}
-
+/// <summary>
+/// Deobfuscate a Dogecoin balance received over the air
+/// </summary>
+/// <param name="pin"></param>
+/// <param name="serializedBalance"></param>
+/// <returns></returns>
 uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
 {
 	for (int i = 0; i < SERIALIZED_BALANCE_LENGTH; i++)
@@ -477,6 +556,10 @@ uint64_t deobfuscateReceivedBalance(uint8_t* pin, uint8_t* serializedBalance)
 	return balance;
 }
 
+/// <summary>
+/// Deserialize UTXOs received over the air and store them for later use
+/// </summary>
+/// <param name="serializedUTXOs"></param>
 void deserializeUTXOs(uint8_t* serializedUTXOs)
 {
 	int currOffset = 0;
@@ -495,6 +578,9 @@ void deserializeUTXOs(uint8_t* serializedUTXOs)
 	}
 }
 
+/// <summary>
+/// Display all of the currently stored UTXOs
+/// </summary>
 void printAllUTXOs()
 {
 	if (numUTXOs > 0)
@@ -516,6 +602,10 @@ void printAllUTXOs()
 	}
 }
 
+/// <summary>
+/// Processes UTXOs received over the air from another node
+/// </summary>
+/// <param name="payloadIn"></param>
 void processReceivedUTXOs(uint8_t* payloadIn)
 {
 	//First 4 bytes are the number of UTXOs serialized
@@ -528,7 +618,7 @@ void processReceivedUTXOs(uint8_t* payloadIn)
 }
 
 /// <summary>
-/// Get user input to manually add a utxo
+/// Get user input to manually add a UTXO
 /// </summary>
 void manuallyAddUTXO()
 {
@@ -559,6 +649,10 @@ void manuallyAddUTXO()
 	numUTXOs++;
 }
 
+/// <summary>
+/// Enter into manual UTXO editing mode.
+/// This mode allows users to clear, add, and display stored UTXOs
+/// </summary>
 void enterUTXOsEditingMode()
 {
 	int userSelection = 0;
@@ -569,7 +663,7 @@ void enterUTXOsEditingMode()
 		{
 		// Clear UTXOs
 		case 1:
-			// Just setting this to 0 will essentially "clear" the utxo storage as any additional utxos will overwrite old ones
+			// Just setting this to 0 will essentially "clear" the UTXO storage as any additional UTXOs will overwrite old ones
 			numUTXOs = 0;
 			printf("The stored UTXOs have been cleared!\n");
 			break;
@@ -585,6 +679,11 @@ void enterUTXOsEditingMode()
 	}
 }
 
+/// <summary>
+/// Process received transaction results sent from another node
+/// </summary>
+/// <param name="payloadIn"></param>
+/// <param name="payloadSize"></param>
 void processTransactionResult(uint8_t* payloadIn, int payloadSize)
 {
 	if (payloadSize == 2)
@@ -605,7 +704,10 @@ void processTransactionResult(uint8_t* payloadIn, int payloadSize)
 
 }
 
-// This is the general transaction structure that I think we need to follow
+/// <summary>
+/// Create a raw (signed) Dogecoin transaction.
+/// </summary>
+/// <returns></returns>
 bool createTransaction()
 {
 	printf("*** Creating a transaction to send dogecoin ***\n");
@@ -666,15 +768,6 @@ bool createTransaction()
 	currentTransaction = get_raw_transaction(curr_tx_index);
 	clear_transaction(curr_tx_index);
 	return true;
-}
-
-void printByteArray(uint8_t* arrayIn, int length)
-{
-	for (int nx = 0; nx < length; nx++)
-	{
-		printf("[%02X]", arrayIn[nx]);
-	}
-	printf("\n");
 }
 
 void* serialPollThread(void* threadid)
@@ -857,6 +950,12 @@ int isCmd(uint8_t inByte)
 	}
 }
 
+/// <summary>
+/// Process a received Doge payload received over the air from a different node
+/// </summary>
+/// <param name="senderAddr"></param>
+/// <param name="payloadIn"></param>
+/// <param name="payloadSize"></param>
 void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize)
 {
 	switch (payloadIn[0])
@@ -898,6 +997,11 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 	}
 }
 
+/// <summary>
+/// Process a command and control related payload received from connected radio hardware 
+/// </summary>
+/// <param name="payloadIn"></param>
+/// <param name="payloadSize"></param>
 void processCommandPayload(uint8_t* payloadIn, int payloadSize)
 {
 	switch (payloadIn[0])
@@ -948,12 +1052,21 @@ void processCommandPayload(uint8_t* payloadIn, int payloadSize)
 	}
 }
 
-// @TODO 
-// NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
-// Also there will be issues if we receive multipart packets from multiple nodes simultaneously as it doesn't do anything with the msg id
-// This just reassembles the pieces for now
+/// <summary>
+/// Reassemble a multipart payload received over the air from another node
+/// </summary>
+/// <param name="payloadPartIn"></param>
+/// <param name="partSize"></param>
+/// <param name="multipartBuffer"></param>
+/// <param name="multipartSize"></param>
+/// <param name="senderAddress"></param>
+/// <returns></returns>
 int parseMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize, uint8_t* senderAddress)
 {
+	// @TODO 
+	// NOTE: this will not work if we miss a packet. Will need to add in smarter piece tracking
+	// Also there will be issues if we receive multipart packets from multiple nodes simultaneously as it doesn't do anything with the msg id
+	// This just reassembles the pieces for now
 	if (*multipartSize == 0)
 	{
 		// Save the sender address
@@ -1011,6 +1124,10 @@ int sendDogeAddressTest(uint8_t* destAddr)
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
+/// <summary>
+/// Display a QR code for the specified Dogecoin address
+/// </summary>
+/// <param name="dogeAddress"></param>
 void displayDogeQRCode(char* dogeAddress)
 {
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
@@ -1020,6 +1137,11 @@ void displayDogeQRCode(char* dogeAddress)
 	printf("%s\n", qrBuffer);
 }
 
+/// <summary>
+/// Create a new Dogecoin address for testing purposes (pub & priv keys are generated)
+/// </summary>
+/// <param name="dogeAddress"></param>
+/// <param name="generatedPrivKey"></param>
 void createTestDogeAddress(char* dogeAddress, char* generatedPrivKey)
 {
 	printf("Generating a new test DogeCoin address!\n");
@@ -1188,6 +1310,10 @@ void enterDogeMode()
 	}
 }
 
+/// <summary>
+/// Get user input to specify a destination Dogecoin address
+/// </summary>
+/// <param name="addressBuffer"></param>
 void LoadDestinationAddress(char* addressBuffer)
 {
 	int addressSelection = getDemoAddressSelection();
@@ -1259,6 +1385,9 @@ void enterTestMode()
 	}
 }
 
+/// <summary>
+/// Testing function for controlling the connected LoRa module/radio hardware's display
+/// </summary>
 void displayControlTest()
 {
 	// No payload for this command
