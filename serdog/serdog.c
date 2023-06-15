@@ -790,9 +790,9 @@ bool createTransaction()
 	// Sign the transaction for each UTXO used
 	for (int i = 0; i < numUTXOsUsed; i++)
 	{
-		if (!sign_transaction_w_privkey(curr_tx_index, currUTXOs[i].vout, loadedPrivateKey))
+		if (!sign_transaction_w_privkey(curr_tx_index, i, loadedPrivateKey))
 		{
-			printf("Failed to sign transaction for UTXO with vout=%i\n", i);
+			printf("Failed to sign transaction for UTXO %i with vout=%i\n", i, currUTXOs[i].vout);
 			clear_transaction(curr_tx_index);
 			return false;
 		}
