@@ -693,7 +693,8 @@ void processTransactionResult(uint8_t* payloadIn, int payloadSize)
 	}
 	else if (payloadSize == 1 + TXID_STRING_LENGTH)
 	{
-		char receivedTXID[TXID_STRING_LENGTH];
+		char receivedTXID[TXID_STRING_LENGTH + 1];
+		receivedTXID[TXID_STRING_LENGTH] = '\0';
 		memcpy(receivedTXID, payloadIn, TXID_STRING_LENGTH);
 		printf("Result TXID: %s\n", receivedTXID);
 	}
@@ -718,6 +719,11 @@ bool createTransaction()
 	char amount_to_send[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
 	getUserSuppliedDogecoinAmount(amount_to_send);
 	printf("Amount to send: %s\n", amount_to_send);
+	uint64_t desired_amount_koinu = coins_to_koinu_str(amount_to_send);
+
+	// Add the fixed fee into the desired amount so that we know the total needed to complete the transaction
+	uint64_t desired_fee_koinu = coins_to_koinu_str("1.0");
+	desired_amount_koinu += desired_fee_koinu;
 
 	// Check that there is at least one utxo stored
 	if (numUTXOs < 1)
@@ -728,40 +734,66 @@ bool createTransaction()
 
 	int curr_tx_index = start_transaction();
 
-	// Add all available utxos
+	// Add all available utxos until we exceed the needed amount
 	uint64_t utxo_total_amount = 0;
+	int numUTXOsUsed = 0;
 	for (int i = 0; i < numUTXOs; i++)
 	{
 		int add_utxo_result = add_utxo(curr_tx_index, currUTXOs[i].txId, currUTXOs[i].vout);
 		utxo_total_amount += currUTXOs[i].amount;
+		numUTXOsUsed++;
 		if (!add_utxo_result)
 		{
 			printf("Error adding UTXO %i!\n", i);
+			clear_transaction(curr_tx_index);
 			return false;
 		}
+
+		// Check to see if we added enough UTXOs to satisfy the desired amount
+		// This way we aren't including more utxos than needed
+		if (utxo_total_amount >= desired_amount_koinu)
+		{
+			break;
+		}
 	}
+
+	printf("%i UTXOs were added to the transaction!\n", numUTXOsUsed);
+
 	char utxo_total_amount_str[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
 	int conversion_result = koinu_to_coins_str(utxo_total_amount, utxo_total_amount_str);
 	printf("UTXO total amount: %s\n", utxo_total_amount_str);
+
+	// Check to make sure all the UTXOs we added up equal or exceed the desired amount
+	if (utxo_total_amount < desired_amount_koinu)
+	{
+		printf("The balance of the wallet does not contain enough Dogecoin to complete the transaction!\n");
+		koinu_to_coins_str(desired_amount_koinu, amount_to_send);
+		printf("Needed: %s\n", amount_to_send);
+		printf("Added: %s\n", utxo_total_amount_str);
+		clear_transaction(curr_tx_index);
+		return false;
+	}
 
 	// Add output
 	int output_result = add_output(curr_tx_index, destinationDogeAddress, amount_to_send);
 	if (!output_result)
 	{
 		printf("Error adding output!\n");
+		clear_transaction(curr_tx_index);
 		return false;
 	}
 
-	// For now we will charge a fixed fee of 1 dogecoin
+	// For now we will charge a fixed fee of 1.0 dogecoin
 	// Finalize the transaction
 	finalize_transaction(curr_tx_index, destinationDogeAddress, "1.0", utxo_total_amount_str, loadedDogeAddress);
 
-	// Sign the transaction for each UTXO
-	for (int i = 0; i < numUTXOs; i++)
+	// Sign the transaction for each UTXO used
+	for (int i = 0; i < numUTXOsUsed; i++)
 	{
 		if (!sign_transaction_w_privkey(curr_tx_index, currUTXOs[i].vout, loadedPrivateKey))
 		{
 			printf("Failed to sign transaction for UTXO with vout=%i\n", i);
+			clear_transaction(curr_tx_index);
 			return false;
 		}
 	}
@@ -1469,6 +1501,40 @@ void fileWriteReadTest()
 	char loadedAddress[P2PKH_ADDR_STRINGLEN];
 	loadDogecoinAddress("savedAddressTest.txt", loadedAddress, loadedKey);
 	printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedAddress, loadedKey);
+}
+
+void loadFakeUTXOs()
+{
+	printf("Loading Fake UTXOs for testing purposes...\n");
+
+	uint64_t amount0 = coins_to_koinu_str("10.5");
+	currUTXOs[0].amount = amount0;
+	currUTXOs[0].txId[0] = '0';
+	currUTXOs[0].vout = 0;
+	
+	uint64_t amount1 = coins_to_koinu_str("50.15");
+	currUTXOs[1].amount = amount1;
+	currUTXOs[1].txId[0] = '1';
+	currUTXOs[1].vout = 1;
+
+	uint64_t amount2 = coins_to_koinu_str("12.25");
+	currUTXOs[2].amount = amount2;
+	currUTXOs[2].txId[0] = '2';
+	currUTXOs[2].vout = 2;
+
+	uint64_t amount3 = coins_to_koinu_str("3");
+	currUTXOs[3].amount = amount3;
+	currUTXOs[3].txId[0] = '3';
+	currUTXOs[3].vout = 3;
+
+	uint64_t amount4 = coins_to_koinu_str("4");
+	currUTXOs[4].amount = amount4;
+	currUTXOs[4].txId[0] = '4';
+	currUTXOs[4].vout = 4;
+
+	numUTXOs = 5;
+
+	printAllUTXOs();
 }
 
 void generateDemoPairFiles()
