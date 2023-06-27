@@ -48,7 +48,8 @@ namespace RadioDoge
 
         public override string ToString()
         {
-            return $"TXID: {txId}\nVout: {vout}\nAmount: {amount}";
+            LibDogecoin.ConvertKoinuAmountToString(amount, out string coinAmount);
+            return $"TXID: {txId}\nVout: {vout}\nAmount (Coins): {coinAmount}\nAmount (Koinu): {amount}";
         }
     }
 }

@@ -26,7 +26,7 @@ namespace RadioDoge
             {
                 if (demoMode)
                 {
-                    //LibdogecoinFunctionalityTesting();
+                    LibdogecoinFunctionalityTesting();
                     DemoNodeSetup();
                 }
                 ModeSelectionLoop();
