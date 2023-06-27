@@ -590,7 +590,7 @@ void printAllUTXOs()
 			printf("\n### UTXO %i ###\n", i);
 			printf("TXID: %s\n", currUTXOs[i].txId);
 			printf("Vout: %i\n", currUTXOs[i].vout);
-			char coinString[21];
+			char coinString[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
 			koinu_to_coins_str(currUTXOs[i].amount, coinString);
 			printf("Amount (Coins): %s\n", coinString);
 			printf("Amount (Koinu): %lu\n", currUTXOs[i].amount);
@@ -641,7 +641,7 @@ void manuallyAddUTXO()
 	}
 	// Get the amount
 	printf("Enter the UTXO amount:\n");
-	char tempAmount[21];
+	char tempAmount[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
 	scanf("%s", tempAmount);
 	currUTXOs[numUTXOs].amount = coins_to_koinu_str(tempAmount);
 
@@ -693,6 +693,7 @@ void processTransactionResult(uint8_t* payloadIn, int payloadSize)
 	}
 	else if (payloadSize == 1 + TXID_STRING_LENGTH)
 	{
+		// Need this to be 1 larger than expected length to hold terminator
 		char receivedTXID[TXID_STRING_LENGTH + 1];
 		receivedTXID[TXID_STRING_LENGTH] = '\0';
 		memcpy(receivedTXID, payloadIn, TXID_STRING_LENGTH);
@@ -862,11 +863,8 @@ void* serialPollThread(void* threadid)
 			rxPayloadSize = isCompleteCmd(rxbuffer, totalRxChars);
 			if (rxPayloadSize >= 0)
 			{
-				//printf("**Valid and complete cmd** totRX=%i psize=%i\n", totalRxChars, rxPayloadSize);
 				if (rxbuffer[0] == MULTIPART_PACKET)
 				{
-					//printf("**Partial Payload (with packet header)**\n");
-					//printByteArray(rxbuffer, totalRxChars);
 					int processResult = parseMultipartPayload(rxbuffer, totalRxChars, multipartBuffer, &multipartIndex, senderAddress);
 					if (processResult)
 					{
@@ -885,7 +883,6 @@ void* serialPollThread(void* threadid)
 					printf("**Complete Payload (with packet header)**\n");
 					printByteArray(rxbuffer, totalRxChars);
 					parseHostFormedPacket(senderAddress, dataBuffer, rxbuffer, totalRxChars);
-					// @TODO do something else with the payload
 					processDogePayload(senderAddress, dataBuffer, totalRxChars - SINGLE_PACKET_HDR_LEN);
 				}
 				else

@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RadioDoge
@@ -27,7 +26,7 @@ namespace RadioDoge
             {
                 if (demoMode)
                 {
-                    LibdogecoinFunctionalityTesting();
+                    //LibdogecoinFunctionalityTesting();
                     DemoNodeSetup();
                 }
                 ModeSelectionLoop();
