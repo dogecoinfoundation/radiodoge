@@ -82,7 +82,7 @@ int chain_from_b58_prefix_bool(char* address);
 *///!init static ecc context
 void dogecoin_ecc_start(void);
 
-//! destroys the static ecc context
+//!destroys the static ecc context
 void dogecoin_ecc_stop(void);
 
 /* generates a private and public keypair (a wallet import format private key and a p2pkh ready-to-use corresponding dogecoin address)*/

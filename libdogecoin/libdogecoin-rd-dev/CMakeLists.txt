@@ -151,6 +151,7 @@ TARGET_SOURCES(${LIBDOGECOIN_NAME} PUBLIC
     src/eckey.c
     src/key.c
     src/koinu.c
+    src/map.c
     src/mem.c
     src/moon.c
     src/qr.c
