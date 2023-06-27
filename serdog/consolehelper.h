@@ -12,8 +12,10 @@ int getSetupModeSelection();
 int getDogeModeSelection();
 int getTestModeSelection();
 int getDemoAddressSelection();
+int getManualUtxosEditingSelection();
 void getUserSuppliedNodeAddress(uint8_t* address);
 void getUserSuppliedDogecoinAmount(char* dogeAmount);
 void getUserSuppliedPin(uint8_t* pin);
+void printByteArray(uint8_t* arrayIn, int length);
 
 #endif

@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RadioDoge
@@ -27,7 +26,7 @@ namespace RadioDoge
             {
                 if (demoMode)
                 {
-                    LibdogecoinFunctionalityTesting();
+                    //LibdogecoinFunctionalityTesting();
                     DemoNodeSetup();
                 }
                 ModeSelectionLoop();
@@ -35,6 +34,9 @@ namespace RadioDoge
             }
         }
 
+        /// <summary>
+        /// Main loop used for allowing the user to switch between the program's functionality modes
+        /// </summary>
         private void ModeSelectionLoop()
         {
             while(true)
@@ -61,6 +63,11 @@ namespace RadioDoge
             }
         }
 
+        /// <summary>
+        /// Send a single packet containing the provided payload to the specified destination address
+        /// </summary>
+        /// <param name="destAddress"></param>
+        /// <param name="payload"></param>
         private void SendPacket(NodeAddress destAddress, byte[] payload)
         {
             byte[] commandToSend = PacketHelper.CreatePacket(destAddress, localAddress, payload);
@@ -68,6 +75,11 @@ namespace RadioDoge
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 
+        /// <summary>
+        /// Send a multipart packet containing the provided payload (broken up into multiple parts) to the specified destination node
+        /// </summary>
+        /// <param name="destAddress"></param>
+        /// <param name="multipartPayload"></param>
         private void SendMultipartPacket(NodeAddress destAddress, byte[] multipartPayload)
         {
             // Create all the packet parts
@@ -82,16 +94,10 @@ namespace RadioDoge
             }
         }
 
-        private void PrintCommandBytes(byte[] commandToSend)
-        {
-            Console.Write($"Host sent {commandToSend.Length - 1} bytes: ");
-            for (int i = 0; i < commandToSend.Length; i++)
-            {
-                Console.Write(commandToSend[i].ToString("X2") + " ");
-            }
-            Console.WriteLine();
-        }
-
+        /// <summary>
+        /// Get user input to set the local node address (for the connected radio hardware) and the destination node address
+        /// </summary>
+        /// <returns></returns>
         private NodeAddress GetUserSetAddress()
         {
             while (true)
@@ -132,6 +138,24 @@ namespace RadioDoge
             return dataPortion;
         }
 
+        /// <summary>
+        /// Print the received host command (byte array)
+        /// </summary>
+        /// <param name="commandToSend"></param>
+        private void PrintCommandBytes(byte[] commandToSend)
+        {
+            Console.Write($"Host sent {commandToSend.Length - 1} bytes: ");
+            for (int i = 0; i < commandToSend.Length; i++)
+            {
+                Console.Write(commandToSend[i].ToString("X2") + " ");
+            }
+            Console.WriteLine();
+        }
+
+        /// <summary>
+        /// Print a provided payload in hexadecimal format
+        /// </summary>
+        /// <param name="payload"></param>
         private void PrintPayloadAsHex(byte[] payload)
         {
             StringBuilder hex = new StringBuilder(payload.Length * 2);
