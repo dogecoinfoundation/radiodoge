@@ -278,6 +278,15 @@ namespace RadioDoge
                             AddressBookEntry entry = new AddressBookEntry(sender, extractedPin);
                             dogeAddressBook.Add(addressString, entry);
                             operationSuccess = true;
+                            bool addWatchSuccess = LibDogecoin.RegisterWatchAddress(addressString);
+                            if (addWatchSuccess)
+                            {
+                                Console.WriteLine("Successfully added to address to watchlist!");
+                            }
+                            else
+                            {
+                                Console.WriteLine("Error: Failed to add address to watchlist!");
+                            }
                         }
                         else
                         {
@@ -293,6 +302,15 @@ namespace RadioDoge
                                 dogeAddressBook.Remove(addressString);
                                 Console.WriteLine($"Address {addressString} successfully removed!");
                                 operationSuccess = true;
+                                bool removeWatchSuccess = LibDogecoin.UnregisterWatchAddress(addressString);
+                                if (removeWatchSuccess)
+                                {
+                                    Console.WriteLine("Successfully removed address from watchlist!");
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Error: Failed to remove address from watchlist!");
+                                }
                             }
                             else
                             {
