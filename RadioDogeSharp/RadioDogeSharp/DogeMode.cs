@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RadioDoge
@@ -468,12 +467,16 @@ namespace RadioDoge
                 string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
                 Console.WriteLine($"Balance String: {balanceString}");
             }
+        }
 
+        private void TestKoinuConversion()
+        {
             // Test converting koinu amount to string
             Console.WriteLine("\nTesting Koinu to Coins conversion...");
             UInt64 testBalance = 123456789;
             bool result = LibDogecoin.ConvertKoinuAmountToString(testBalance, out string convertedString);
-            Console.WriteLine($"Converted amount: {convertedString}\n");
+            Console.WriteLine($"Original Test amount: {testBalance} (Koinu)");
+            Console.WriteLine($"Converted Test amount: {convertedString}\n");
         }
 
         private void TestGetUTXOs()
@@ -483,16 +486,12 @@ namespace RadioDoge
                 string address = testAddresses[i];
                 Console.WriteLine($"Testing getting UTXOs for {address}");
                 UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-                Console.WriteLine($"Found {numUTXOs} for {address}");
+                Console.WriteLine($"Found {numUTXOs} UTXOs for {address}");
                 if (numUTXOs > 0)
                 {
                     byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
                     string utxoHex = Convert.ToHexString(serializedUTXOs);
-                    Console.WriteLine($"Serialized UTXO: {utxoHex}");
-
-
-                    string txidString = LibDogecoin.GetTXIDString(address, 1);
-                    Console.WriteLine($"TXID String: {txidString}");
+                    Console.WriteLine($"Serialized UTXOs: {utxoHex}");
                 }
                 else
                 {

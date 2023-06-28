@@ -19,6 +19,7 @@
         {
             LibDogecoin.DogeTest();
             TestBalanceInquiry();
+            TestKoinuConversion();
             TestGetUTXOs();
         }
     }

@@ -34,8 +34,8 @@ namespace RadioDoge
                 publickey = pubkey.ToString();
 
                 Console.WriteLine("Generated test address info:");
-                Console.WriteLine($"Private key: {privatekey}");
-                Console.WriteLine($"Public key: {publickey}");
+                Console.WriteLine($"Test Private key: {privatekey}");
+                Console.WriteLine($"Test Public key: {publickey}");
             }
 
             dogecoin_ecc_stop();
@@ -76,10 +76,10 @@ namespace RadioDoge
         public static extern int getDerivedHDAddressByPath(string masterkey, string derived_path, StringBuilder outaddress, bool outprivkey);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_register_watch_address_with_node(string address);
+        private static extern int dogecoin_register_watch_address_with_node(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int dogecoin_unregister_watch_address_with_node(string address);
+        private static extern int dogecoin_unregister_watch_address_with_node(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_utxos(string address);
@@ -255,6 +255,18 @@ namespace RadioDoge
             byte dogecoin_bool = 0;
             IntPtr stringPtr = broadcast_raw_tx_on_net(rawTransaction, dogecoin_bool);
             return Marshal.PtrToStringAnsi(stringPtr);
+        }
+
+        public static bool RegisterWatchAddress(string addressToRegister)
+        {
+            int returnCode = dogecoin_register_watch_address_with_node(addressToRegister);
+            return returnCode == 1;
+        }
+
+        public static bool UnregisterWatchAddress(string addressToUnregister)
+        {
+            int returnCode = dogecoin_unregister_watch_address_with_node(addressToUnregister);
+            return returnCode == 1;
         }
     }
 }
