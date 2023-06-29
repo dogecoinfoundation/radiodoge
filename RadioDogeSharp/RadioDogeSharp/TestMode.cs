@@ -66,7 +66,15 @@ namespace RadioDoge
                     }
                     break;
                 case TestFunctions.StopSPV:
-                    if(spv.Stop())
+                    // Check to make sure we actually setup the SPV node first
+                    if (spv == null)
+                    {
+                        Console.WriteLine("ERROR: SPV Node was not setup or started yet!");
+                        break;
+                    }
+
+                    // Now try stopping the node
+                    if (spv.Stop())
                     {
                         Console.WriteLine("Successfully stopped SPV Node!");
                     }
