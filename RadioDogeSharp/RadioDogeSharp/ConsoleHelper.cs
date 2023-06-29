@@ -22,10 +22,11 @@
             while (true)
             {
                 // Print options
-                WriteEmphasizedLine("MUCH SELECT (0-2):", ConsoleColor.Yellow);
+                WriteEmphasizedLine("MUCH SELECT (0-3):", ConsoleColor.Yellow);
                 Console.WriteLine("0: LoRa Setup Mode");
                 Console.WriteLine("1: Doge Mode");
-                Console.WriteLine("2: Test Mode");
+                Console.WriteLine("2: SPV Mode");
+                Console.WriteLine("3: Test Mode");
                 Console.WriteLine($"Enter 'quit' to exit the program");
 
                 string userInput = Console.ReadLine();
@@ -35,7 +36,7 @@
                 }
 
                 bool numParseSuccess = int.TryParse(userInput, out int selection);
-                if (numParseSuccess && (selection == (int)ModeSelection.LoRaSetup || selection == (int)ModeSelection.Doge || selection == (int)ModeSelection.Test))
+                if (numParseSuccess && (selection == (int)ModeSelection.LoRaSetup || selection == (int)ModeSelection.Doge || selection == (int)ModeSelection.SPV || selection == (int)ModeSelection.Test))
                 {
                     return (ModeSelection)selection;
                 }

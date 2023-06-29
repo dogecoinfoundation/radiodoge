@@ -48,6 +48,7 @@
     {
         LoRaSetup,
         Doge,
+        SPV,
         Test,
         Quit,
         Invalid
@@ -59,7 +60,11 @@
         SendSinglePacket,
         SendCountingTest,
         DisplayTest,
-        RunSPV,
+    }
+
+    internal enum SPVFunctions
+    {
+        StartSPV,
         StopSPV
     }
 }

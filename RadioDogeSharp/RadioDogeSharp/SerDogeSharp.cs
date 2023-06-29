@@ -50,6 +50,9 @@ namespace RadioDoge
                     case ModeSelection.Doge:
                         EnterMode(PrintDogeCommandHelp, SendDogeCommand);
                         break;
+                    case ModeSelection.SPV:
+                        EnterMode(PrintSPVModeCommandHelp, SPVModeCommand);
+                        break;
                     case ModeSelection.Test:
                         EnterMode(PrintTestCommandHelp, SendTestCommand);
                         break;
