@@ -2,7 +2,7 @@
 
 namespace RadioDoge
 {
-    internal class SPVNode
+    internal class SPVNodeManager
     {
         private Process spvProcess;
         private readonly string commandString = "-c -b -d -p scan";
@@ -10,14 +10,14 @@ namespace RadioDoge
         private readonly bool runInOwnWindow;
         private ProcessStartInfo startInfo;
 
-        public SPVNode(bool runInOwnWindow)
+        public SPVNodeManager(bool runInOwnWindow)
         {
             this.runInOwnWindow = runInOwnWindow;
             isRunning = false;
             SetupStartInfo();
         }
 
-        public SPVNode(bool runInOwnWindow, string commandString)
+        public SPVNodeManager(bool runInOwnWindow, string commandString)
         {
             this.runInOwnWindow = runInOwnWindow;
             this.commandString = commandString;

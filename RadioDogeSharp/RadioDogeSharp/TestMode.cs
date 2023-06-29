@@ -4,7 +4,7 @@ namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
-        private SPVNode spv;
+        private SPVNodeManager spv;
         private readonly string spvDefaultCommand = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
 
         private void SendTestCommand(int commandValue)
@@ -53,9 +53,8 @@ namespace RadioDoge
                     return;
                 case TestFunctions.RunSPV:
                     bool runInOwnWindow = true;
-                    spv = new SPVNode(runInOwnWindow, spvDefaultCommand);
-                    bool runSuccess = true;
-                    runSuccess = spv.Start();
+                    spv = new SPVNodeManager(runInOwnWindow, spvDefaultCommand);
+                    bool runSuccess = spv.Start();
                     if (runSuccess && !runInOwnWindow)
                     {
                         runSuccess = spv.ExitOnUserInput();
@@ -76,7 +75,7 @@ namespace RadioDoge
                     // Now try stopping the node
                     if (spv.Stop())
                     {
-                        Console.WriteLine("Successfully stopped SPV Node!");
+                        Console.WriteLine("Successfully stopped SPV Node!\n");
                     }
                     else
                     {
