@@ -59,6 +59,7 @@
         SendSinglePacket,
         SendCountingTest,
         DisplayTest,
-        RunSPV
+        RunSPV,
+        StopSPV
     }
 }

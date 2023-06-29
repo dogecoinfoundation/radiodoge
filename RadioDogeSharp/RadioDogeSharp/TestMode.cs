@@ -4,6 +4,9 @@ namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
+        private SPVNode spv;
+        private readonly string spvDefaultCommand = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
+
         private void SendTestCommand(int commandValue)
         {
             TestFunctions commandType = (TestFunctions)commandValue;
@@ -49,17 +52,27 @@ namespace RadioDoge
                     port.Write(displayCommand, 0, displayCommand.Length);
                     return;
                 case TestFunctions.RunSPV:
-                    string command = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
-                    SPVNode spv = new SPVNode(command);
+                    bool runInOwnWindow = true;
+                    spv = new SPVNode(runInOwnWindow, spvDefaultCommand);
                     bool runSuccess = true;
                     runSuccess = spv.Start();
-                    if (runSuccess)
+                    if (runSuccess && !runInOwnWindow)
                     {
                         runSuccess = spv.ExitOnUserInput();
                     }
                     if (!runSuccess)
                     {
                         Console.WriteLine("Error: SPV Node failure!");
+                    }
+                    break;
+                case TestFunctions.StopSPV:
+                    if(spv.Stop())
+                    {
+                        Console.WriteLine("Successfully stopped SPV Node!");
+                    }
+                    else
+                    {
+                        Console.WriteLine("ERROR: Failed to stop SPV Node!");
                     }
                     break;
                 default:
