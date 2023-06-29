@@ -49,7 +49,18 @@ namespace RadioDoge
                     port.Write(displayCommand, 0, displayCommand.Length);
                     return;
                 case TestFunctions.RunSPV:
-                    RunSPVCommand();
+                    string command = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
+                    SPVNode spv = new SPVNode(command);
+                    bool runSuccess = true;
+                    runSuccess = spv.Start();
+                    if (runSuccess)
+                    {
+                        runSuccess = spv.ExitOnUserInput();
+                    }
+                    if (!runSuccess)
+                    {
+                        Console.WriteLine("Error: SPV Node failure!");
+                    }
                     break;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);

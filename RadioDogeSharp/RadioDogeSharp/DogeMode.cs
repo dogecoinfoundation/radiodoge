@@ -419,34 +419,6 @@ namespace RadioDoge
             }
         }
 
-        private void RunSPVCommand()
-        {
-            Console.WriteLine("Running SPV...");
-            string cmdString = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = "spvnode",
-                RedirectStandardInput = true,
-                RedirectStandardOutput = false,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                Arguments = cmdString
-            };
-
-            Process process = new Process { StartInfo = startInfo };
-
-            process.Start();
-            while (Console.ReadLine() != "exit")
-            {
-                Console.WriteLine("Waiting for 'exit'...");
-                Thread.Sleep(1000);
-            }
-            process.StandardInput.Close();
-            process.Kill(true);
-            process.Close();
-            Console.WriteLine("Quitting SPV");
-        }
-
         private void RunDogecoinSendTXCommand(string transaction)
         {
             Console.WriteLine("Running SendTX...");
