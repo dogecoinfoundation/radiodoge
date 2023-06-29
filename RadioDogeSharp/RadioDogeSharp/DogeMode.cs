@@ -29,7 +29,7 @@ namespace RadioDoge
                     break;
             }
             byte[] commandToSend = commandBytes.ToArray();
-            PrintCommandBytes(commandToSend);
+            ConsoleHelper.PrintCommandBytes(commandToSend);
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 
@@ -140,7 +140,7 @@ namespace RadioDoge
                     break;
                 default:
                     Console.WriteLine("Unknown payload. Raw data:");
-                    PrintPayloadAsHex(payload);
+                    ConsoleHelper.PrintPayloadAsHex(payload);
                     break;
             }
         }

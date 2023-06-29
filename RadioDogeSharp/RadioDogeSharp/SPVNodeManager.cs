@@ -62,6 +62,7 @@ namespace RadioDoge
                 spvProcess = new Process { StartInfo = startInfo };
                 spvProcess.Start();
                 isRunning = true;
+                Console.WriteLine("SPV Node started!\n");
                 return true;
             }
             return false;

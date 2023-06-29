@@ -10,9 +10,9 @@ namespace RadioDoge
     {
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
-        private MultipartPacket currMultipartPacket = new MultipartPacket();
         private bool isLinuxOS = false;
         private bool demoMode = true;
+        private SPVMode spvMode = new SPVMode();
 
         public void Execute()
         {
@@ -41,22 +41,22 @@ namespace RadioDoge
         {
             while(true)
             {
-                ModeSelection mode = ConsoleHelper.GetUserModeSelection();
+                ModeType mode = ConsoleHelper.GetUserModeSelection();
                 switch (mode)
                 {
-                    case ModeSelection.LoRaSetup:
+                    case ModeType.LoRaSetup:
                         EnterMode(PrintSerialSetupCommandHelp, SendSetupCommand);
                         break;
-                    case ModeSelection.Doge:
+                    case ModeType.Doge:
                         EnterMode(PrintDogeCommandHelp, SendDogeCommand);
                         break;
-                    case ModeSelection.SPV:
-                        EnterMode(PrintSPVModeCommandHelp, SPVModeCommand);
+                    case ModeType.SPV:
+                        EnterMode(spvMode.PrintModeHelp, spvMode.ProcessCommand);
                         break;
-                    case ModeSelection.Test:
+                    case ModeType.Test:
                         EnterMode(PrintTestCommandHelp, SendTestCommand);
                         break;
-                    case ModeSelection.Quit:
+                    case ModeType.Quit:
                         Console.WriteLine("Quitting the program!");
                         return;
                     default:
@@ -74,7 +74,7 @@ namespace RadioDoge
         private void SendPacket(NodeAddress destAddress, byte[] payload)
         {
             byte[] commandToSend = PacketHelper.CreatePacket(destAddress, localAddress, payload);
-            PrintCommandBytes(commandToSend);
+            ConsoleHelper.PrintCommandBytes(commandToSend);
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 
@@ -90,7 +90,7 @@ namespace RadioDoge
             // Send out the parts one by one
             for (int i = 0; i < allPacketParts.Length; i++)
             {
-                PrintCommandBytes(allPacketParts[i]);
+                ConsoleHelper.PrintCommandBytes(allPacketParts[i]);
                 port.Write(allPacketParts[i], 0, allPacketParts[i].Length);
                 // Delay a bit between the sending of each piece
                 Thread.Sleep(1000);
@@ -139,34 +139,6 @@ namespace RadioDoge
             byte[] dataPortion = new byte[dataLen];
             Array.Copy(rawPayload, 6, dataPortion, 0, dataLen);
             return dataPortion;
-        }
-
-        /// <summary>
-        /// Print the received host command (byte array)
-        /// </summary>
-        /// <param name="commandToSend"></param>
-        private void PrintCommandBytes(byte[] commandToSend)
-        {
-            Console.Write($"Host sent {commandToSend.Length - 1} bytes: ");
-            for (int i = 0; i < commandToSend.Length; i++)
-            {
-                Console.Write(commandToSend[i].ToString("X2") + " ");
-            }
-            Console.WriteLine();
-        }
-
-        /// <summary>
-        /// Print a provided payload in hexadecimal format
-        /// </summary>
-        /// <param name="payload"></param>
-        private void PrintPayloadAsHex(byte[] payload)
-        {
-            StringBuilder hex = new StringBuilder(payload.Length * 2);
-            foreach (byte b in payload)
-            {
-                hex.AppendFormat("{0:x2}", b);
-            }
-            Console.WriteLine(hex.ToString());
         }
 
         private void EnterMode(Action helpFunction, Action<int> commandFunc)

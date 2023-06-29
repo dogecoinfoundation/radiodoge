@@ -76,7 +76,7 @@ namespace RadioDoge
                     break;
             }
             byte[] commandToSend = commandBytes.ToArray();
-            PrintCommandBytes(commandToSend);
+            ConsoleHelper.PrintCommandBytes(commandToSend);
             port.Write(commandToSend, 0, commandToSend.Length);
         }
 

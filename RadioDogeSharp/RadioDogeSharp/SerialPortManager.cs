@@ -7,6 +7,7 @@ namespace RadioDoge
         private SerialPort port;
         private const string DEFAULT_PORT = "COM3";
         private bool retryConnect = true;
+        private MultipartPacket currMultipartPacket = new MultipartPacket();
 
         private bool SetupSerialConnection()
         {
@@ -124,7 +125,7 @@ namespace RadioDoge
                 {
                     Console.WriteLine(currMultipartPacket.ToString());
                     byte[] completePayload = currMultipartPacket.GetPayload();
-                    PrintPayloadAsHex(completePayload);
+                    ConsoleHelper.PrintPayloadAsHex(completePayload);
                     ProcessDogePayload(currMultipartPacket.senderAddress, completePayload);
                     // @TODO do something useful with the payload
                     currMultipartPacket = new MultipartPacket();
@@ -139,7 +140,7 @@ namespace RadioDoge
             else
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
-                PrintPayloadAsHex(payload);
+                ConsoleHelper.PrintPayloadAsHex(payload);
                 ProcessSerialSetupCommandPayload(commandType, payload);
             }
         }

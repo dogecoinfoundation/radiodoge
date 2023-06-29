@@ -1,4 +1,6 @@
-﻿namespace RadioDoge
+﻿using System.Text;
+
+namespace RadioDoge
 {
     internal static class ConsoleHelper
     {
@@ -17,7 +19,7 @@
             Console.ForegroundColor = ConsoleColor.White;
         }
 
-        internal static ModeSelection GetUserModeSelection()
+        internal static ModeType GetUserModeSelection()
         {
             while (true)
             {
@@ -32,19 +34,47 @@
                 string userInput = Console.ReadLine();
                 if (String.Equals("quit", userInput, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return ModeSelection.Quit;
+                    return ModeType.Quit;
                 }
 
                 bool numParseSuccess = int.TryParse(userInput, out int selection);
-                if (numParseSuccess && (selection == (int)ModeSelection.LoRaSetup || selection == (int)ModeSelection.Doge || selection == (int)ModeSelection.SPV || selection == (int)ModeSelection.Test))
+                if (numParseSuccess && (selection == (int)ModeType.LoRaSetup || selection == (int)ModeType.Doge || selection == (int)ModeType.SPV || selection == (int)ModeType.Test))
                 {
-                    return (ModeSelection)selection;
+                    return (ModeType)selection;
                 }
                 else
                 {
                     WriteEmphasizedLine($"{userInput} is an invalid selection!", ConsoleColor.Red);
                 }
             }
+        }
+
+        /// <summary>
+        /// Print the received host command (byte array)
+        /// </summary>
+        /// <param name="commandToSend"></param>
+        internal static void PrintCommandBytes(byte[] commandToSend)
+        {
+            Console.Write($"Host sent {commandToSend.Length - 1} bytes: ");
+            for (int i = 0; i < commandToSend.Length; i++)
+            {
+                Console.Write(commandToSend[i].ToString("X2") + " ");
+            }
+            Console.WriteLine();
+        }
+
+        /// <summary>
+        /// Print a provided payload in hexadecimal format
+        /// </summary>
+        /// <param name="payload"></param>
+        internal static void PrintPayloadAsHex(byte[] payload)
+        {
+            StringBuilder hex = new StringBuilder(payload.Length * 2);
+            foreach (byte b in payload)
+            {
+                hex.AppendFormat("{0:x2}", b);
+            }
+            Console.WriteLine(hex.ToString());
         }
     }
 }

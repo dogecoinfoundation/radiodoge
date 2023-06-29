@@ -44,7 +44,7 @@
         UpdatePin = 30
     }
 
-    internal enum ModeSelection
+    internal enum ModeType
     {
         LoRaSetup,
         Doge,
