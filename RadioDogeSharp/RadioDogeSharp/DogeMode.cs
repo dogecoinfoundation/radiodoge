@@ -11,96 +11,6 @@ namespace RadioDoge
         private const int MAX_ADDRESS_LENGTH = 35;
         private string[] testAddresses = new string[] { "D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY", "DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR", "DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y" };
 
-        private void SendDogeCommand(int commandValue)
-        {
-            DogeCommandType dogeCommandType = (DogeCommandType)commandValue;
-            List<byte> commandBytes = new List<byte>();
-            ConsoleHelper.WriteEmphasizedLine($"Sending Command: {dogeCommandType}", ConsoleColor.Yellow);
-            switch (dogeCommandType)
-            {
-                case DogeCommandType.GetDogeAddress:
-                    RequestDogeCoinAddress(destinationAddress);
-                    return;
-                case DogeCommandType.RequestBalance:
-                    RequestDogeCoinBalance(destinationAddress, Encoding.ASCII.GetBytes(testAddresses[0]));
-                    break;
-                default:
-                    ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
-                    break;
-            }
-            byte[] commandToSend = commandBytes.ToArray();
-            ConsoleHelper.PrintCommandBytes(commandToSend);
-            port.Write(commandToSend, 0, commandToSend.Length);
-        }
-
-        private void RequestDogeCoinAddress(NodeAddress destNode)
-        {
-            // Create payload
-            byte[] payload = new byte[] { (byte)DogeCommandType.GetDogeAddress };
-            SendPacket(destNode, payload);
-        }
-
-        private void RequestDogeCoinBalance(NodeAddress destNode, byte[] dogeCoinAddress)
-        {
-            List<byte> payload = new List<byte>(dogeCoinAddress.Length + 1);
-            payload.Add((byte)DogeCommandType.RequestBalance);
-            payload.AddRange(dogeCoinAddress);
-            SendPacket(destNode, payload.ToArray());
-        }
-
-        private void SendDogeCoinBalance(NodeAddress destNode, byte[] serializedBalance)
-        {
-            List<byte> payload = new List<byte>(serializedBalance.Length + 1);
-            payload.Add((byte)DogeCommandType.BalanceReceived);
-            payload.AddRange(serializedBalance);
-            SendPacket(destNode, payload.ToArray());
-        }
-
-        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand, byte[] responseData)
-        {
-            List<byte> payload = new List<byte>(responseData.Length + 2);
-            DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
-            payload.Add((byte)header);
-            payload.Add((byte)responseCommand);
-            payload.AddRange(responseData);
-            SendPacket(destNode, payload.ToArray());
-        }
-
-        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand)
-        {
-            List<byte> payload = new List<byte>(2);
-            DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
-            payload.Add((byte)header);
-            payload.Add((byte)responseCommand);
-            SendPacket(destNode, payload.ToArray());
-        }
-
-        /// <summary>
-        /// Send UTXOs for the specified Dogecoin address to a another node
-        /// </summary>
-        /// <param name="destNode"></param>
-        /// <param name="address"></param>
-        private void SendUTXOs(NodeAddress destNode, string address)
-        {
-            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-            if (numUTXOs > 0)
-            {
-                byte[] serializedUTXOBytes = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
-                // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
-                List<byte> payload = new List<byte>(5 + serializedUTXOBytes.Length);
-                payload.Add((byte)DogeCommandType.SendUTXOs);
-                byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
-                payload.AddRange(serializedLength);
-                payload.AddRange(serializedUTXOBytes);
-                SendMultipartPacket(destNode, payload.ToArray());
-            }
-            else
-            {
-                Console.WriteLine($"No UTXOs for {address} found!");
-                SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs);
-            }
-        }
-
         private void ProcessDogePayload(NodeAddress senderAddress, byte[] payload)
         {
             DogeCommandType commType = (DogeCommandType)payload[0];
@@ -145,6 +55,56 @@ namespace RadioDoge
             }
         }
 
+        private void SendDogeCommand(int commandValue)
+        {
+            DogeCommandType dogeCommandType = (DogeCommandType)commandValue;
+            List<byte> commandBytes = new List<byte>();
+            ConsoleHelper.WriteEmphasizedLine($"Sending Command: {dogeCommandType}", ConsoleColor.Yellow);
+            switch (dogeCommandType)
+            {
+                case DogeCommandType.GetDogeAddress:
+                    RequestDogeCoinAddress(destinationAddress);
+                    return;
+                case DogeCommandType.RequestBalance:
+                    RequestDogeCoinBalance(destinationAddress, Encoding.ASCII.GetBytes(testAddresses[0]));
+                    break;
+                default:
+                    ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
+                    break;
+            }
+            byte[] commandToSend = commandBytes.ToArray();
+            ConsoleHelper.PrintCommandBytes(commandToSend);
+            portManager.WriteToPort(commandToSend, 0, commandToSend.Length);
+        }
+
+        
+
+        /// <summary>
+        /// Send UTXOs for the specified Dogecoin address to a another node
+        /// </summary>
+        /// <param name="destNode"></param>
+        /// <param name="address"></param>
+        private void SendUTXOs(NodeAddress destNode, string address)
+        {
+            UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+            if (numUTXOs > 0)
+            {
+                byte[] serializedUTXOBytes = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+                // 1 byte for type, 4 for serialized num UTXO length, rest is for utxos
+                List<byte> payload = new List<byte>(5 + serializedUTXOBytes.Length);
+                payload.Add((byte)DogeCommandType.SendUTXOs);
+                byte[] serializedLength = BitConverter.GetBytes(numUTXOs);
+                payload.AddRange(serializedLength);
+                payload.AddRange(serializedUTXOBytes);
+                portManager.SendMultipartPacket(localAddress, destNode, payload.ToArray());
+            }
+            else
+            {
+                Console.WriteLine($"No UTXOs for {address} found!");
+                SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs);
+            }
+        }
+
         private void ServiceUTXORequest(NodeAddress replyAddress, byte[] payload)
         {
             int addressLength = payload.Length - 1;
@@ -159,15 +119,6 @@ namespace RadioDoge
                 // We will send a failure message for now
                 SendGenericDogeResponse(replyAddress, false, DogeCommandType.GetUTXOs);
             }
-        }
-
-        private void SendTransactionResult(NodeAddress destNode, string txid)
-        {
-            byte[] serializedTXID = Encoding.ASCII.GetBytes(txid);
-            List<byte> payload = new List<byte>(serializedTXID.Length + 1);
-            payload.Add((byte)DogeCommandType.TransactionResult);
-            payload.AddRange(serializedTXID);
-            SendPacket(destNode, payload.ToArray());
         }
 
         private void ServiceTransactionRequest(NodeAddress replyAddress, byte[] payload)
@@ -332,16 +283,6 @@ namespace RadioDoge
             PrintDogeAddressBook();
         }
 
-        private byte[] ObfuscateDogeCoinFloatBalance(float balance, byte[] pin)
-        {
-            byte[] serializedBalance = BitConverter.GetBytes(balance);
-            for (int i = 0; i < serializedBalance.Length; i++)
-            {
-                serializedBalance[i] ^= pin[i];
-            }
-            return serializedBalance;
-        }
-
         private byte[] ObfuscateDogeCoinBalance(UInt64 balance, byte[] pin)
         {
             byte[] serializedBalance = BitConverter.GetBytes(balance);
@@ -371,34 +312,6 @@ namespace RadioDoge
             return pinString;
         }
 
-        private void SendDogeAddress(NodeAddress destNode)
-        {
-            // Generate a test address for now
-            string privatekey;
-            string publickey;
-
-            int len = 256;
-            StringBuilder pvkey = new StringBuilder(len);
-            StringBuilder pubkey = new StringBuilder(len);
-            LibDogecoin.dogecoin_ecc_start();
-            int successret = LibDogecoin.generatePrivPubKeypair(pvkey, pubkey, 0);
-
-            if (successret == 1)
-            {
-                privatekey = pvkey.ToString();
-                publickey = pubkey.ToString();
-                Console.WriteLine($"Public key: {publickey}");
-
-                byte[] dogeCoinAddress = Encoding.ASCII.GetBytes(publickey);
-                List<byte> payload = new List<byte>(dogeCoinAddress.Length + 1);
-                payload.Add((byte)DogeCommandType.SendDogeAddress);
-                payload.AddRange(dogeCoinAddress);
-                SendPacket(destNode, payload.ToArray());
-            }
-
-            LibDogecoin.dogecoin_ecc_stop();
-        }
-
         private void PrintDogeCommandHelp()
         {
             ConsoleHelper.WriteEmphasizedLine("Available Doge Mode Commands:", ConsoleColor.Magenta);
@@ -419,6 +332,10 @@ namespace RadioDoge
             }
         }
 
+        /// <summary>
+        /// No longer needed with new libdogecoin function that exposes the broadcast transaction function
+        /// </summary>
+        /// <param name="transaction"></param>
         private void RunDogecoinSendTXCommand(string transaction)
         {
             Console.WriteLine("Running SendTX...");
@@ -443,52 +360,6 @@ namespace RadioDoge
             process.Kill(true);
             process.Close();
             Console.WriteLine("Quitting Send TX");
-        }
-
-        private void TestBalanceInquiry()
-        {
-            Console.WriteLine("Balance Inquiry Test");
-            for (int i = 0; i < testAddresses.Length; i++)
-            {
-                string currTestAddress = testAddresses[i];
-                Console.WriteLine($"Getting Balance for Address: {currTestAddress}");
-                UInt64 value = LibDogecoin.GetBalance(currTestAddress);
-                Console.WriteLine($"Balance Value: {value}");
-                string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
-                Console.WriteLine($"Balance String: {balanceString}");
-            }
-        }
-
-        private void TestKoinuConversion()
-        {
-            // Test converting koinu amount to string
-            Console.WriteLine("\nTesting Koinu to Coins conversion...");
-            UInt64 testBalance = 123456789;
-            bool result = LibDogecoin.ConvertKoinuAmountToString(testBalance, out string convertedString);
-            Console.WriteLine($"Original Test amount: {testBalance} (Koinu)");
-            Console.WriteLine($"Converted Test amount: {convertedString}\n");
-        }
-
-        private void TestGetUTXOs()
-        {
-            for (int i = 0; i < testAddresses.Length; i++)
-            {
-                string address = testAddresses[i];
-                Console.WriteLine($"Testing getting UTXOs for {address}");
-                UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
-                Console.WriteLine($"Found {numUTXOs} UTXOs for {address}");
-                if (numUTXOs > 0)
-                {
-                    byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
-                    string utxoHex = Convert.ToHexString(serializedUTXOs);
-                    Console.WriteLine($"Serialized UTXOs: {utxoHex}");
-                }
-                else
-                {
-                    Console.WriteLine($"No UTXOs found for {address}");
-                }
-                Console.WriteLine("\n");
-            }
-        }
+        }     
     }
 }

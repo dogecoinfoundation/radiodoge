@@ -15,13 +15,13 @@ namespace RadioDoge
                     ConsoleHelper.WriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMessage = Console.ReadLine();
                     byte[] convertedMessageBytes = Encoding.ASCII.GetBytes(readMessage);
-                    SendPacket(destinationAddress, convertedMessageBytes);
+                    portManager.SendPacket(localAddress, destinationAddress, convertedMessageBytes);
                     return;
                 case TestFunctions.SendMultipartPacket:
                     ConsoleHelper.WriteEmphasizedLine("Enter payload message", ConsoleColor.Yellow);
                     string readMultipartMessage = Console.ReadLine();
                     byte[] convertedMultipartMessageBytes = Encoding.ASCII.GetBytes(readMultipartMessage);
-                    SendMultipartPacket(destinationAddress, convertedMultipartMessageBytes);
+                    portManager.SendMultipartPacket(localAddress, destinationAddress, convertedMultipartMessageBytes);
                     return;
                 case TestFunctions.SendCountingTest:
                     byte[] countBytes = new byte[1024];
@@ -29,24 +29,24 @@ namespace RadioDoge
                     {
                         countBytes[i] = (byte)(i % 256);
                     }
-                    SendMultipartPacket(destinationAddress, countBytes);
+                    portManager.SendMultipartPacket(localAddress, destinationAddress, countBytes);
                     return;
                 case TestFunctions.DisplayTest:
                     // Display Logo
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
-                    port.Write(displayCommand, 0, displayCommand.Length);
+                    portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
                     // Display doge animation
                     displayCommand[2] = (byte)DisplayType.DogeAnimation;
-                    port.Write(displayCommand, 0, displayCommand.Length);
+                    portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
                     // Display coin animation
                     displayCommand[2] = (byte)DisplayType.CoinAnimation;
-                    port.Write(displayCommand, 0, displayCommand.Length);
+                    portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
                     Thread.Sleep(2000);
                     // Display logo again
                     displayCommand[2] = (byte)DisplayType.RadioDogeLogo;
-                    port.Write(displayCommand, 0, displayCommand.Length);
+                    portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
                     return;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);

@@ -1,4 +1,6 @@
-﻿namespace RadioDoge
+﻿using System.Text;
+
+namespace RadioDoge
 {
     public partial class SerDogeSharp
     {
@@ -15,9 +17,81 @@
             Thread.Sleep(2500);
         }
 
+        private void TestAddressGeneration()
+        {
+            Console.WriteLine("Testing DogeCoin Library...");
+            string privatekey;
+            string publickey;
+
+            int len = 256;
+            StringBuilder pvkey = new StringBuilder(len);
+            StringBuilder pubkey = new StringBuilder(len);
+            LibDogecoin.dogecoin_ecc_start();
+            int successReturn = LibDogecoin.generatePrivPubKeypair(pvkey, pubkey, 0);
+
+            if (successReturn == 1)
+            {
+                privatekey = pvkey.ToString();
+                publickey = pubkey.ToString();
+
+                Console.WriteLine("Generated test address info:");
+                Console.WriteLine($"Test Private key: {privatekey}");
+                Console.WriteLine($"Test Public key: {publickey}");
+            }
+
+            LibDogecoin.dogecoin_ecc_stop();
+            Console.WriteLine("Dogecoin library test successful!\n");
+        }
+
+        private void TestBalanceInquiry()
+        {
+            Console.WriteLine("Balance Inquiry Test");
+            for (int i = 0; i < testAddresses.Length; i++)
+            {
+                string currTestAddress = testAddresses[i];
+                Console.WriteLine($"Getting Balance for Address: {currTestAddress}");
+                UInt64 value = LibDogecoin.GetBalance(currTestAddress);
+                Console.WriteLine($"Balance Value: {value}");
+                string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
+                Console.WriteLine($"Balance String: {balanceString}");
+            }
+        }
+
+        private void TestKoinuConversion()
+        {
+            // Test converting koinu amount to string
+            Console.WriteLine("\nTesting Koinu to Coins conversion...");
+            UInt64 testBalance = 123456789;
+            bool result = LibDogecoin.ConvertKoinuAmountToString(testBalance, out string convertedString);
+            Console.WriteLine($"Original Test amount: {testBalance} (Koinu)");
+            Console.WriteLine($"Converted Test amount: {convertedString}\n");
+        }
+
+        private void TestGetUTXOs()
+        {
+            for (int i = 0; i < testAddresses.Length; i++)
+            {
+                string address = testAddresses[i];
+                Console.WriteLine($"Testing getting UTXOs for {address}");
+                UInt32 numUTXOs = LibDogecoin.GetNumberOfUTXOs(address);
+                Console.WriteLine($"Found {numUTXOs} UTXOs for {address}");
+                if (numUTXOs > 0)
+                {
+                    byte[] serializedUTXOs = LibDogecoin.GetAllSerializedUTXOs(numUTXOs, address);
+                    string utxoHex = Convert.ToHexString(serializedUTXOs);
+                    Console.WriteLine($"Serialized UTXOs: {utxoHex}");
+                }
+                else
+                {
+                    Console.WriteLine($"No UTXOs found for {address}");
+                }
+                Console.WriteLine("\n");
+            }
+        }
+
         private void LibdogecoinFunctionalityTesting()
         {
-            LibDogecoin.DogeTest();
+            TestAddressGeneration();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();

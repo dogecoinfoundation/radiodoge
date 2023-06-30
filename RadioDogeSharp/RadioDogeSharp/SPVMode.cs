@@ -6,12 +6,12 @@ using System.Threading.Tasks;
 
 namespace RadioDoge
 {
-    internal class SPVMode : RadioDogeMode
+    public partial class SerDogeSharp
     {
         private SPVNodeManager spv;
         private readonly string spvDefaultCommand = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
 
-        public override void ProcessCommand(int commandValue)
+        private void ProcessSPVCommand(int commandValue)
         {
             SPVFunctions commandType = (SPVFunctions)commandValue;
             switch (commandType)
@@ -53,7 +53,7 @@ namespace RadioDoge
             }
         }
 
-        public override void PrintModeHelp()
+        private void PrintSPVModeHelp()
         {
             ConsoleHelper.WriteEmphasizedLine("Available SPV Mode Commands:", ConsoleColor.Magenta);
             foreach (int i in Enum.GetValues(typeof(SPVFunctions)))

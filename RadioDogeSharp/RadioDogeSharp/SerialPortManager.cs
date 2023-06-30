@@ -2,14 +2,20 @@
 
 namespace RadioDoge
 {
-    public partial class SerDogeSharp
+    internal class SerialPortManager
     {
         private SerialPort port;
         private const string DEFAULT_PORT = "COM3";
         private bool retryConnect = true;
         private MultipartPacket currMultipartPacket = new MultipartPacket();
+        private Action<NodeAddress, byte[]> processDogePayloadFunction;
 
-        private bool SetupSerialConnection()
+        public void RegisterDogeProcessor(Action<NodeAddress, byte[]> processDogePayloadFunction)
+        {
+            this.processDogePayloadFunction = processDogePayloadFunction;
+        }
+
+        public bool SetupSerialConnection()
         {
             Console.WriteLine("Setting up connection to LoRa module...");
             if (OpenPortHelper(DEFAULT_PORT))
@@ -29,7 +35,7 @@ namespace RadioDoge
             return false;
         }
 
-        private void ClosePort()
+        public void ClosePort()
         {
             if (port != null)
             {
@@ -101,6 +107,51 @@ namespace RadioDoge
             }
         }
 
+        public void WriteToPort(byte[] buffer, int offset, int count)
+        {
+            port.Write(buffer, offset, count);
+        }
+
+        private byte[] ExtractHostFormedPacketData(byte[] rawPayload, out NodeAddress senderAddress)
+        {
+            senderAddress = new NodeAddress(rawPayload[0], rawPayload[1], rawPayload[2]);
+            int dataLen = rawPayload.Length - 6;
+            byte[] dataPortion = new byte[dataLen];
+            Array.Copy(rawPayload, 6, dataPortion, 0, dataLen);
+            return dataPortion;
+        }
+
+        /// <summary>
+        /// Send a single packet containing the provided payload to the specified destination address
+        /// </summary>
+        /// <param name="destAddress"></param>
+        /// <param name="payload"></param>
+        public void SendPacket(NodeAddress localAddress, NodeAddress destAddress, byte[] payload)
+        {
+            byte[] commandToSend = PacketHelper.CreatePacket(destAddress, localAddress, payload);
+            ConsoleHelper.PrintCommandBytes(commandToSend);
+            WriteToPort(commandToSend, 0, commandToSend.Length);
+        }
+
+        /// <summary>
+        /// Send a multipart packet containing the provided payload (broken up into multiple parts) to the specified destination node
+        /// </summary>
+        /// <param name="destAddress"></param>
+        /// <param name="multipartPayload"></param>
+        public void SendMultipartPacket(NodeAddress localAddress, NodeAddress destAddress, byte[] multipartPayload)
+        {
+            // Create all the packet parts
+            byte[][] allPacketParts = PacketHelper.CreateMultipartPackets(destAddress, localAddress, multipartPayload);
+            // Send out the parts one by one
+            for (int i = 0; i < allPacketParts.Length; i++)
+            {
+                ConsoleHelper.PrintCommandBytes(allPacketParts[i]);
+                WriteToPort(allPacketParts[i], 0, allPacketParts[i].Length);
+                // Delay a bit between the sending of each piece
+                Thread.Sleep(1000);
+            }
+        }
+
         /// <summary>
         /// Callback to process/collect data when something is received on the serial port
         /// </summary>
@@ -126,7 +177,7 @@ namespace RadioDoge
                     Console.WriteLine(currMultipartPacket.ToString());
                     byte[] completePayload = currMultipartPacket.GetPayload();
                     ConsoleHelper.PrintPayloadAsHex(completePayload);
-                    ProcessDogePayload(currMultipartPacket.senderAddress, completePayload);
+                    processDogePayloadFunction(currMultipartPacket.senderAddress, completePayload);
                     // @TODO do something useful with the payload
                     currMultipartPacket = new MultipartPacket();
                 }
@@ -135,13 +186,48 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
                 byte[] dataPayload = ExtractHostFormedPacketData(payload, out NodeAddress currSenderAddr);
-                ProcessDogePayload(currSenderAddr, dataPayload);
+                processDogePayloadFunction(currSenderAddr, dataPayload);
             }
             else
             {
                 Console.WriteLine($"Command: {commandType}, Payload Size: {payloadSize}");
                 ConsoleHelper.PrintPayloadAsHex(payload);
                 ProcessSerialSetupCommandPayload(commandType, payload);
+            }
+        }
+
+        private void ProcessSerialSetupCommandPayload(SerialCommandType commandType, byte[] payload)
+        {
+            switch (commandType)
+            {
+                case SerialCommandType.GetNodeAddress:
+                    ConsoleHelper.WriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
+                    break;
+                case SerialCommandType.HardwareInfo:
+                    if ((char)payload[0] == 'h')
+                    {
+                        ConsoleHelper.WriteEmphasizedLine($"Heltec LoRa WiFi LoRa 32 (V{payload[1]})\nFirmware version {payload[2]}", ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        ConsoleHelper.WriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
+                    }
+                    break;
+                case SerialCommandType.Message:
+                    break;
+                case SerialCommandType.ResultCode:
+                    if (payload[0] == 0x06)
+                    {
+                        ConsoleHelper.WriteEmphasizedLine("Device ACK'd Command", ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        ConsoleHelper.WriteEmphasizedLine("ERROR: Device sent a NACK!", ConsoleColor.Red);
+                    }
+                    break;
+                default:
+                    ConsoleHelper.WriteEmphasizedLine("Unknown payload type!", ConsoleColor.Red);
+                    break;
             }
         }
     }

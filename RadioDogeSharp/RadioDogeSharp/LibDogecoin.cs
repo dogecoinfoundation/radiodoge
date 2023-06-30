@@ -10,37 +10,6 @@ namespace RadioDoge
         private const string libToImport = "dogecoin";
         private const int NUM_BYTES_PER_UTXO = 76;
 
-        /* The serialized UXTO sent should have the following info
-         int vout; // 4 bytes
-         char* txid[64]; // 64 bytes (comes over as raw bytes but should be treated as a char array/ string)
-         uint64_t amount; // 8 bytes
-        */
-
-        public static void DogeTest()
-        {
-            Console.WriteLine("Testing DogeCoin Library...");
-            string privatekey;
-            string publickey;
-
-            int len = 256;
-            StringBuilder pvkey = new StringBuilder(len);
-            StringBuilder pubkey = new StringBuilder(len);
-            dogecoin_ecc_start();
-            int successret = generatePrivPubKeypair(pvkey, pubkey, 0);
-
-            if (successret == 1)
-            {
-                privatekey = pvkey.ToString();
-                publickey = pubkey.ToString();
-
-                Console.WriteLine("Generated test address info:");
-                Console.WriteLine($"Test Private key: {privatekey}");
-                Console.WriteLine($"Test Public key: {publickey}");
-            }
-
-            dogecoin_ecc_stop();
-            Console.WriteLine("Dogecoin library test successful!\n");
-        }
         // @TODO review choice of types used
         // size_t -> UIntPtr
         // const char* -> string
@@ -268,6 +237,8 @@ namespace RadioDoge
             int returnCode = dogecoin_unregister_watch_address_with_node(new StringBuilder(addressToUnregister));
             return returnCode == 1;
         }
+
+
     }
 }
 

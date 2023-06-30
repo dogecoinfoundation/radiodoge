@@ -30,7 +30,7 @@ namespace RadioDoge
             commandBytes.AddRange(setHeader);
             commandBytes.AddRange(setAddress.ToByteArray());
             byte[] commandToSend = commandBytes.ToArray();
-            port.Write(commandToSend, 0, commandToSend.Length);
+            portManager.WriteToPort(commandToSend, 0, commandToSend.Length);
         }
 
         private void SendSetupCommand(int commandValue)
@@ -77,42 +77,7 @@ namespace RadioDoge
             }
             byte[] commandToSend = commandBytes.ToArray();
             ConsoleHelper.PrintCommandBytes(commandToSend);
-            port.Write(commandToSend, 0, commandToSend.Length);
-        }
-
-        private void ProcessSerialSetupCommandPayload(SerialCommandType commandType, byte[] payload)
-        {
-            switch (commandType)
-            {
-                case SerialCommandType.GetNodeAddress:
-                    ConsoleHelper.WriteEmphasizedLine($"Local Address: {payload[0]}.{payload[1]}.{payload[2]}", ConsoleColor.Green);
-                    break;
-                case SerialCommandType.HardwareInfo:
-                    if ((char)payload[0] == 'h')
-                    {
-                        ConsoleHelper.WriteEmphasizedLine($"Heltec LoRa WiFi LoRa 32 (V{payload[1]})\nFirmware version {payload[2]}", ConsoleColor.Green);
-                    }
-                    else
-                    {
-                        ConsoleHelper.WriteEmphasizedLine($"Unknown hardware!", ConsoleColor.Red);
-                    }
-                    break;
-                case SerialCommandType.Message:
-                    break;
-                case SerialCommandType.ResultCode:
-                    if (payload[0] == 0x06)
-                    {
-                        ConsoleHelper.WriteEmphasizedLine("Device ACK'd Command", ConsoleColor.Green);
-                    }
-                    else
-                    {
-                        ConsoleHelper.WriteEmphasizedLine("ERROR: Device sent a NACK!", ConsoleColor.Red);
-                    }
-                    break;
-                default:
-                    ConsoleHelper.WriteEmphasizedLine("Unknown payload type!", ConsoleColor.Red);
-                    break;
-            }
+            portManager.WriteToPort(commandToSend, 0, commandToSend.Length);
         }
     }
 }
