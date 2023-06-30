@@ -12,16 +12,21 @@ namespace RadioDoge
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private bool isLinuxOS = false;
         private bool demoMode = true;
-        private SerialPortManager portManager = new SerialPortManager();
+        private SerialPortManager portManager;
 
         public void Execute()
         {
+            // Check operating system
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 isLinuxOS = true;
             }
+
+            ConsoleHelper.PrintTitleScreen();
+
+            // Set up the serial port manager
+            portManager = new SerialPortManager();
             portManager.RegisterDogeProcessor(ProcessDogePayload);
-            ConsoleHelper.PrintTitleScreen();   
             if (portManager.SetupSerialConnection())
             {
                 if (demoMode)
