@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 
 namespace RadioDoge
 {
@@ -41,6 +42,51 @@ namespace RadioDoge
 
             LibDogecoin.dogecoin_ecc_stop();
             Console.WriteLine("Dogecoin library test successful!\n");
+        }
+
+        private void TestAddressRegistration()
+        {
+            // Generate a test address
+            Console.WriteLine("Testing Address Registration...");
+
+            // First we generate an address
+            int len = 256;
+            StringBuilder pvkey = new StringBuilder(len);
+            StringBuilder pubkey = new StringBuilder(len);
+            LibDogecoin.dogecoin_ecc_start();
+            int successReturn = LibDogecoin.generatePrivPubKeypair(pvkey, pubkey, 0);
+
+            if (successReturn != 1)
+            {
+                Console.WriteLine("Failure to generate address!");
+                return;
+            }
+            LibDogecoin.dogecoin_ecc_stop();
+
+            // Now we try and register it
+            string publickey = pubkey.ToString();
+            Console.WriteLine($"Registering Address: {publickey}");
+            RegistrationHelper(publickey);
+        }
+
+        private void TestFixedAddressRegistration()
+        {
+            Console.WriteLine("Testing fixed address registration...");
+            string address = "DHqebm5GZq8pBjzzLpwyDPYbgtRJ3HTAak";
+            RegistrationHelper(address);
+        }
+
+        private void RegistrationHelper(string address)
+        {
+            bool registrationSuccess = LibDogecoin.RegisterWatchAddress(address);
+            if (registrationSuccess)
+            {
+                Console.WriteLine($"Successfully registered address! {address}");
+            }
+            else
+            {
+                Console.WriteLine($"Failed to register address! {address}");
+            }
         }
 
         private void TestBalanceInquiry()
@@ -92,6 +138,8 @@ namespace RadioDoge
         private void LibdogecoinFunctionalityTesting()
         {
             TestAddressGeneration();
+            //TestFixedAddressRegistration();
+            //TestAddressRegistration();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();

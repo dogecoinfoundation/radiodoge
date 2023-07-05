@@ -45,10 +45,10 @@ namespace RadioDoge
         public static extern int getDerivedHDAddressByPath(string masterkey, string derived_path, StringBuilder outaddress, bool outprivkey);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int dogecoin_register_watch_address_with_node(StringBuilder address);
+        private static extern int dogecoin_register_watch_address_with_node(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int dogecoin_unregister_watch_address_with_node(StringBuilder address);
+        private static extern int dogecoin_unregister_watch_address_with_node(string address);
 
         [DllImport(libToImport, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dogecoin_get_utxos(string address);
@@ -228,17 +228,15 @@ namespace RadioDoge
 
         public static bool RegisterWatchAddress(string addressToRegister)
         {
-            int returnCode = dogecoin_register_watch_address_with_node(new StringBuilder(addressToRegister));
+            int returnCode = dogecoin_register_watch_address_with_node(addressToRegister);
             return returnCode == 1;
         }
 
         public static bool UnregisterWatchAddress(string addressToUnregister)
         {
-            int returnCode = dogecoin_unregister_watch_address_with_node(new StringBuilder(addressToUnregister));
+            int returnCode = dogecoin_unregister_watch_address_with_node(addressToUnregister);
             return returnCode == 1;
         }
-
-
     }
 }
 
