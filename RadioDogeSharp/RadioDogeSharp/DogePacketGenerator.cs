@@ -31,22 +31,13 @@ namespace RadioDoge
             portManager.SendPacket(localAddress, destNode, payload.ToArray());
         }
 
-        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand, byte[] responseData)
+        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand, DogeResponseCode responseCode)
         {
-            List<byte> payload = new List<byte>(responseData.Length + 2);
+            List<byte> payload = new List<byte>(3);
             DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
             payload.Add((byte)header);
             payload.Add((byte)responseCommand);
-            payload.AddRange(responseData);
-            portManager.SendPacket(localAddress, destNode, payload.ToArray());
-        }
-
-        private void SendGenericDogeResponse(NodeAddress destNode, bool success, DogeCommandType responseCommand)
-        {
-            List<byte> payload = new List<byte>(2);
-            DogeCommandType header = success ? DogeCommandType.DogeCommandSuccess : DogeCommandType.DogeCommandFailure;
-            payload.Add((byte)header);
-            payload.Add((byte)responseCommand);
+            payload.Add((byte)responseCode);
             portManager.SendPacket(localAddress, destNode, payload.ToArray());
         }
 

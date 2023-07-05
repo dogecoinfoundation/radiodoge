@@ -27,7 +27,7 @@ namespace RadioDoge
                     else
                     {
                         Console.WriteLine("Received an address that was too long!");
-                        SendGenericDogeResponse(senderAddress, false, DogeCommandType.SendDogeAddress);
+                        SendGenericDogeResponse(senderAddress, false, DogeCommandType.SendDogeAddress, DogeResponseCode.InvalidAddress);
                     }
                     break;
                 case DogeCommandType.GetDogeAddress:
@@ -101,7 +101,7 @@ namespace RadioDoge
             else
             {
                 Console.WriteLine($"No UTXOs for {address} found!");
-                SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs);
+                SendGenericDogeResponse(destNode, false, DogeCommandType.GetUTXOs, DogeResponseCode.NoStoredUTXOS);
             }
         }
 
@@ -117,7 +117,7 @@ namespace RadioDoge
             {
                 // Address book does not contain requested address
                 // We will send a failure message for now
-                SendGenericDogeResponse(replyAddress, false, DogeCommandType.GetUTXOs);
+                SendGenericDogeResponse(replyAddress, false, DogeCommandType.GetUTXOs, DogeResponseCode.NotRegistered);
             }
         }
 
@@ -164,7 +164,7 @@ namespace RadioDoge
             {
                 // Address book does not contain requested address
                 // We will send a failure message for now
-                SendGenericDogeResponse(replyAddress, false, DogeCommandType.RequestBalance);
+                SendGenericDogeResponse(replyAddress, false, DogeCommandType.RequestBalance, DogeResponseCode.NotRegistered);
             }
         }
 
@@ -188,7 +188,12 @@ namespace RadioDoge
             {
                 addressLength -= PIN_LENGTH + 2;
             }
+
+            // Initialized response variables
             bool operationSuccess = false;
+            DogeResponseCode responseCode = DogeResponseCode.Success;
+
+            // First check if address is valid
             if (addressLength <= MAX_ADDRESS_LENGTH)
             {
                 string addressString = ExtractDogecoinAddressFromPayload(2, addressLength, payload);
@@ -212,11 +217,13 @@ namespace RadioDoge
                             else
                             {
                                 Console.WriteLine($"Pin could not be updated for {addressString}");
+                                responseCode = DogeResponseCode.InvalidPin;
                             }
                         }
                         else
                         {
                             Console.WriteLine("Address has not been previously registered!");
+                            responseCode = DogeResponseCode.NotRegistered;
                         }
                         break;
                     case RegistrationFunction.AddRegistration:
@@ -237,14 +244,17 @@ namespace RadioDoge
                             else
                             {
                                 Console.WriteLine("Error: Failed to add address to watchlist!");
+                                responseCode = DogeResponseCode.WatchlistFailure;
                             }
                         }
                         else
                         {
                             Console.WriteLine("Address already registered!");
+                            responseCode = DogeResponseCode.AlreadyRegistered;
                         }
                         break;
                     case RegistrationFunction.RemoveRegistration:
+                        // Check if the address is registered first
                         if (dogeAddressBook.ContainsKey(addressString))
                         {
                             // Check if pin matches
@@ -261,12 +271,18 @@ namespace RadioDoge
                                 else
                                 {
                                     Console.WriteLine("Error: Failed to remove address from watchlist!");
+                                    responseCode = DogeResponseCode.WatchlistFailure;
                                 }
                             }
                             else
                             {
                                 Console.WriteLine($"Pin does not match for {addressString}. Unable to remove registration!");
+                                responseCode = DogeResponseCode.InvalidPin;
                             }
+                        }
+                        else
+                        {
+                            responseCode = DogeResponseCode.NotRegistered;
                         }
                         break;
                 }
@@ -274,10 +290,12 @@ namespace RadioDoge
             else
             {
                 Console.WriteLine($"Failed to perform registration function: {regOpcode}");
+                responseCode = DogeResponseCode.InvalidAddress;
             }
 
             // Send response back to the sender
-            SendGenericDogeResponse(sender, operationSuccess, DogeCommandType.Registration, new byte[] { (byte)regOpcode });
+            SendGenericDogeResponse(sender, operationSuccess, DogeCommandType.Registration, responseCode);
+
             // Print address book for debugging purposes
             Console.WriteLine();
             PrintDogeAddressBook();

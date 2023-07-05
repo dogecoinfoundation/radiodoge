@@ -979,6 +979,73 @@ int isCmd(uint8_t inByte)
 	}
 }
 
+void printResponseCommandInfo(uint8_t responseCommand)
+{
+	printf("HUB RESPONSE COMMAND: ");
+	switch (responseCommand)
+	{
+	case DISPLAY_QR:
+		printf("Display QR Code\n");
+		break;
+	case REGISTRATION:
+		printf("Registration Function\n");
+		break;
+	case GET_DOGE_ADDRESS:
+		printf("Get Address\n");
+		break;
+	case SEND_DOGE_ADDRESS:
+		printf("Send Address\n");
+		break;
+	case REQUEST_UTXOS:
+		printf("Request UTXOs\n");
+		break;
+	case UTXOS_RECEIVED:
+		printf("UTXOs Received\n");
+		break;
+	case REQUEST_BALANCE:
+		printf("Balance Request\n");
+		break;
+	case BALANCE_RECEIVED:
+		printf("Balance Received\n");
+		break;
+	case TRANSACTION_REQUEST:
+		printf("Transaction Request\n");
+		break;
+	case TRANSACTION_RESULT:
+		printf("Transaction Result\n");
+		break;
+	}
+}
+
+void printDogeResponseCodeInfo(uint8_t responseCode)
+{
+	printf("HUB RESPONSE: ");
+	switch (responseCode)
+	{
+	case HUB_RESPONSE_SUCCESS:
+		printf("Success\n");
+		break;
+	case INVALID_ADDRESS:
+		printf("Invalid address supplied!\n");
+		break;
+	case ALREADY_REGISTERED:
+		printf("Address already registered!\n");
+		break;
+	case NOT_REGISTERED:
+		printf("Address was not registered yet!\n");
+		break;
+	case INVALID_PIN:
+		printf("Invalid pin supplied!\n");
+		break;
+	case NO_STORED_UTXOS:
+		printf("There are no UTXOs currently stored or available for the supplied address!\n");
+		break;
+	case WATCHLIST_FAILURE:
+		printf("Issue with editing the address watchlist!\n");
+		break;
+	}
+}
+
 /// <summary>
 /// Process a received Doge payload received over the air from a different node
 /// </summary>
@@ -1011,11 +1078,11 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		break;
 	case DOGE_COMMAND_SUCCESS:
 		printf("RadioDoge Hub node executed command successfully!\n");
-		// @TODO provide more info to user
+		printResponseCommandInfo(payloadIn[1]);
 		break;
 	case DOGE_COMMAND_FAILURE:
 		printf("ERROR: RadioDoge Hub node failed to execute command!\n");
-		// @TODO failure reasoning...
+		printDogeResponseCodeInfo(payloadIn[2]);
 		break;
 	case TRANSACTION_RESULT:
 		printf("Transaction result received!\n");

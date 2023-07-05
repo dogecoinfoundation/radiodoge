@@ -37,6 +37,17 @@
         TransactionResult = 171,
     }
 
+    internal enum DogeResponseCode
+    {
+        Success,
+        InvalidAddress,
+        AlreadyRegistered,
+        NotRegistered,
+        InvalidPin,
+        NoStoredUTXOS,
+        WatchlistFailure,
+    }
+
     internal enum RegistrationFunction
     {
         AddRegistration = 10,
