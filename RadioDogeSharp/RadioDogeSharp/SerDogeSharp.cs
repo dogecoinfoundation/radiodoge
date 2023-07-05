@@ -11,7 +11,8 @@ namespace RadioDoge
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private bool isLinuxOS = false;
-        private bool demoMode = true;
+        private const bool DEMO_MODE = true;
+        private const bool TEST_LIBDOGECOIN = true;
         private SerialPortManager portManager;
 
         public void Execute()
@@ -24,14 +25,18 @@ namespace RadioDoge
 
             ConsoleHelper.PrintTitleScreen();
 
+            if (TEST_LIBDOGECOIN)
+            {
+                LibdogecoinFunctionalityTesting();
+            }
+
             // Set up the serial port manager
             portManager = new SerialPortManager();
             portManager.RegisterDogeProcessor(ProcessDogePayload);
             if (portManager.SetupSerialConnection())
             {
-                if (demoMode)
+                if (DEMO_MODE)
                 {
-                    LibdogecoinFunctionalityTesting();
                     DemoNodeSetup();
                 }
                 ModeSelectionLoop();

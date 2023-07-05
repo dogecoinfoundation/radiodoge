@@ -138,8 +138,8 @@ namespace RadioDoge
         private void LibdogecoinFunctionalityTesting()
         {
             TestAddressGeneration();
-            TestFixedAddressRegistration();
-            TestAddressRegistration();
+            //TestFixedAddressRegistration();
+            //TestAddressRegistration();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
