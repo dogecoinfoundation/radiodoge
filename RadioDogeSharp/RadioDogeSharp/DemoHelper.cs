@@ -1,5 +1,4 @@
-﻿using System.Net;
-using System.Text;
+﻿using System.Text;
 
 namespace RadioDoge
 {
@@ -72,12 +71,13 @@ namespace RadioDoge
         private void TestFixedAddressRegistration()
         {
             Console.WriteLine("Testing fixed address registration...");
-            string address = "DHqebm5GZq8pBjzzLpwyDPYbgtRJ3HTAak";
+            string address = "DKEXkLR3Q4w9q7CXGHm5GLMWSJPLqB8e53";
             RegistrationHelper(address);
         }
 
         private void RegistrationHelper(string address)
         {
+            Console.WriteLine($"Attempting to register address: {address}");
             bool registrationSuccess = LibDogecoin.RegisterWatchAddress(address);
             if (registrationSuccess)
             {
@@ -138,8 +138,8 @@ namespace RadioDoge
         private void LibdogecoinFunctionalityTesting()
         {
             TestAddressGeneration();
-            //TestFixedAddressRegistration();
-            //TestAddressRegistration();
+            TestFixedAddressRegistration();
+            TestAddressRegistration();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
