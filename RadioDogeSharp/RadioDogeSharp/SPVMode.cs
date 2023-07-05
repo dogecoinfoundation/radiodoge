@@ -10,6 +10,7 @@ namespace RadioDoge
     {
         private SPVNodeManager spv;
         private readonly string spvDefaultCommand = "-c -b -d -a \"D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\" -p scan";
+        private readonly bool runInOwnWindow = true;
 
         private void ProcessSPVCommand(int commandValue)
         {
@@ -17,8 +18,10 @@ namespace RadioDoge
             switch (commandType)
             {
                 case SPVFunctions.StartSPV:
-                    bool runInOwnWindow = true;
-                    spv = new SPVNodeManager(runInOwnWindow, spvDefaultCommand);
+                    if (spv == null)
+                    {
+                        spv = new SPVNodeManager(runInOwnWindow, spvDefaultCommand);
+                    }
                     bool runSuccess = spv.Start();
                     if (runSuccess && !runInOwnWindow)
                     {
