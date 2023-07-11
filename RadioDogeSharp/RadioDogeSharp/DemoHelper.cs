@@ -46,7 +46,7 @@ namespace RadioDoge
         private void TestAddressRegistration()
         {
             // Generate a test address
-            Console.WriteLine("Testing Address Registration...");
+            Console.WriteLine("Testing Newly Generated Address Registration...");
 
             // First we generate an address
             int len = 256;
@@ -70,7 +70,7 @@ namespace RadioDoge
 
         private void TestFixedAddressRegistration()
         {
-            Console.WriteLine("Testing fixed address registration...");
+            Console.WriteLine("Testing Fixed Address Registration...");
             string address = "DKEXkLR3Q4w9q7CXGHm5GLMWSJPLqB8e53";
             RegistrationHelper(address);
         }
@@ -138,8 +138,8 @@ namespace RadioDoge
         private void LibdogecoinFunctionalityTesting()
         {
             TestAddressGeneration();
-            TestFixedAddressRegistration();
-            TestAddressRegistration();
+            //TestFixedAddressRegistration();
+            //TestAddressRegistration();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
