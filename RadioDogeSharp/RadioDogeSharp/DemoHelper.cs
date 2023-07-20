@@ -75,6 +75,24 @@ namespace RadioDoge
             RegistrationHelper(address);
         }
 
+        /// <summary>
+        /// Tests out LibDogecoin unregistration functions
+        /// </summary>
+        private void TestAddressRemoval()
+        {
+            Console.WriteLine("Testing Unregistration of Address...");
+            string unregisterAddress = "";
+            bool success = LibDogecoin.UnregisterWatchAddress(unregisterAddress);
+            if (success)
+            {
+                Console.WriteLine($"Unregistration of {unregisterAddress} successful!");
+            }
+            else
+            {
+                Console.WriteLine($"ERROR: Failed to unregister {unregisterAddress}");
+            }
+        }
+
         private void RegistrationHelper(string address)
         {
             Console.WriteLine($"Attempting to register address: {address}");
@@ -140,6 +158,7 @@ namespace RadioDoge
             TestAddressGeneration();
             //TestFixedAddressRegistration();
             //TestAddressRegistration();
+            TestAddressRemoval();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
