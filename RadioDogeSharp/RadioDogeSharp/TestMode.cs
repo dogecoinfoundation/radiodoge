@@ -48,6 +48,9 @@ namespace RadioDoge
                     displayCommand[2] = (byte)DisplayType.RadioDogeLogo;
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
                     return;
+                case TestFunctions.LibDogecoinTest:
+                    LibdogecoinFunctionalityTesting();
+                    break;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;

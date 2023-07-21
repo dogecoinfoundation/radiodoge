@@ -71,6 +71,7 @@
         SendSinglePacket,
         SendCountingTest,
         DisplayTest,
+        LibDogecoinTest,
     }
 
     internal enum SPVFunctions
