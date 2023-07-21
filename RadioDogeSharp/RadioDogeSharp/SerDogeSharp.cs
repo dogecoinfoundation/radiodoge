@@ -12,7 +12,7 @@ namespace RadioDoge
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
         private bool isLinuxOS = false;
         private const bool DEMO_MODE = true;
-        private const bool TEST_LIBDOGECOIN = false;
+        private const bool TEST_LIBDOGECOIN = true;
         private SerialPortManager portManager;
 
         public void Execute()

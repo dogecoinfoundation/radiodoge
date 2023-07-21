@@ -81,7 +81,7 @@ namespace RadioDoge
         private void TestAddressRemoval()
         {
             Console.WriteLine("Testing Unregistration of Address...");
-            string unregisterAddress = "";
+            string unregisterAddress = "DQq12LPCiE7ZiFNuzvHE2kF7PEcva8bZ7N";
             bool success = LibDogecoin.UnregisterWatchAddress(unregisterAddress);
             if (success)
             {
@@ -158,7 +158,7 @@ namespace RadioDoge
             TestAddressGeneration();
             //TestFixedAddressRegistration();
             //TestAddressRegistration();
-            TestAddressRemoval();
+            //TestAddressRemoval();
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
