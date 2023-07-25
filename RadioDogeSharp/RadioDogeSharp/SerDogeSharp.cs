@@ -31,6 +31,7 @@ namespace RadioDoge
             }
 
             // Set up the serial port manager
+            
             portManager = new SerialPortManager();
             portManager.RegisterDogeProcessor(ProcessDogePayload);
             if (portManager.SetupSerialConnection())
