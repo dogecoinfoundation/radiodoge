@@ -6,7 +6,7 @@ namespace RadioDoge
     {
         private NodeAddress demoHostAddress = new NodeAddress(10, 0, 1);
         private NodeAddress demoDestinationAddress = new NodeAddress(10, 0, 2);
-        
+
         private void DemoNodeSetup()
         {
             Console.WriteLine($"Setting up node address: {demoHostAddress.ToString()}");
@@ -146,6 +146,37 @@ namespace RadioDoge
             Console.WriteLine($"Converted Test amount: {convertedString}\n");
         }
 
+        private bool CheckForWalletAndHeaderFiles()
+        {
+            PrintTestTitle("Wallet and Header File Test");
+            bool verdict = true;
+            string walletFilename = "main_wallet.db";
+            string headersFilename = "main_headers.db";
+            Console.WriteLine("Checking for database files...");
+            //Check for the wallet file first
+            if (!File.Exists(walletFilename))
+            {
+                Console.WriteLine($"Unable to find {walletFilename}");
+                verdict = false;
+            }
+            else
+            {
+                Console.WriteLine($"Wallet file {walletFilename} found!");
+            }
+
+            if (!File.Exists(headersFilename))
+            {
+                Console.WriteLine($"Unable to find {headersFilename}");
+                verdict = false;
+            }
+            else
+            {
+                Console.WriteLine($"Headers file {headersFilename} found!");
+            }
+
+            return verdict;
+        }
+
         private void TestGetUTXOs()
         {
             PrintTestTitle("UTXO Test");
@@ -178,7 +209,7 @@ namespace RadioDoge
             Console.WriteLine(border);
             StringBuilder titleBuilder = new StringBuilder();
             int titleLength = testTitle.Length;
-            int sideLength = (borderLength - titleLength) /2;
+            int sideLength = (borderLength - titleLength) / 2;
             titleBuilder.Append("#");
             for (int i = 0; i < sideLength; i++)
             {
@@ -209,6 +240,7 @@ namespace RadioDoge
             TestBalanceInquiry();
             TestKoinuConversion();
             TestGetUTXOs();
+            CheckForWalletAndHeaderFiles();
         }
     }
 }
