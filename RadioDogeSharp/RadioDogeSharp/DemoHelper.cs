@@ -19,7 +19,7 @@ namespace RadioDoge
 
         private void TestAddressGeneration()
         {
-            Console.WriteLine("Testing DogeCoin Library...");
+            PrintTestTitle("LibDogecoin Address Generation Test");
             string privatekey;
             string publickey;
 
@@ -43,10 +43,9 @@ namespace RadioDoge
             Console.WriteLine("Dogecoin library test successful!\n");
         }
 
-        private void TestAddressRegistration()
+        private void TestGeneratedAddressRegistrationAndRemoval()
         {
-            // Generate a test address
-            Console.WriteLine("Testing Newly Generated Address Registration...");
+            PrintTestTitle("Generated Address Registration and Removal Test");
 
             // First we generate an address
             int len = 256;
@@ -66,11 +65,24 @@ namespace RadioDoge
             string publickey = pubkey.ToString();
             Console.WriteLine($"Registering Address: {publickey}");
             RegistrationHelper(publickey);
+
+            // Once registered we will now remove the address
+            Console.WriteLine($"Removing Registration: {publickey}");
+            bool success = LibDogecoin.UnregisterWatchAddress(publickey);
+            if (success)
+            {
+                Console.WriteLine($"Unregistration of generated address {publickey} successful!");
+            }
+            else
+            {
+                Console.WriteLine($"ERROR: Failed to unregister generated address {publickey}");
+            }
+            Console.WriteLine("");
         }
 
         private void TestFixedAddressRegistration()
         {
-            Console.WriteLine("Testing Fixed Address Registration...");
+            PrintTestTitle("Fixed Address Registration Test");
             string address = "DKEXkLR3Q4w9q7CXGHm5GLMWSJPLqB8e53";
             RegistrationHelper(address);
         }
@@ -78,10 +90,11 @@ namespace RadioDoge
         /// <summary>
         /// Tests out LibDogecoin unregistration functions
         /// </summary>
-        private void TestAddressRemoval()
+        private void TestFixedAddressRemoval()
         {
-            Console.WriteLine("Testing Unregistration of Address...");
+            PrintTestTitle("Fixed Address Registration Removal Test");
             string unregisterAddress = "DKEXkLR3Q4w9q7CXGHm5GLMWSJPLqB8e53";
+            //string unregisterAddress = testAddresses[0];
             bool success = LibDogecoin.UnregisterWatchAddress(unregisterAddress);
             if (success)
             {
@@ -91,6 +104,7 @@ namespace RadioDoge
             {
                 Console.WriteLine($"ERROR: Failed to unregister {unregisterAddress}");
             }
+            Console.WriteLine("");
         }
 
         private void RegistrationHelper(string address)
@@ -105,11 +119,12 @@ namespace RadioDoge
             {
                 Console.WriteLine($"Failed to register address! {address}");
             }
+            Console.WriteLine();
         }
 
         private void TestBalanceInquiry()
         {
-            Console.WriteLine("Balance Inquiry Test");
+            PrintTestTitle("Balance Inquiry Test");
             for (int i = 0; i < testAddresses.Length; i++)
             {
                 string currTestAddress = testAddresses[i];
@@ -117,14 +132,14 @@ namespace RadioDoge
                 UInt64 value = LibDogecoin.GetBalance(currTestAddress);
                 Console.WriteLine($"Balance Value: {value}");
                 string balanceString = LibDogecoin.GetBalanceString(currTestAddress);
-                Console.WriteLine($"Balance String: {balanceString}");
+                Console.WriteLine($"Balance String: {balanceString}\n");
             }
         }
 
         private void TestKoinuConversion()
         {
             // Test converting koinu amount to string
-            Console.WriteLine("\nTesting Koinu to Coins conversion...");
+            PrintTestTitle("Koinu to Coins Conversion Test");
             UInt64 testBalance = 123456789;
             bool result = LibDogecoin.ConvertKoinuAmountToString(testBalance, out string convertedString);
             Console.WriteLine($"Original Test amount: {testBalance} (Koinu)");
@@ -133,6 +148,9 @@ namespace RadioDoge
 
         private void TestGetUTXOs()
         {
+            PrintTestTitle("UTXO Test");
+            string border = "-----------------------------";
+            Console.WriteLine(border);
             for (int i = 0; i < testAddresses.Length; i++)
             {
                 string address = testAddresses[i];
@@ -149,19 +167,48 @@ namespace RadioDoge
                 {
                     Console.WriteLine($"No UTXOs found for {address}");
                 }
-                Console.WriteLine("\n");
+                Console.WriteLine(border);
             }
+        }
+
+        private void PrintTestTitle(string testTitle)
+        {
+            string border = "########################################################";
+            int borderLength = border.Length - 2;
+            Console.WriteLine(border);
+            StringBuilder titleBuilder = new StringBuilder();
+            int titleLength = testTitle.Length;
+            int sideLength = (borderLength - titleLength) /2;
+            titleBuilder.Append("#");
+            for (int i = 0; i < sideLength; i++)
+            {
+                titleBuilder.Append(" ");
+            }
+            titleBuilder.Append(testTitle);
+            for (int i = 0; i < sideLength; i++)
+            {
+                titleBuilder.Append(" ");
+            }
+
+            // Add in another space if there is an odd number of characters in the title
+            if (titleLength % 2 == 1)
+            {
+                titleBuilder.Append(" ");
+            }
+            titleBuilder.Append("#");
+            Console.WriteLine(titleBuilder.ToString());
+            Console.WriteLine(border);
         }
 
         private void LibdogecoinFunctionalityTesting()
         {
-            //TestAddressGeneration();
-            //TestFixedAddressRegistration();
-            //TestAddressRegistration();
-            TestAddressRemoval();
-            //TestBalanceInquiry();
-            //TestKoinuConversion();
-            //TestGetUTXOs();
+            TestAddressGeneration();
+            TestGeneratedAddressRegistrationAndRemoval();
+            TestFixedAddressRegistration();
+            TestFixedAddressRemoval();
+            TestBalanceInquiry();
+            TestKoinuConversion();
+            TestGetUTXOs();
         }
     }
 }
