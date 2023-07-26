@@ -233,14 +233,20 @@ namespace RadioDoge
 
         private void LibdogecoinFunctionalityTesting()
         {
-            TestAddressGeneration();
-            TestGeneratedAddressRegistrationAndRemoval();
-            TestFixedAddressRegistration();
-            TestFixedAddressRemoval();
-            TestBalanceInquiry();
-            TestKoinuConversion();
-            TestGetUTXOs();
-            CheckForWalletAndHeaderFiles();
+            if (CheckForWalletAndHeaderFiles())
+            {
+                TestAddressGeneration();
+                TestGeneratedAddressRegistrationAndRemoval();
+                TestFixedAddressRegistration();
+                TestFixedAddressRemoval();
+                TestBalanceInquiry();
+                TestKoinuConversion();
+                TestGetUTXOs();
+            }
+            else
+            {
+                ConsoleHelper.WriteEmphasizedLine("ERROR: Unable to perform all tests without both database files!", ConsoleColor.Red);
+            }
         }
     }
 }
