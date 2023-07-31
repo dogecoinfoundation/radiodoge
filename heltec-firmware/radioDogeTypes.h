@@ -22,6 +22,7 @@ enum serialCommand {
   PING_REQUEST,
   MESSAGE_REQUEST,
   HARDWARE_INFO = 63,        //0x3f = '?'
+  BROADCAST_MESSAGE = 98, // 0x62 = 'b'
   DISPLAY_CONTROL = 100, // 0x64 = 'd'
   HOST_FORMED_PACKET = 104,  //0x68 = 'h'
   MULTIPART_PACKET = 109, // 0x6D = 'm'

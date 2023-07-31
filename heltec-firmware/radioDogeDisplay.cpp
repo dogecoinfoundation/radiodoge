@@ -97,6 +97,9 @@ void DisplayCommandAndControl(uint8_t commandVal) {
     case HARDWARE_INFO:
       commandTypeString = "Get Hardware Info";
       break;
+    case BROADCAST_MESSAGE:
+      commandTypeString = "Broadcast Message";
+      break;
     case DISPLAY_CONTROL:
       commandTypeString = "Display Control";
       break;
@@ -118,6 +121,16 @@ void DisplayCommandAndControl(uint8_t commandVal) {
 void DisplayTXMessage(String toDisplay, nodeAddress destNode) {
   oledDisplay.clear();
   sprintf(displayBuf, "Sending to %d.%d.%d:", destNode.region, destNode.community, destNode.node);
+  oledDisplay.drawString(0, 5, displayBuf);
+  oledDisplay.drawString(0, MIDDLE_OF_SCREEN, toDisplay);
+  oledDisplay.display();
+}
+
+// Display a received broadcast message on the module's screen
+void DisplayBroadcastMessage(String toDisplay, nodeAddress sendingNode)
+{
+  oledDisplay.clear();
+  sprintf(displayBuf, "Broadcast from %d.%d.%d:", sendingNode.region, sendingNode.community, sendingNode.node);
   oledDisplay.drawString(0, 5, displayBuf);
   oledDisplay.drawString(0, MIDDLE_OF_SCREEN, toDisplay);
   oledDisplay.display();

@@ -33,6 +33,8 @@ void DisplayCommandAndControl(uint8_t commandVal);
 void DisplayTXMessage(String toDisplay, nodeAddress destNode);
 // Display a received message on the module's screen
 void DisplayRXMessage(String rxMessage, nodeAddress sender);
+// Display a received broadcast message on the module's screen
+void DisplayBroadcastMessage(String toDisplay, nodeAddress sendingNode);
 // Display the modules local address on the screen
 void DisplayLocalAddress(nodeAddress localAddress);
 

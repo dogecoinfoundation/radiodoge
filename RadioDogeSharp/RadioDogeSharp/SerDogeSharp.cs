@@ -10,6 +10,7 @@ namespace RadioDoge
     {
         private NodeAddress localAddress = new NodeAddress(10, 0, 3);
         private NodeAddress destinationAddress = new NodeAddress(10, 0, 1);
+        private NodeAddress broadcastAddress = new NodeAddress(255, 255, 255);
         private bool isLinuxOS = false;
         private const bool DEMO_MODE = true;
         private const bool TEST_LIBDOGECOIN_ON_STARTUP = false;

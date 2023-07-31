@@ -8,6 +8,7 @@
         Ping,
         Message,
         HardwareInfo = 0x3f, //Translates to sending '?'
+        BroadcastMessage = 0x62, // Translates to sending 'b'
         DisplayControl = 0x64, // Translates to sending 'd'
         HostFormedPacket = 0x68, // Translates to sending 'h'
         MultipartPacket = 0x6D, // Translates to sending 'm'

@@ -146,6 +146,10 @@ namespace RadioDoge
             Console.WriteLine($"Converted Test amount: {convertedString}\n");
         }
 
+        /// <summary>
+        /// Check if both the wallet and main headers database files can be found in the program's directory
+        /// </summary>
+        /// <returns></returns>
         private bool CheckForWalletAndHeaderFiles()
         {
             PrintTestTitle("Wallet and Header File Test");
@@ -153,7 +157,8 @@ namespace RadioDoge
             string walletFilename = "main_wallet.db";
             string headersFilename = "main_headers.db";
             Console.WriteLine("Checking for database files...");
-            //Check for the wallet file first
+
+            // Check for the wallet file first
             if (!File.Exists(walletFilename))
             {
                 Console.WriteLine($"Unable to find {walletFilename}");
@@ -164,6 +169,7 @@ namespace RadioDoge
                 Console.WriteLine($"Wallet file {walletFilename} found!");
             }
 
+            // Check for the headers file
             if (!File.Exists(headersFilename))
             {
                 Console.WriteLine($"Unable to find {headersFilename}");
@@ -202,6 +208,10 @@ namespace RadioDoge
             }
         }
 
+        /// <summary>
+        /// Helper function for printing a test's title with added borders
+        /// </summary>
+        /// <param name="testTitle"></param>
         private void PrintTestTitle(string testTitle)
         {
             string border = "########################################################";

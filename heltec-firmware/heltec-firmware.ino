@@ -226,6 +226,14 @@ void SetDestinationFromSerialBuffer(int offset) {
   dest.node = serialBuf[offset + 2];
 }
 
+// Set the destination to the global broadcast / reserved address for the next transmission
+void SetDestinationAsBroadcast()
+{
+  dest.region = 255;
+  dest.community = 255;
+  dest.node = 255;
+}
+
 // Extracts the address of the sending node from the received packet buffer
 void SetSenderAddress()
 {
@@ -375,6 +383,12 @@ void HostSerialRead() {
       //Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
       SendHardwareInfoToHost();
       break;
+    case BROADCAST_MESSAGE:
+      SetDestinationAsBroadcast();
+      DisplayTXMessage("Broadcast!", dest);
+      Radio.Send(serialBuf, payloadSize);
+      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
+      break;
     case DISPLAY_CONTROL:
       ProcessDisplayControl(payloadSize);
       Serial.write(hostACK, HOST_ACK_NACK_SIZE);
@@ -493,7 +507,14 @@ void ParseReceivedMessage() {
         //Serial.println("wat rcv?");
         break;
     }
-  } else {
+  } 
+  else if (CheckIfPacketIsGlobalBroadcast()){
+    // Now that we know that the packet is a global broadcast...
+    // @TODO get type code
+    SetSenderAddress();
+    DisplayBroadcastMessage("CUSTOM MESSAGE", senderAddress);
+  }
+  else {
     //Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
   }
 }
@@ -501,6 +522,12 @@ void ParseReceivedMessage() {
 // Checks to see if the received packet's destination is the same as the local address
 bool CheckIfPacketForMe() {
   return (local.region == rxPacket[5]) && (local.community == rxPacket[6]) && (local.node == rxPacket[7]);
+}
+
+// Checks to see if the received packet's destination is intended for every listening node
+bool CheckIfPacketIsGlobalBroadcast()
+{
+  return (255 == rxPacket[5]) && (255 == rxPacket[6]) && (255 == rxPacket[7]);
 }
 
 // Extract the payload message from the given buffer (assists with displaying on screen)
