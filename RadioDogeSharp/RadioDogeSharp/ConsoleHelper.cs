@@ -26,9 +26,8 @@ namespace RadioDoge
                 // Print options
                 WriteEmphasizedLine("MUCH SELECT (0-3):", ConsoleColor.Yellow);
                 Console.WriteLine("0: LoRa Setup Mode");
-                Console.WriteLine("1: Doge Mode");
-                Console.WriteLine("2: SPV Mode");
-                Console.WriteLine("3: Test Mode");
+                Console.WriteLine("1: SPV Mode");
+                Console.WriteLine("2: Test Mode");
                 Console.WriteLine($"Enter 'quit' to exit the program");
 
                 string userInput = Console.ReadLine();
@@ -38,7 +37,7 @@ namespace RadioDoge
                 }
 
                 bool numParseSuccess = int.TryParse(userInput, out int selection);
-                if (numParseSuccess && (selection == (int)ModeType.LoRaSetup || selection == (int)ModeType.Doge || selection == (int)ModeType.SPV || selection == (int)ModeType.Test))
+                if (numParseSuccess && (selection == (int)ModeType.LoRaSetup || selection == (int)ModeType.SPV || selection == (int)ModeType.Test))
                 {
                     return (ModeType)selection;
                 }

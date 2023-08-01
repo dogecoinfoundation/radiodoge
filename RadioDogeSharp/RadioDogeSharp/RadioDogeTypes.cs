@@ -65,7 +65,6 @@
     internal enum ModeType
     {
         LoRaSetup,
-        Doge,
         SPV,
         Test,
         Quit,

@@ -59,9 +59,6 @@ namespace RadioDoge
                     case ModeType.LoRaSetup:
                         EnterMode(PrintSerialSetupCommandHelp, SendSetupCommand);
                         break;
-                    case ModeType.Doge:
-                        EnterMode(PrintDogeCommandHelp, SendDogeCommand);
-                        break;
                     case ModeType.SPV:
                         EnterMode(PrintSPVModeHelp, ProcessSPVCommand);
                         break;
