@@ -15,6 +15,12 @@
         ResultCode = 0xFE
     }
 
+    internal enum BroadCastType
+    {
+        HubAnnouncement,
+        NodeAnnouncement,
+    }
+
     internal enum DisplayType
     {
         Custom,
@@ -71,6 +77,7 @@
         SendMultipartPacket,
         SendSinglePacket,
         SendCountingTest,
+        SendBroadcastTest,
         DisplayTest,
         LibDogecoinTest,
     }

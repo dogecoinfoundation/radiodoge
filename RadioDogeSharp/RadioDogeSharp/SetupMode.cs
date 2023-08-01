@@ -71,14 +71,6 @@ namespace RadioDoge
                 case SerialCommandType.HardwareInfo:
                     commandBytes.AddRange(PacketHelper.CreateCommandHeader((byte)commandType, 0));
                     break;
-                case SerialCommandType.BroadcastMessage:
-                    byte[] broadcastHeader = PacketHelper.CreateCommandHeader((byte)SerialCommandType.BroadcastMessage, 7);
-                    commandBytes.AddRange(broadcastHeader);
-                    // @TODO send some other byte that indicates broadcast type
-                    commandBytes.Add((byte)0);
-                    commandBytes.AddRange(localAddress.ToByteArray());
-                    commandBytes.AddRange(broadcastAddress.ToByteArray());
-                    break;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;

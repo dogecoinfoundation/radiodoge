@@ -58,7 +58,6 @@ namespace RadioDoge
         private void SendDogeCommand(int commandValue)
         {
             DogeCommandType dogeCommandType = (DogeCommandType)commandValue;
-            List<byte> commandBytes = new List<byte>();
             ConsoleHelper.WriteEmphasizedLine($"Sending Command: {dogeCommandType}", ConsoleColor.Yellow);
             switch (dogeCommandType)
             {
@@ -67,14 +66,11 @@ namespace RadioDoge
                     return;
                 case DogeCommandType.RequestBalance:
                     RequestDogeCoinBalance(destinationAddress, Encoding.ASCII.GetBytes(testAddresses[0]));
-                    break;
+                    return;
                 default:
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;
             }
-            byte[] commandToSend = commandBytes.ToArray();
-            ConsoleHelper.PrintCommandBytes(commandToSend);
-            portManager.WriteToPort(commandToSend, 0, commandToSend.Length);
         }
 
         

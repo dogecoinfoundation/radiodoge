@@ -15,6 +15,11 @@ enum displayType{
   COIN_ANIMATION_DISPLAY
 };
 
+enum broadcastType{
+HUB_ANNOUNCEMENT,
+NODE_ANNOUNCEMENT
+};
+
 enum serialCommand {
   NONE,
   ADDRESS_GET,

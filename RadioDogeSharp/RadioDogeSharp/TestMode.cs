@@ -31,6 +31,10 @@ namespace RadioDoge
                     }
                     portManager.SendMultipartPacket(localAddress, destinationAddress, countBytes);
                     return;
+                case TestFunctions.SendBroadcastTest:
+                    byte[] broadcastPayload = new byte[] { (byte)BroadCastType.HubAnnouncement };
+                    portManager.SendPacket(localAddress, broadcastAddress, broadcastPayload);
+                    return;
                 case TestFunctions.DisplayTest:
                     // Display Logo
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };

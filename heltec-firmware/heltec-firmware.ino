@@ -383,12 +383,6 @@ void HostSerialRead() {
       //Serial.printf("RD HT V%d FW01\n", HELTEC_BOARD_VERSION);
       SendHardwareInfoToHost();
       break;
-    case BROADCAST_MESSAGE:
-      SetDestinationAsBroadcast();
-      DisplayTXMessage("Broadcast!", dest);
-      Radio.Send(serialBuf, payloadSize);
-      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
-      break;
     case DISPLAY_CONTROL:
       ProcessDisplayControl(payloadSize);
       Serial.write(hostACK, HOST_ACK_NACK_SIZE);
@@ -510,9 +504,12 @@ void ParseReceivedMessage() {
   } 
   else if (CheckIfPacketIsGlobalBroadcast()){
     // Now that we know that the packet is a global broadcast...
-    // @TODO get type code
     SetSenderAddress();
-    DisplayBroadcastMessage("CUSTOM MESSAGE", senderAddress);
+    DisplayBroadcastMessage("Broadcast Received!", senderAddress);
+    // Check broadcast type
+    // @TODO
+    // We will just pass on the broadcast message directly to the host
+    Serial.write(rxPacket, rxSize);
   }
   else {
     //Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
