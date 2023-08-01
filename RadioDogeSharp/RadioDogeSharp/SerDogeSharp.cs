@@ -15,6 +15,7 @@ namespace RadioDoge
         private const bool DEMO_MODE = true;
         private const bool TEST_LIBDOGECOIN_ON_STARTUP = false;
         private SerialPortManager portManager;
+        private const int BROADCAST_FREQUENCY_SECONDS = 300; // 5 minutes between broadcasts
 
         public void Execute()
         {
@@ -41,6 +42,7 @@ namespace RadioDoge
                 {
                     DemoNodeSetup();
                 }
+                StartPeriodicHubBroadcasts(TimeSpan.FromSeconds(BROADCAST_FREQUENCY_SECONDS));
                 ModeSelectionLoop();
                 portManager.ClosePort();
             }
@@ -142,6 +144,22 @@ namespace RadioDoge
                 // Delay in firmware would need to be reduced to further reduce this delay
                 Thread.Sleep(2000);
             }
+        }
+
+        private async Task StartPeriodicHubBroadcasts(TimeSpan timeSpan)
+        {
+            var periodicTimer = new PeriodicTimer(timeSpan);
+            while (await periodicTimer.WaitForNextTickAsync())
+            {
+                Console.WriteLine("Sending Broadcast!");
+                SendBroadcast();
+            }
+        }
+
+        private void SendBroadcast()
+        {
+            byte[] broadcastPayload = new byte[] { (byte)BroadCastType.HubAnnouncement };
+            portManager.SendPacket(localAddress, broadcastAddress, broadcastPayload);
         }
     }
 }
