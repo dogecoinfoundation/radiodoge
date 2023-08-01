@@ -148,16 +148,21 @@ namespace RadioDoge
 
         private async Task StartPeriodicHubBroadcasts(TimeSpan timeSpan)
         {
-            var periodicTimer = new PeriodicTimer(timeSpan);
+            ConsoleHelper.WriteEmphasizedLine($"Starting periodic broadcasts! Broadcasting every {BROADCAST_FREQUENCY_SECONDS} seconds...", ConsoleColor.Blue);
+            // Send an initial broadcast
+            SendBroadcast();
+
+            // Start the timer and continue to send broadcast messages every x seconds
+            PeriodicTimer periodicTimer = new PeriodicTimer(timeSpan);
             while (await periodicTimer.WaitForNextTickAsync())
             {
-                Console.WriteLine("Sending Broadcast!");
                 SendBroadcast();
             }
         }
 
         private void SendBroadcast()
         {
+            ConsoleHelper.WriteEmphasizedLine("Sending Broadcast!", ConsoleColor.Blue);
             byte[] broadcastPayload = new byte[] { (byte)BroadCastType.HubAnnouncement };
             portManager.SendPacket(localAddress, broadcastAddress, broadcastPayload);
         }

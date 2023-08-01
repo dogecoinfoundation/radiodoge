@@ -54,7 +54,7 @@ namespace RadioDoge
         /// <param name="commandToSend"></param>
         internal static void PrintCommandBytes(byte[] commandToSend)
         {
-            Console.Write($"Host sent {commandToSend.Length - 1} bytes: ");
+            Console.Write($"Host sent {commandToSend.Length - 1} bytes to LoRa module: ");
             for (int i = 0; i < commandToSend.Length; i++)
             {
                 Console.Write(commandToSend[i].ToString("X2") + " ");
