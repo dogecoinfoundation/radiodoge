@@ -145,6 +145,14 @@ void DisplayRXMessage(String rxMessage, nodeAddress sender) {
   oledDisplay.display();
 }
 
+// Display a custom string on the OLED
+void DisplayCustomStringMessage(String customMessage, int yOffset)
+{
+  oledDisplay.clear();
+  oledDisplay.drawString(0, yOffset, customMessage);
+  oledDisplay.display();
+}
+
 // Display the modules local address on the screen
 void DisplayLocalAddress(nodeAddress localAddress) {
   oledDisplay.clear();

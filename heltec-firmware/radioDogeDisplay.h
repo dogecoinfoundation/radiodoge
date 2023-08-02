@@ -35,6 +35,8 @@ void DisplayTXMessage(String toDisplay, nodeAddress destNode);
 void DisplayRXMessage(String rxMessage, nodeAddress sender);
 // Display a received broadcast message on the module's screen
 void DisplayBroadcastMessage(String toDisplay, nodeAddress sendingNode);
+// Display a custom string on the OLED
+void DisplayCustomStringMessage(String customMessage, int yOffset);
 // Display the modules local address on the screen
 void DisplayLocalAddress(nodeAddress localAddress);
 

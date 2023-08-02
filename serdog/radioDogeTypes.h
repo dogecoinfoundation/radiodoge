@@ -19,7 +19,7 @@ enum serialCommand
 
 enum displayType
 {
-	CUSTOM_DISPLAY,
+	STRING_DISPLAY,
 	RADIO_DOGE_LOGO,
 	DOGE_ANIMATION,
 	COIN_ANIMATION

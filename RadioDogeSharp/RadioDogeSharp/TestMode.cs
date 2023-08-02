@@ -35,18 +35,21 @@ namespace RadioDoge
                     SendBroadcast();
                     return;
                 case TestFunctions.DisplayTest:
+                    // Display custom string
+                    DisplayCustomStringOnOLED("TEST CUSTOM STRING!!!\nSECOND LINE\nTHIRD LINE\nFOURTH LINE\nFIFTH LINE", 0);
+                    Thread.Sleep(4000);
                     // Display Logo
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
-                    Thread.Sleep(2000);
+                    Thread.Sleep(4000);
                     // Display doge animation
                     displayCommand[2] = (byte)DisplayType.DogeAnimation;
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
-                    Thread.Sleep(2000);
+                    Thread.Sleep(4000);
                     // Display coin animation
                     displayCommand[2] = (byte)DisplayType.CoinAnimation;
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
-                    Thread.Sleep(2000);
+                    Thread.Sleep(4000);
                     // Display logo again
                     displayCommand[2] = (byte)DisplayType.RadioDogeLogo;
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
@@ -58,6 +61,18 @@ namespace RadioDoge
                     ConsoleHelper.WriteEmphasizedLine("Unknown command", ConsoleColor.Red);
                     break;
             }
+        }
+
+        private void DisplayCustomStringOnOLED(string customDisplayMessage, int yOffset)
+        {
+            List<byte> commandPayload = new List<byte>();
+            int payloadLength = 2 + customDisplayMessage.Length;
+            byte[] commandHeader = new byte[] { (byte)SerialCommandType.DisplayControl, (byte)payloadLength, (byte)DisplayType.StringDisplay, (byte) yOffset };
+            commandPayload.AddRange(commandHeader);
+            byte[] convertedBytes = Encoding.ASCII.GetBytes(customDisplayMessage);
+            commandPayload.AddRange(convertedBytes);
+            byte[] commandBytes = commandPayload.ToArray();
+            portManager.WriteToPort(commandBytes, 0, commandBytes.Length);
         }
 
         private void PrintTestCommandHelp()

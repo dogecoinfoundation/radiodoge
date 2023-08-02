@@ -23,7 +23,7 @@
 
     internal enum DisplayType
     {
-        Custom,
+        StringDisplay,
         RadioDogeLogo,
         DogeAnimation,
         CoinAnimation

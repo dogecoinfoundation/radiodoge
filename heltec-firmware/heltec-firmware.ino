@@ -417,8 +417,20 @@ void ProcessDisplayControl(int payloadSize)
   // First byte of the payload/serial buffer will indicate what to display
   switch(serialBuf[0])
   {
-    case CUSTOM_DISPLAY:
-    // @TODO
+    case STRING_DISPLAY:
+    {
+      int yOffset = serialBuf[1];
+      int stringLength = payloadSize - 2;
+      char *extractedString = new char[stringLength + 1];
+      for (int i = 0; i < stringLength; i++) 
+      {
+        extractedString[i] = (char)serialBuf[i+2];
+      }
+      extractedString[stringLength] = '\0';
+      String displayString(extractedString);
+      DisplayCustomStringMessage(displayString, yOffset);
+      free(extractedString);
+    }
     break;
     case LOGO_DISPLAY:
     DrawRadioDogeLogo();
