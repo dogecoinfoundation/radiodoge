@@ -671,6 +671,27 @@ void manuallyAddUTXO()
 	numUTXOs++;
 }
 
+void manuallySetPrivateKey()
+{
+	printf("Manually setting private key\n");
+	printf("Please enter the private key:\n");
+	scanf("%s", loadedPrivateKey);
+}
+
+void manuallySetDogecoinAddress()
+{
+	printf("Manually setting the Dogecoin Address (public key)\n");
+	printf("Please enter the Dogecoin Address:\n");
+	scanf("%s", loadedDogeAddress);
+}
+
+void printLoadedKeys()
+{
+	printf("Loaded Key Information:\n");
+	printf("Pub Key:  %s\n", loadedDogeAddress);
+	printf("Priv Key: %s\n", loadedPrivateKey);
+}
+
 /// <summary>
 /// Enter into manual UTXO editing mode.
 /// This mode allows users to clear, add, and display stored UTXOs
@@ -696,6 +717,29 @@ void enterUTXOsEditingMode()
 			//Display UTXOs
 		case 3:
 			printAllUTXOs();
+			break;
+		}
+	}
+}
+
+void enterPrivPubKeyEditingMode()
+{
+	int userSelection = 0;
+	while (userSelection >= 0)
+	{
+		userSelection = getKeyEditingSelection();
+		switch (userSelection)
+		{
+			// Set dogecoin address
+		case 1:
+			manuallySetDogecoinAddress();
+			break;
+			// Set private key
+		case 2:
+			manuallySetPrivateKey();
+			break;
+		case 3:
+			printLoadedKeys();
 			break;
 		}
 	}
@@ -1446,6 +1490,9 @@ void enterDogeMode()
 			printf("\n");
 			break;
 		case 12:
+			enterPrivPubKeyEditingMode();
+			break;
+		case 13:
 			enterUTXOsEditingMode();
 			break;
 		}

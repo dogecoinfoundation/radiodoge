@@ -43,9 +43,10 @@ int getDogeModeSelection()
 	printf("9: Load Demo Dogecoin Address Pair\n");
 	printf("10: Load Destination Dogecoin Address\n");
 	printf("11: Set user pin\n");
-	printf("12: Manually edit UTXOs\n");
-	printf("13: Exit Doge Mode\n");
-	return userInputLoop(13);
+	printf("12: Manually edit Address\\Keys\n");
+	printf("13: Manually edit UTXOs\n");
+	printf("14: Exit Doge Mode\n");
+	return userInputLoop(14);
 }
 
 int getTestModeSelection()
@@ -77,6 +78,16 @@ int getManualUtxosEditingSelection()
 	printf("2: Add UTXO\n");
 	printf("3: Display UTXOs\n");
 	printf("4: Exit UTXO Editing\n");
+	return userInputLoop(4);
+}
+
+int getKeyEditingSelection()
+{
+	printf("\n### MUCH KEY EDIT SELECT ###\n");
+	printf("1: Set Dogecoin Address (Public Key)\n");
+	printf("2: Set Private Key\n");
+	printf("3: Display Loaded Info\n");
+	printf("4: Exit Key Editing\n");
 	return userInputLoop(4);
 }
 
