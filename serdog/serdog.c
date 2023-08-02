@@ -661,17 +661,17 @@ void enterUTXOsEditingMode()
 		userSelection = getManualUtxosEditingSelection();
 		switch (userSelection)
 		{
-		// Clear UTXOs
+			// Clear UTXOs
 		case 1:
 			// Just setting this to 0 will essentially "clear" the UTXO storage as any additional UTXOs will overwrite old ones
 			numUTXOs = 0;
 			printf("The stored UTXOs have been cleared!\n");
 			break;
-		// Add UTXO
+			// Add UTXO
 		case 2:
 			manuallyAddUTXO();
 			break;
-		//Display UTXOs
+			//Display UTXOs
 		case 3:
 			printAllUTXOs();
 			break;
@@ -801,6 +801,25 @@ bool createTransaction()
 	currentTransaction = get_raw_transaction(curr_tx_index);
 	clear_transaction(curr_tx_index);
 	return true;
+}
+
+void processBroadcastMessage(uint8_t broadcastType, uint8_t* senderAddr)
+{
+	switch (broadcastType)
+	{
+	case HUB_ANNOUNCEMENT:
+		printf("Hub announced address!\n");
+		printNodeAddress("Hub", senderAddr);
+		break;
+	case NODE_ANNOUNCEMENT:
+		printf("Node announced address!\n");
+		printNodeAddress("Announced", senderAddr);
+		break;
+	default:
+		printf("Unknown broadcast type: %i\n", broadcastType);
+		printNodeAddress("Broadcasted From", senderAddr);
+		break;
+	}
 }
 
 void* serialPollThread(void* threadid)
@@ -1088,8 +1107,12 @@ void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize
 		printf("Transaction result received!\n");
 		processTransactionResult(payloadIn + 1, payloadSize);
 		break;
+	case BROADCAST_MESSAGE:
+		printf("Broadcast received!\n");
+		processBroadcastMessage(payloadIn[1], senderAddr);
+		break;
 	default:
-		printf("Unknown payload received!\n");
+		printf("Unknown RadioDoge payload received!\n");
 		break;
 	}
 }
@@ -1209,7 +1232,7 @@ int testLib(char* addrbuffer)
 	//Generate a private key (WIF format) and a public key (p2pkh dogecoin address) for the main net.
 	generatePrivPubKeypair(keybuffer, addrbuffer, false);
 	//If the returned address starts with "d" then return good/true/"1".
-	return (1-(strncmp(addrbuffer, addrheader, 1)));
+	return (1 - (strncmp(addrbuffer, addrheader, 1)));
 }
 
 int sendDogeAddressTest(uint8_t* destAddr)
@@ -1575,7 +1598,7 @@ void loadFakeUTXOs()
 	currUTXOs[0].amount = amount0;
 	currUTXOs[0].txId[0] = '0';
 	currUTXOs[0].vout = 0;
-	
+
 	uint64_t amount1 = coins_to_koinu_str("50.15");
 	currUTXOs[1].amount = amount1;
 	currUTXOs[1].txId[0] = '1';
@@ -1661,7 +1684,7 @@ int main()
 	printf("\nChecking for libdogecoin integration...\n\n", NULL);
 
 	//start the libdogecoin elliptical crypto mem space
-	dogecoin_ecc_start(); 
+	dogecoin_ecc_start();
 
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
 	char returnedaddr[P2PKH_ADDR_STRINGLEN];
@@ -1669,7 +1692,7 @@ int main()
 	if (testLib(returnedaddr))
 	{
 		printf("Libdogecoin found.\n", NULL);
-	    printf("Libdogecoin TEST - randomly generated test addr : % s \n\n", returnedaddr);
+		printf("Libdogecoin TEST - randomly generated test addr : % s \n\n", returnedaddr);
 	}
 	else
 	{

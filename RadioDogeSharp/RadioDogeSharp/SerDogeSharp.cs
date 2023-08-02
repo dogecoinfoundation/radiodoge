@@ -163,7 +163,7 @@ namespace RadioDoge
         private void SendBroadcast()
         {
             ConsoleHelper.WriteEmphasizedLine("Sending Broadcast!", ConsoleColor.Blue);
-            byte[] broadcastPayload = new byte[] { (byte)BroadCastType.HubAnnouncement };
+            byte[] broadcastPayload = new byte[] { (byte) SerialCommandType.BroadcastMessage, (byte)BroadCastType.HubAnnouncement};
             portManager.SendPacket(localAddress, broadcastAddress, broadcastPayload);
         }
     }
