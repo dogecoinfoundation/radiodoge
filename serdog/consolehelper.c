@@ -23,7 +23,7 @@ int getSetupModeSelection()
 	printf("2: Set Local Node Address\n");
 	printf("3: Set Destination Node Address\n");
 	printf("4: Send Ping\n");
-	printf("5: Send Message\n");
+	printf("5: Send Broadcast\n");
 	printf("6: Get Hardware Information\n");
 	printf("7: Exit Setup Mode\n");
 	return userInputLoop(7);

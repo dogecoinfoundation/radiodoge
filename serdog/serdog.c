@@ -321,12 +321,22 @@ int cmdGetHardwareInfo()
 /// </summary>
 /// <param name="inAddr"></param>
 /// <returns></returns>
-int cmdSendPingCmd(uint8_t* inAddr)
+int cmdSendPing(uint8_t* inAddr)
 {
 	uint8_t cmdtype = PING_REQUEST;
-	int payloadsize = 3;
+	int payloadSize = 3;
 	uint8_t payload[3] = { inAddr[0],inAddr[1],inAddr[2] };
-	sendCommand(cmdtype, payloadsize, payload);
+	sendCommand(cmdtype, payloadSize, payload);
+};
+
+/// <summary>
+/// Send a broadcast of the node's address to any nodes/hubs in range
+/// </summary>
+/// <returns></returns>
+int cmdSendBroadcast()
+{
+	uint8_t broadcastPayload[2] = { BROADCAST_MESSAGE, NODE_ANNOUNCEMENT };
+	cmdSendMessage(myaddr, broadcastAddress, broadcastPayload, 2);
 };
 
 /// <summary>
@@ -1332,11 +1342,12 @@ void enterSetupMode()
 		case 4:
 			// Send ping
 			printNodeAddress("Sending Ping To", rmaddr);
-			cmdSendPingCmd(rmaddr);
+			cmdSendPing(rmaddr);
 			break;
 		case 5:
-			// Send Message
-			printf("Sending messages is not currently supported!\n");
+			// Send Node Broadcast
+			printf("Sending Broadcast!\n");
+			cmdSendBroadcast();
 			break;
 		case 6:
 			// Get Hardware information

@@ -34,6 +34,7 @@
 //node settings (for now)
 uint8_t myaddr[] = { 0x0A, 0x00, 0x02 };
 uint8_t rmaddr[] = { 0x0A, 0x00, 0x01 };
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF};
 
 int USB = 0;
 char* device = "/dev/ttyUSB0"; //autodetect this later via a known response string on the serport
