@@ -32,6 +32,7 @@
     internal enum DogeCommandType
     {
         Registration = 15,
+        BroadcastReceived = 98,
         GetDogeAddress = 120,
         SendDogeAddress = 240,
         GetUTXOs = 111,

@@ -48,8 +48,12 @@ namespace RadioDoge
                     Console.WriteLine("Servicing Transaction Request!");
                     ServiceTransactionRequest(senderAddress, payload);
                     break;
+                case DogeCommandType.BroadcastReceived:
+                    Console.WriteLine("Broadcast received!");
+                    ProcessReceivedBroadcast(senderAddress, payload);
+                    break;
                 default:
-                    Console.WriteLine("Unknown payload. Raw data:");
+                    Console.WriteLine("Unknown doge payload. Raw data:");
                     ConsoleHelper.PrintPayloadAsHex(payload);
                     break;
             }
@@ -73,7 +77,28 @@ namespace RadioDoge
             }
         }
 
-        
+        private void ProcessReceivedBroadcast(NodeAddress senderAddress, byte[] payload)
+        {
+            if (payload.Length < 2)
+            {
+                ConsoleHelper.WriteEmphasizedLine("ERROR: Broadcast packet was malformed!", ConsoleColor.Red);
+                return;
+            }
+
+            BroadCastType broadcastType = (BroadCastType)payload[1];
+            switch(broadcastType)
+            {
+                case BroadCastType.HubAnnouncement:
+                    Console.WriteLine($"Broadcasted Hub Address: {senderAddress}");
+                    break;
+                case BroadCastType.NodeAnnouncement:
+                    Console.WriteLine($"Broadcasted Node Address: {senderAddress}");
+                    break;
+                default:
+                    Console.WriteLine("Unknown broadcast type!");
+                    break;
+            }
+        }
 
         /// <summary>
         /// Send UTXOs for the specified Dogecoin address to a another node
