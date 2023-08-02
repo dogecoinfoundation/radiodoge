@@ -368,6 +368,18 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 	free(combinedPayload);
 };
 
+int cmdDisplayCustomStringOnOLED(char* displayString, int displayStringLen, uint8_t yOffset)
+{
+	int cmdType = DISPLAY_CONTROL;
+	size_t totalPayloadSize = displayStringLen + 2;
+	uint8_t* commandPayload = malloc(totalPayloadSize);
+	commandPayload[0] = STRING_DISPLAY;
+	commandPayload[1] = yOffset;
+	memcpy(commandPayload + 2, displayString, displayStringLen);
+	sendCommand(cmdType, totalPayloadSize, commandPayload);
+	free(commandPayload);
+}
+
 /// <summary>
 /// Request the stored Dogecoin address from a specific node.
 /// </summary>
@@ -1521,6 +1533,10 @@ void enterTestMode()
 /// </summary>
 void displayControlTest()
 {
+	// Try sending custom string
+	printf("Displaying custom string\n");
+	cmdDisplayCustomStringOnOLED("Hello", 5, 0);
+	sleep(5);
 	// No payload for this command
 	uint8_t cmdtype = DISPLAY_CONTROL;
 	uint8_t payload[1] = { (uint8_t)RADIO_DOGE_LOGO };
