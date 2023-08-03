@@ -65,9 +65,10 @@ int getDemoAddressSelection()
 	printf("1: D6JQ6C48u9yYYarubpzdn2tbfvEq12vqeY\n");
 	printf("2: DBcR32NXYtFy6p4nzSrnVVyYLjR42VxvwR\n");
 	printf("3: DGYrGxANmgjcoZ9xJWncHr6fuA6Y1ZQ56Y\n");
-	printf("4: Generate new test address\n");
-	printf("5: Exit Address Selection\n");
-	return userInputLoop(5);
+	printf("4: Manually Enter in Address\n");
+	printf("5: Generate New Test Address\n");
+	printf("6: Exit Address Selection\n");
+	return userInputLoop(6);
 }
 
 
@@ -86,9 +87,12 @@ int getKeyEditingSelection()
 	printf("\n### MUCH KEY EDIT SELECT ###\n");
 	printf("1: Set Dogecoin Address (Public Key)\n");
 	printf("2: Set Private Key\n");
-	printf("3: Display Loaded Info\n");
-	printf("4: Exit Key Editing\n");
-	return userInputLoop(4);
+	printf("3: Save Loaded Keys To File\n");
+	printf("4: Load Keys From File\n");
+	printf("5: Display Loaded Info\n");
+	printf("6: Clear Loaded Info\n");
+	printf("7: Exit Key Editing\n");
+	return userInputLoop(7);
 }
 
 void getUserSuppliedNodeAddress(uint8_t* address)

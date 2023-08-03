@@ -722,6 +722,10 @@ void enterUTXOsEditingMode()
 	}
 }
 
+/// <summary>
+/// Enter into manual key/address editing mode.
+/// This mode allows users to set the loaded dogecoin address and private key
+/// </summary>
 void enterPrivPubKeyEditingMode()
 {
 	int userSelection = 0;
@@ -730,16 +734,30 @@ void enterPrivPubKeyEditingMode()
 		userSelection = getKeyEditingSelection();
 		switch (userSelection)
 		{
-			// Set dogecoin address
 		case 1:
+			// Set dogecoin address
 			manuallySetDogecoinAddress();
 			break;
-			// Set private key
 		case 2:
+			// Set private key
 			manuallySetPrivateKey();
 			break;
 		case 3:
+			// Save loaded keys to file
+			saveDogecoinAddress("savedKeys", loadedDogeAddress, loadedPrivateKey);
+			break;
+		case 4:
+			// Load keys from file
+			loadDogecoinAddress("savedKeys", loadedDogeAddress, loadedPrivateKey);
+			break;
+		case 5:
+			// Print the loaded information
 			printLoadedKeys();
+			break;
+		case 6:
+			// Clear loaded info
+			memset(loadedDogeAddress, '\0', sizeof(loadedDogeAddress));
+			memset(loadedPrivateKey, '\0', sizeof(loadedPrivateKey));
 			break;
 		}
 	}
@@ -1519,6 +1537,11 @@ void LoadDestinationAddress(char* addressBuffer)
 		strcpy(addressBuffer, demo_address3);
 		break;
 	case 4:
+		printf("Manually setting the Destination Dogecoin Address (public key)\n");
+		printf("Please enter the Dogecoin Address:\n");
+		scanf("%s", addressBuffer);
+		break;
+	case 5:
 		createTestDogeAddress(addressBuffer, generatedPrivateKey);
 		break;
 	default:
@@ -1542,12 +1565,13 @@ void LoadDemoAddressPair()
 		loadDogecoinAddress(demoPair3, loadedDogeAddress, loadedPrivateKey);
 		break;
 	case 4:
+		manuallySetDogecoinAddress();
+		manuallySetPrivateKey();
+		break;
+	case 5:
 		createTestDogeAddress(loadedDogeAddress, loadedPrivateKey);
 		break;
 	}
-
-	// @TODO remove. Only used right now for debugging purposes
-	//printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedDogeAddress, loadedPrivateKey);
 }
 
 void enterTestMode()
