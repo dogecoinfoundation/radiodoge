@@ -12,7 +12,7 @@
 // Animation and display related constants
 #define ANIMATION_FRAME_DELAY 5
 #define MIDDLE_OF_SCREEN 27  // Assumes text is 10 pixels in length so half would be (64/2) - (10/2) = 27
-#define TEST_COIN_AMOUNT 420.69
+#define TEST_COIN_AMOUNT 1234.56
 
 void HeltecDisplayInit();
 // Display hardware information on the screen

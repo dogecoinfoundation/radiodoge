@@ -26,7 +26,9 @@
         StringDisplay,
         RadioDogeLogo,
         DogeAnimation,
-        CoinAnimation
+        CoinAnimation,
+        ReceivingCoins,
+        SendingCoins,
     }
 
     internal enum DogeCommandType

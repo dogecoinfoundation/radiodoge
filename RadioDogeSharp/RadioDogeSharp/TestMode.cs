@@ -38,6 +38,12 @@ namespace RadioDoge
                     // Display custom string
                     DisplayCustomStringOnOLED("TEST CUSTOM STRING!!!\nSECOND LINE\nTHIRD LINE\nFOURTH LINE\nFIFTH LINE", 0);
                     Thread.Sleep(4000);
+                    // Display receiving coins
+                    DisplayCoinTransaction(123.321f, false);
+                    Thread.Sleep(4000);
+                    // Display sending coins
+                    DisplayCoinTransaction(987.654f, true);
+                    Thread.Sleep(4000);
                     // Display Logo
                     byte[] displayCommand = new byte[] { (byte)SerialCommandType.DisplayControl, 1, (byte)DisplayType.RadioDogeLogo };
                     portManager.WriteToPort(displayCommand, 0, displayCommand.Length);
@@ -70,6 +76,19 @@ namespace RadioDoge
             byte[] commandHeader = new byte[] { (byte)SerialCommandType.DisplayControl, (byte)payloadLength, (byte)DisplayType.StringDisplay, (byte) yOffset };
             commandPayload.AddRange(commandHeader);
             byte[] convertedBytes = Encoding.ASCII.GetBytes(customDisplayMessage);
+            commandPayload.AddRange(convertedBytes);
+            byte[] commandBytes = commandPayload.ToArray();
+            portManager.WriteToPort(commandBytes, 0, commandBytes.Length);
+        }
+
+        private void DisplayCoinTransaction(float coinAmount, bool isSending)
+        {
+            List<byte> commandPayload = new List<byte>();
+            int payloadLength = 5;
+            DisplayType dType = isSending ? DisplayType.SendingCoins : DisplayType.ReceivingCoins;
+            byte[] commandHeader = new byte[] { (byte)SerialCommandType.DisplayControl, (byte)payloadLength, (byte)dType };
+            commandPayload.AddRange(commandHeader);
+            byte[] convertedBytes = BitConverter.GetBytes(coinAmount);
             commandPayload.AddRange(convertedBytes);
             byte[] commandBytes = commandPayload.ToArray();
             portManager.WriteToPort(commandBytes, 0, commandBytes.Length);

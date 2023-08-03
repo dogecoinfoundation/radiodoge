@@ -412,6 +412,24 @@ void HostSerialRead() {
   }
 }
 
+void ProcessCoinDisplay(int payloadSize)
+{
+  if (payloadSize < 5)
+  {
+    return;
+  }
+  float coinAmount = 0;
+  memcpy(&coinAmount, serialBuf + 1, sizeof(coinAmount));
+  if (serialBuf[0] == RECEIVING_DISPLAY)
+  {
+    DrawReceivingCoinsImage(coinAmount);
+  }
+  else if (serialBuf[0] == SENDING_DISPLAY)
+  {
+    DrawSendingCoinsImage(coinAmount);
+  }
+}
+
 void ProcessDisplayControl(int payloadSize)
 {
   // First byte of the payload/serial buffer will indicate what to display
@@ -440,6 +458,12 @@ void ProcessDisplayControl(int payloadSize)
     break;
     case COIN_ANIMATION_DISPLAY:
     CoinAnimation();
+    break;
+    case RECEIVING_DISPLAY:
+    ProcessCoinDisplay(payloadSize);
+    break;
+    case SENDING_DISPLAY:
+    ProcessCoinDisplay(payloadSize);
     break;
     default:
     // @TODO
