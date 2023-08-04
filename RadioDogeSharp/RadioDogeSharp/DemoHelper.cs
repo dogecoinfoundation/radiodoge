@@ -14,6 +14,7 @@ namespace RadioDoge
             CommandSetNodeAddress(demoHostAddress);
             // Assign demo destination address as the destination
             destinationAddress = demoDestinationAddress;
+            localAddress = demoHostAddress;
             Thread.Sleep(2500);
         }
 

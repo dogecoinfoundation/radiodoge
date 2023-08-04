@@ -15,7 +15,7 @@ namespace RadioDoge
                     ConsoleHelper.WriteEmphasizedLine($"{i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
                 }
                 // For now we don't want to have host formed packet or multipart controls in this mode
-                else if (i < 0x63)
+                else if (i < 0x3f)
                 {
                     ConsoleHelper.WriteEmphasizedLine($"{i} or {(char)i}: {(SerialCommandType)i}", ConsoleColor.Cyan);
                 }
