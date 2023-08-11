@@ -38,7 +38,8 @@ int openPort()
 	USB = open(device, O_RDWR | O_NOCTTY); //should be nonblock for polling
 	if (USB == -1)
 	{
-		fprintf(stderr, "Unable to open %s: error= %s\n\n", device, strerror(errno));
+		fprintf(stderr, "Unable to open %s: error= %s\n", device, strerror(errno));
+		printf("Please double check that the hardware is connected and restart the program!\n\n");
 		exit(EXIT_FAILURE);
 	}
 	else
@@ -1792,7 +1793,8 @@ void loadDemoPairFileHelper(int pairIndex)
 int main()
 {
 	printTextArtFile("asciiDoge.txt");
-	printf("\n\nWelcome to RadioDoge!\n\n");
+	printf("\n\n");
+	printStartScreen();
 	printf("Performing startup functions...\n");
 	// Start by attempting to setup serial communication
 	USB = 0;     // File descriptor set to zero.
@@ -1825,7 +1827,6 @@ int main()
 	}
 	printf("Libdogecoin initialization complete!\n");
 
-	printStartScreen();
 	createTestDogeAddress(loadedDogeAddress, generatedPrivateKey); // Initial test address 
 	if (demoMode)
 	{

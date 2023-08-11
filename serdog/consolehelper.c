@@ -4,6 +4,7 @@ void printStartScreen()
 {
 	printf("\nWelcome to RadioDoge! Press ENTER to continue...");
 	getchar();
+	printf("\n\n");
 }
 
 int getModeSelection()
