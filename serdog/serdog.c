@@ -179,6 +179,30 @@ int parsePortResponse(uint8_t respCmdType, size_t resplen, char* respbuf)
 };
 
 /// <summary>
+/// Opens up the supplied text art file and prints it to the screen
+/// </summary>
+/// <param name="filename"></param>
+/// <returns></returns>
+int printTextArtFile(char* filename)
+{
+	FILE* fptr = NULL;
+
+	if ((fptr = fopen(filename, "r")) == NULL)
+	{
+		fprintf(stderr, "Error opening %s\n", filename);
+		return -1;
+	}
+	char read_string[FILE_READ_STRING_LEN];
+
+	while (fgets(read_string, sizeof(read_string), fptr) != NULL)
+	{
+		printf("%s", read_string);
+	}
+	fclose(fptr);
+	return 0;
+}
+
+/// <summary>
 /// Helper function for sending a specific command and payload to the connected radio hardware.
 /// </summary>
 /// <param name=""></param>
@@ -1767,6 +1791,8 @@ void loadDemoPairFileHelper(int pairIndex)
 
 int main()
 {
+	printTextArtFile("asciiDoge.txt");
+	printf("\n\nWelcome to RadioDoge!\n\n");
 	printf("Performing startup functions...\n");
 	// Start by attempting to setup serial communication
 	USB = 0;     // File descriptor set to zero.

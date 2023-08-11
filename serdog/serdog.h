@@ -30,6 +30,7 @@
 #define MULTIPART_HDR_LEN 12
 #define MULTIPART_PIECE_INFO_LEN 4
 #define MAX_NUM_UTXOS 64
+#define FILE_READ_STRING_LEN 128
 
 //node settings (for now)
 uint8_t myaddr[] = { 0x0A, 0x00, 0x02 };
