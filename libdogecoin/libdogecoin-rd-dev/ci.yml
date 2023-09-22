@@ -1,0 +1,261 @@
+# this ci pipeline will build, test and publish (can but currently does not) artifacts for linux, win, macosx
+
+name: CI
+
+on:
+  push:
+    branches: [ "*-dev-*"]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+
+    env:
+      CHECK_DOC: "0"
+      CCACHE_SIZE: "100M"
+      CCACHE_TEMPDIR: /tmp/.ccache-temp
+      CCACHE_COMPRESS: "1"
+      PYTHON_DEBUG: "1"
+      SDK_URL: https://bitcoincore.org/depends-sources/sdks
+
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - armhf-linux
+          - aarch64-linux
+          - x86_64-linux-dbg
+          - x86_64-macos
+          # - arm64-macos
+          - x86_64-win
+          - i686-win
+          - i686-linux
+        include:
+          - name: armhf-linux
+            host: arm-linux-gnueabihf
+            os: ubuntu-20.04
+            packages: g++-arm-linux-gnueabihf qemu-user-static qemu-user
+            dep-opts: "CROSS_COMPILE='yes' SPEED=slow V=1"
+            config-opts: "--enable-static --disable-shared"
+            run-tests: true
+            goal: install
+          - name: aarch64-linux
+            host: aarch64-linux-gnu
+            os: ubuntu-20.04
+            packages: g++-aarch64-linux-gnu qemu-user-static qemu-user
+            dep-opts: "CROSS_COMPILE='yes' SPEED=slow V=1"
+            config-opts: "LIBS='-levent_pthreads' --enable-static --disable-shared"
+            run-tests: true
+            goal: install
+          - name: x86_64-linux-dbg
+            host: x86_64-pc-linux-gnu
+            os: ubuntu-20.04
+            run-tests: true
+            packages: python3-dev python3-dbg python
+            dep-opts: "DEBUG=1 SPEED=slow V=1"
+            config-opts: "--enable-debug"
+            goal: install
+          - name: x86_64-macos
+            host: x86_64-apple-darwin15
+            os: macos-latest
+            run-tests: true
+            dep-opts: "SPEED=slow V=1"
+            config-opts: "--enable-static --disable-shared"
+            packages: cmake zlib xorriso
+            goal: install
+            sdk: 12.2
+            sdk-build: 12B45b
+            sdk-shasum: "df75d30ecafc429e905134333aeae56ac65fac67cb4182622398fd717df77619"
+          # - name: arm64-macos
+          #   host: arm64-apple-darwin
+          #   os: macos-latest
+          #   run-tests: true
+          #   dep-opts: "SPEED=slow V=1"
+          #   config-opts: ""
+          #   packages: cmake zlib xorriso
+          #   goal: install
+          #   sdk: 12.2
+          #   sdk-build: 12B45b
+          #   sdk-shasum: "df75d30ecafc429e905134333aeae56ac65fac67cb4182622398fd717df77619"
+          - name: x86_64-win
+            host: x86_64-w64-mingw32
+            arch: i386
+            os: ubuntu-20.04
+            packages: python3 nsis g++-mingw-w64-x86-64 wine64 wine-stable bc wine-binfmt
+            postinstall: |
+              sudo dpkg -s mono-runtime && sudo apt-get remove mono-runtime || echo "Very nothing to uninstall."
+              sudo update-alternatives --set x86_64-w64-mingw32-gcc  /usr/bin/x86_64-w64-mingw32-gcc-posix
+              sudo update-alternatives --set x86_64-w64-mingw32-g++  /usr/bin/x86_64-w64-mingw32-g++-posix
+              sudo update-binfmts --import /usr/share/binfmts/wine
+            dep-opts: "CROSS_COMPILE='yes' SPEED=slow V=1"
+            config-opts: ""
+            run-tests: true
+            goal: install
+          - name: i686-win
+            host: i686-w64-mingw32
+            arch: i386
+            os: ubuntu-20.04
+            packages: python3-pip python3-setuptools nsis g++ g++-mingw-w64-i686 mingw-w64-i686-dev wine-stable winehq-stable bc wine-binfmt binfmt-support
+            preinstall: |
+              OS_FLAVOR=$(cat /etc/*ease | grep UBUNTU_CODENAME | cut -d "=" -f 2)
+              if [ ! -d "/etc/apt/keyrings" ]; then sudo mkdir -pm755 /etc/apt/keyrings; fi
+              sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+              sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/$OS_FLAVOR/winehq-$OS_FLAVOR.sources
+              sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+              sudo apt-get update -qq
+              sudo apt-get install -yqq --allow-downgrades libgd3/focal libpcre2-8-0/focal libpcre2-16-0/focal libpcre2-32-0/focal libpcre2-posix2/focal
+              sudo apt-get purge -yqq libmono* moby* mono* php* libgdiplus libpcre2-posix3 libzip4
+            postinstall: |
+              sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
+              sudo update-alternatives --set i686-w64-mingw32-g++  /usr/bin/i686-w64-mingw32-g++-posix
+              sudo update-binfmts --import /usr/share/binfmts/wine
+            dep-opts: "CROSS_COMPILE='yes' SPEED=slow V=1"
+            config-opts: ""
+            run-tests: true
+            goal: install
+          - name: i686-linux
+            host: i686-pc-linux-gnu
+            os: ubuntu-20.04
+            packages: g++-multilib bc
+            run-tests: true
+            dep-opts: "SPEED=slow V=1"
+            config-opts: "--enable-static --disable-shared"
+            goal: install
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: add architecture
+        if: ${{ matrix.arch }}
+        run: |
+          sudo dpkg --add-architecture ${{ matrix.arch }}
+
+      - name: Pre install
+        if: ${{ matrix.preinstall }}
+        run: ${{ matrix.preinstall }}
+
+      - name: install packages
+        run: |
+          if ([ "${{ matrix.name }}" == "x86_64-macos" ] || [ "${{ matrix.name }}" == "arm64-macos" ]); then
+              brew update
+              brew install automake coreutils ${{ matrix.packages }}
+              echo PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH" >> ~/.bashrc
+              source ~/.bashrc
+          else
+            sudo apt-get update
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y autoconf automake libtool-bin libevent-dev build-essential curl python3 valgrind ${{ matrix.packages }}
+          fi
+
+      - name: post install
+        if: ${{ matrix.postinstall }}
+        run: ${{ matrix.postinstall }}
+
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: sdk cache
+        if: ${{ matrix.sdk }}
+        uses: actions/cache@v3
+        env:
+          cache-name: sdk
+        with:
+          path: ./depends/sdk-sources
+          key: ${{ matrix.name }}-${{ env.cache-name }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: install sdk
+        if: ${{ matrix.sdk }}
+        env:
+          sdk-filename: Xcode-${{ matrix.sdk }}-${{ matrix.sdk-build }}-extracted-SDK-with-libcxx-headers.tar.gz
+        run: |
+          mkdir -p ./depends/sdk-sources
+          mkdir -p ./depends/SDKs
+          echo "${{ matrix.sdk-shasum }}  depends/sdk-sources/${{ env.sdk-filename }}" | sha256sum -c || \
+          curl --location --fail $SDK_URL/${{ env.sdk-filename }} -o depends/sdk-sources/${{ env.sdk-filename }} &&\
+          echo "${{ matrix.sdk-shasum }}  depends/sdk-sources/${{ env.sdk-filename }}" | sha256sum -c
+          tar -C depends/SDKs -xf depends/sdk-sources/${{ env.sdk-filename }}
+
+      - name: dependency cache
+        uses: actions/cache@v3
+        env:
+          cache-name: depends
+        with:
+          path: ./depends/built
+          key: ${{ matrix.name }}-${{ env.cache-name }}-${{ hashFiles('depends/packages/*') }}
+
+      - name: build depends
+        run: |
+          make $MAKEJOBS -C depends HOST=${{ matrix.host }} ${{ matrix.dep-opts }}
+
+      - name: ccache
+        uses: actions/cache@v3
+        env:
+          cache-name: ccache
+        with:
+          path: ~/.ccache
+          key: ${{ matrix.name }}-${{ env.cache-name }}-${{ hashFiles('**/configure.ac') }}
+
+      - name: configure libdogecoin
+        run: |
+          depends/${{ matrix.host }}/native/bin/ccache --max-size=$CCACHE_SIZE
+          ./autogen.sh
+          ./configure --prefix=`pwd`/depends/${{ matrix.host }} ${{ matrix.config-opts }} HOST=${{ matrix.host }} || ( cat config.log && false)
+
+      - name: build libdogecoin
+        run: |
+          build_dir=./build/libdogecoin-${{ github.sha }}-${{ matrix.name }}
+          make -j"$(getconf _NPROCESSORS_ONLN)" SPEED=slow V=1
+          mkdir -p $build_dir/bin $build_dir/docs $build_dir/examples $build_dir/include $build_dir/lib
+          if ([ "${{ matrix.name }}" == "x86_64-win" ] || [ "${{ matrix.name }}" == "i686-win" ]); then
+              cp such.exe sendtx.exe $build_dir/bin/
+          else
+              cp such sendtx $build_dir/bin/
+          fi
+          cp doc/*.md $build_dir/docs/
+          cp contrib/examples/example.c $build_dir/examples/
+          cp include/dogecoin/dogecoin.h \
+              include/dogecoin/libdogecoin.h \
+              include/dogecoin/constants.h \
+              config/libdogecoin-config.h \
+              include/dogecoin/uthash.h $build_dir/include/
+          cp .libs/* $build_dir/lib/
+          cp LICENSE $build_dir/
+          chmod +x ./build/libdogecoin-${{ github.sha }}-${{ matrix.name }}/*
+
+      - name: test libdogecoin
+        if: ${{ matrix.run-tests }}
+        run: |
+            case "${{ matrix.name }}" in
+              "armhf-linux") 
+              qemu-arm -E LD_LIBRARY_PATH=/usr/arm-linux-gnueabihf/lib/ /usr/arm-linux-gnueabihf/lib/ld-linux-armhf.so.3 ./tests
+              ;;
+              "aarch64-linux") 
+              qemu-aarch64 -E LD_LIBRARY_PATH=/usr/aarch64-linux-gnu/lib/ /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 ./tests
+              ;;
+              "x86_64-win")
+              make check -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              ;;
+              "i686-win") 
+              make check -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              ;;
+              "x86_64-macos") 
+              make check -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              ;;
+              "x86_64-linux-dbg") 
+              make check -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              python3 tooltests.py
+              ./wrappers/python/pytest/cython_tests.sh -host=${{ matrix.host }}
+              ./wrappers/golang/libdogecoin/build.sh
+              ;;
+              "i686-linux") 
+              make check -j"$(getconf _NPROCESSORS_ONLN)" V=1
+              ;;
+            esac
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: libdogecoin-${{ github.sha }}-${{ matrix.name }}
+          path: |
+            ${{ github.workspace }}/build/libdogecoin-${{ github.sha }}-${{ matrix.name }}
