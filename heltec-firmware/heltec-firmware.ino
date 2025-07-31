@@ -63,7 +63,7 @@ nodeAddress senderAddress;
 
 void setup() {
   Serial.begin(115200);
-  Mcu.begin();
+  Mcu.begin(HELTEC_BOARD_VERSION, SLOW_CLK_TPYE);
   rssi = 0;
 
   RadioEvents.TxDone = OnTxDone;
