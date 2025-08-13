@@ -33,7 +33,7 @@ void writeAddressToFile(char* fileName, char* pubAddress, char* privateKey, char
 	}
 	// Don't want to encrypt/decrypt the Q as it could then be easier to figure out password
 	encryptString(password, privateKey, WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, 1);
-	fprintf(file, "%s", pubAddress, privateKey);
+	fprintf(file, "%s", pubAddress);
 	fwrite(privateKey, sizeof(char), WIF_UNCOMPRESSED_PRIVKEY_STRINGLEN, file);
 	fclose(file);
 }
