@@ -1,4 +1,5 @@
 #include "consolehelper.h"
+#include <stdlib.h>
 
 void printStartScreen()
 {
@@ -71,7 +72,6 @@ int getDemoAddressSelection()
 	printf("6: Exit Address Selection\n");
 	return userInputLoop(6);
 }
-
 
 int getManualUtxosEditingSelection()
 {
