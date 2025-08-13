@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <unistd.h> 
 #include <pthread.h>
+#include <libgen.h>
 
 int pollEnable = 0;
 
@@ -32,7 +33,7 @@ char* currentTransaction;
 bool demoMode = true;
 
 
-int openPort()
+int openPort(char* device)
 {
 	printf("Trying to open %s...\n", device);
 	USB = open(device, O_RDWR | O_NOCTTY); //should be nonblock for polling
@@ -1790,15 +1791,22 @@ void loadDemoPairFileHelper(int pairIndex)
 	printf("Loaded...\nAddress: %s\nPrivate Key: %s\n", loadedDogeAddress, loadedPrivateKey);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
-	printTextArtFile("asciiDoge.txt");
+	char *text_art_path = malloc(strlen(argv[0]) + 8);
+	sprintf(text_art_path, argv[0]);
+	text_art_path = dirname(text_art_path);
+	sprintf(text_art_path + strlen(text_art_path), "/asciiDoge.txt");
+	printTextArtFile(text_art_path);
+
 	printf("\n\n");
 	printStartScreen();
 	printf("Performing startup functions...\n");
 	// Start by attempting to setup serial communication
 	USB = 0;     // File descriptor set to zero.
-	openPort(); // Open the port
+	if (argv[1])
+        device = argv[1];
+	openPort(device); // Open the port
 
 	init(); // Init the port parameters -- file descriptor (USB) will be set
 
