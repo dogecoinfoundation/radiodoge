@@ -411,7 +411,7 @@ int cmdDisplayCustomStringOnOLED(char* displayString, int displayStringLen, uint
 /// </summary>
 /// <param name="inAddr">The connect radio module's node address (Own address)</param>
 /// <param name="destAddr">The desired destination node address </param>
-cmdRequestDogeAddress(uint8_t* inAddr, uint8_t* destAddr)
+void cmdRequestDogeAddress(uint8_t* inAddr, uint8_t* destAddr)
 {
 	uint8_t requestPayload[1] = { GET_DOGE_ADDRESS };
 	cmdSendMessage(inAddr, destAddr, requestPayload, 1);
@@ -423,7 +423,7 @@ cmdRequestDogeAddress(uint8_t* inAddr, uint8_t* destAddr)
 /// <param name="inAddr"></param>
 /// <param name="destAddr"></param>
 /// <param name="dogeAddress"></param>
-cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+void cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
 	payload[0] = SEND_DOGE_ADDRESS;
@@ -438,7 +438,7 @@ cmdSendDogeAddress(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 /// <param name="inAddr"></param>
 /// <param name="destAddr"></param>
 /// <param name="dogeAddress"></param>
-cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+void cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
 	payload[0] = REQUEST_UTXOS;
@@ -453,7 +453,7 @@ cmdRequestUTXOs(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 /// <param name="inAddr"></param>
 /// <param name="destAddr"></param>
 /// <param name="dogeAddress"></param>
-cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
+void cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 {
 	uint8_t payload[P2PKH_ADDR_STRINGLEN + 1];
 	payload[0] = REQUEST_BALANCE;
@@ -469,7 +469,7 @@ cmdRequestBalance(uint8_t* inAddr, uint8_t* destAddr, char* dogeAddress)
 /// <param name="dogeAddress"></param>
 /// <param name="pin"></param>
 /// <param name="removeAddress"></param>
-cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin, bool removeAddress)
+void cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* pin, bool removeAddress)
 {
 	// 2 bytes for the registration type and 1 for the registration function to be performed
 	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + PIN_LENGTH;
@@ -495,7 +495,7 @@ cmdRegisterDogeAddress(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, ui
 /// <param name="destAddr"></param>
 /// <param name="rawTransaction"></param>
 /// <param name="requestId"></param>
-cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uint8_t requestId)
+void cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uint8_t requestId)
 {
 	int transactionLength = strlen(rawTransaction);
 	int payloadLength = 1 + transactionLength;
@@ -514,7 +514,7 @@ cmdSendTransaction(uint8_t* inaddr, uint8_t* destAddr, char* rawTransaction, uin
 /// <param name="dogeAddress"></param>
 /// <param name="oldPin"></param>
 /// <param name="updatedPin"></param>
-cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* oldPin, uint8_t* updatedPin)
+void cmdUpdateRegistrationPin(uint8_t* inaddr, uint8_t* destAddr, char* dogeAddress, uint8_t* oldPin, uint8_t* updatedPin)
 {
 	int payloadLength = 2 + P2PKH_ADDR_STRINGLEN + (2 * PIN_LENGTH);
 	uint8_t payload[payloadLength];
@@ -636,7 +636,7 @@ void printAllUTXOs()
 		for (int i = 0; i < numUTXOs; i++)
 		{
 			printf("\n### UTXO %i ###\n", i);
-			printf("TXID: %s\n", currUTXOs[i].txId);
+			printf("TXID: %s\n", *currUTXOs[i].txId);
 			printf("Vout: %i\n", currUTXOs[i].vout);
 			char coinString[MAX_DOGECOIN_AMOUNT_STRING_LENGTH];
 			koinu_to_coins_str(currUTXOs[i].amount, coinString);
@@ -678,7 +678,7 @@ void manuallyAddUTXO()
 	printf("Manually adding a UTXO\n");
 	// Get the TXID
 	printf("Please enter the TXID:\n");
-	scanf("%s", currUTXOs[numUTXOs].txId);
+	scanf("%s", *currUTXOs[numUTXOs].txId);
 	// Get the Vout
 	printf("Enter the vout:\n");
 	int vout_success = scanf("%d", &currUTXOs[numUTXOs].vout);
@@ -850,7 +850,7 @@ bool createTransaction()
 	int numUTXOsUsed = 0;
 	for (int i = 0; i < numUTXOs; i++)
 	{
-		int add_utxo_result = add_utxo(curr_tx_index, currUTXOs[i].txId, currUTXOs[i].vout);
+		int add_utxo_result = add_utxo(curr_tx_index, *currUTXOs[i].txId, currUTXOs[i].vout);
 		utxo_total_amount += currUTXOs[i].amount;
 		numUTXOsUsed++;
 		if (!add_utxo_result)
@@ -937,7 +937,7 @@ void* serialPollThread(void* threadid)
 	uint8_t rxbuffer[1024] = { 0 };
 	uint8_t rxindex = 0;
 	int* thisid = (int*)threadid;
-	printf("Receive monitor thread started with ID: %d\n", thisid);
+	printf("Receive monitor thread started with ID: %d\n", *thisid);
 
 	struct pollfd serFileDescriptor[1];
 	serFileDescriptor[0].fd = USB;
@@ -961,7 +961,7 @@ void* serialPollThread(void* threadid)
 		if (serReceivedCharacters < 0)
 		{
 			//perror("poll error");
-			printf("*** THREAD: error in poll thread \n", NULL);
+			printf("*** THREAD: error in poll thread \n");
 		}
 		else if (serReceivedCharacters > 0)
 		{
@@ -1030,7 +1030,7 @@ void* serialPollThread(void* threadid)
 			}
 		}
 	} while (pollEnable == 1);
-	printf("*** THREAD: Exiting thread %d ..\n", thisid);
+	printf("*** THREAD: Exiting thread %d ..\n", *thisid);
 	pthread_exit(0);
 }
 
@@ -1350,7 +1350,7 @@ int sendDogeAddressTest(uint8_t* destAddr)
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
 	char addrbuffer[P2PKH_ADDR_STRINGLEN];
 	createTestDogeAddress(addrbuffer, generatedPrivateKey);
-	printf("Sending Test Address: % s \n", addrbuffer);
+	printf("Sending Test Address: %s \n", addrbuffer);
 	cmdSendDogeAddress(myaddr, destAddr, addrbuffer);
 }
 
@@ -1363,7 +1363,7 @@ void displayDogeQRCode(char* dogeAddress)
 	//set up a buffer string the size of a dogecoin address (P2PKH address) - in include/constants.h
 	char qrBuffer[4096];
 	int result = qrgen_p2pkh_to_qr_string(dogeAddress, qrBuffer);
-	printf("Dogecoin Address: % s\n", dogeAddress);
+	printf("Dogecoin Address: %s\n", dogeAddress);
 	printf("%s\n", qrBuffer);
 }
 
@@ -1720,27 +1720,27 @@ void loadFakeUTXOs()
 
 	uint64_t amount0 = coins_to_koinu_str("10.5");
 	currUTXOs[0].amount = amount0;
-	currUTXOs[0].txId[0] = '0';
+	currUTXOs[0].txId[0] = "0";
 	currUTXOs[0].vout = 0;
 
 	uint64_t amount1 = coins_to_koinu_str("50.15");
 	currUTXOs[1].amount = amount1;
-	currUTXOs[1].txId[0] = '1';
+	currUTXOs[1].txId[0] = "1";
 	currUTXOs[1].vout = 1;
 
 	uint64_t amount2 = coins_to_koinu_str("12.25");
 	currUTXOs[2].amount = amount2;
-	currUTXOs[2].txId[0] = '2';
+	currUTXOs[2].txId[0] = "2";
 	currUTXOs[2].vout = 2;
 
 	uint64_t amount3 = coins_to_koinu_str("3");
 	currUTXOs[3].amount = amount3;
-	currUTXOs[3].txId[0] = '3';
+	currUTXOs[3].txId[0] = "3";
 	currUTXOs[3].vout = 3;
 
 	uint64_t amount4 = coins_to_koinu_str("4");
 	currUTXOs[4].amount = amount4;
-	currUTXOs[4].txId[0] = '4';
+	currUTXOs[4].txId[0] = "4";
 	currUTXOs[4].vout = 4;
 
 	numUTXOs = 5;
@@ -1794,7 +1794,7 @@ void loadDemoPairFileHelper(int pairIndex)
 int main(int argc, char *argv[])
 {
 	char *text_art_path = malloc(strlen(argv[0]) + 8);
-	sprintf(text_art_path, argv[0]);
+	sprintf(text_art_path, "%s", argv[0]);
 	text_art_path = dirname(text_art_path);
 	sprintf(text_art_path + strlen(text_art_path), "/asciiDoge.txt");
 	printTextArtFile(text_art_path);
@@ -1815,7 +1815,7 @@ int main(int argc, char *argv[])
 	pthread_create(&serThreadID, NULL, serialPollThread, (void*)&serThreadID);
 	printf("Connection to LoRa hardware successful!\n");
 
-	printf("\nChecking for libdogecoin integration...\n\n", NULL);
+	printf("\nChecking for libdogecoin integration...\n\n");
 
 	//start the libdogecoin elliptical crypto mem space
 	dogecoin_ecc_start();
@@ -1825,8 +1825,8 @@ int main(int argc, char *argv[])
 
 	if (testLib(returnedaddr))
 	{
-		printf("Libdogecoin found.\n", NULL);
-		printf("Libdogecoin TEST - randomly generated test addr : % s \n\n", returnedaddr);
+		printf("Libdogecoin found.\n");
+		printf("Libdogecoin TEST - randomly generated test addr : %s \n\n", returnedaddr);
 	}
 	else
 	{
