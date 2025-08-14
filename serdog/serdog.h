@@ -55,6 +55,21 @@ int cmdSendMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, u
 int cmdSendMultipartMessage(uint8_t* inAddr, uint8_t* destAddr, uint8_t* customPayload, int customPayloadLen, uint8_t messageID);
 int isCmd(uint8_t inByte);
 
+void multipartCountTest();
+void displayControlTest();
+void enterTestMode();
+void enterDogeMode();
+void enterSetupMode();
+void LoadDemoAddressPair();
+void LoadDestinationAddress(char* addressBuffer);
+void createTestDogeAddress(char* dogeAddress, char* generatedPrivKey);
+void processCommandPayload(uint8_t* payloadIn, int payloadSize);
+int sendDogeAddressTest(uint8_t* destAddr);
+void processDogePayload(uint8_t* senderAddr, uint8_t* payloadIn, int payloadSize);
+void parseHostFormedPacket(uint8_t* senderAddr, uint8_t* extractedDataBuffer, uint8_t* payloadIn, int payloadSize);
+int parseMultipartPayload(uint8_t* payloadPartIn, int partSize, uint8_t* multipartBuffer, int* multipartSize, uint8_t* senderAddress);
+int isCompleteCmd(uint8_t* inBuf, int charsReceived);
+
 //command processing convenience utils
 
 struct utxoInfo 
