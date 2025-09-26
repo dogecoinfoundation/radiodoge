@@ -24,9 +24,25 @@
 #define TEST_COIN_AMOUNT 1234.56
 
 // WiFi Configuration
-const char* ssid = "RadioDoge";  // Access Point name
-const char* password = "radiodoge";  // AP password
+const char* ap_ssid = "RadioDoge";  // Access Point name
+String ap_password = "radiodoge";  // AP password (now configurable)
 WebServer server(80);  // Web server on port 80
+
+// Internet WiFi Configuration (configurable via web interface)
+String internet_ssid = "";
+String internet_password = "";
+bool internet_connected = false;
+bool dual_wifi_mode = false;
+
+// Password requirements
+const int MIN_PASSWORD_LENGTH = 8;
+const int MAX_PASSWORD_LENGTH = 32;
+
+// HTTP Client for internet requests
+#include <HTTPClient.h>
+#include <WiFiClient.h>
+#include <nvs.h>
+#include <nvs_flash.h>
 
 
 // Global display object
@@ -128,13 +144,28 @@ void setup() {
 
   delay(100);
   
-  // Setup WiFi Access Point
-  WiFi.softAP(ssid, password);
-  Serial.println("WiFi AP started");
-  Serial.print("SSID: ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.softAPIP());
+  // Initialize NVS and load stored configurations
+  initNVS();
+  
+  // Load stored AP password
+  if (loadAPPassword()) {
+    Serial.println("AP password restored from storage");
+  } else {
+    Serial.println("Using default AP password");
+  }
+  
+  // Load stored LoRa configuration
+  if (loadLoRaConfiguration()) {
+    Serial.println("LoRa configuration restored from storage");
+  } else {
+    Serial.println("Using default LoRa configuration");
+  }
+  
+  // Initialize control messages with loaded/default address
+  InitControlMessages();
+  
+  // Setup WiFi in dual mode (AP + Station)
+  setupDualWiFi();
   
   
   // Setup web server routes
@@ -275,6 +306,499 @@ void DrawReceivingCoinsImage(float amount) {
   radioDogeDisplay.clearDisplay();
   radioDogeDisplay.drawXBitmap(0, 0, rcvCoin_bits, rcvCoin_width, rcvCoin_height, SSD1306_WHITE);
   radioDogeDisplay.display();
+}
+
+// NVS Storage Functions for WiFi Credentials
+void initNVS() {
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+}
+
+void saveWiFiCredentials(String ssid, String password) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for WiFi credentials");
+    return;
+  }
+  
+  // Save SSID
+  err = nvs_set_str(nvs_handle, "ssid", ssid.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving SSID to NVS");
+  }
+  
+  // Save password
+  err = nvs_set_str(nvs_handle, "password", password.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving password to NVS");
+  }
+  
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error committing WiFi credentials to NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  Serial.println("WiFi credentials saved to NVS");
+}
+
+bool loadWiFiCredentials() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  size_t required_size;
+  
+  err = nvs_open("wifi_config", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("No WiFi credentials found in NVS");
+    return false;
+  }
+  
+  // Get SSID length
+  err = nvs_get_str(nvs_handle, "ssid", NULL, &required_size);
+  if (err != ESP_OK || required_size == 0) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  // Read SSID
+  char ssid_buffer[required_size];
+  err = nvs_get_str(nvs_handle, "ssid", ssid_buffer, &required_size);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  internet_ssid = String(ssid_buffer);
+  
+  // Get password length
+  err = nvs_get_str(nvs_handle, "password", NULL, &required_size);
+  if (err != ESP_OK || required_size == 0) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  // Read password
+  char password_buffer[required_size];
+  err = nvs_get_str(nvs_handle, "password", password_buffer, &required_size);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  internet_password = String(password_buffer);
+  
+  nvs_close(nvs_handle);
+  Serial.println("WiFi credentials loaded from NVS: " + internet_ssid);
+  return true;
+}
+
+void clearWiFiCredentials() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for clearing WiFi credentials");
+    return;
+  }
+  
+  // Erase all keys in the namespace
+  err = nvs_erase_all(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error erasing WiFi credentials from NVS");
+  } else {
+    Serial.println("WiFi credentials cleared from NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  
+  // Clear from memory
+  internet_ssid = "";
+  internet_password = "";
+  internet_connected = false;
+  dual_wifi_mode = false;
+}
+
+// LoRa Configuration Storage Functions
+void saveLoRaConfiguration(uint8_t region, uint8_t community, uint8_t node) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("lora_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for LoRa configuration");
+    return;
+  }
+  
+  // Save region
+  err = nvs_set_u8(nvs_handle, "region", region);
+  if (err != ESP_OK) {
+    Serial.println("Error saving region to NVS");
+  }
+  
+  // Save community
+  err = nvs_set_u8(nvs_handle, "community", community);
+  if (err != ESP_OK) {
+    Serial.println("Error saving community to NVS");
+  }
+  
+  // Save node
+  err = nvs_set_u8(nvs_handle, "node", node);
+  if (err != ESP_OK) {
+    Serial.println("Error saving node to NVS");
+  }
+  
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error committing LoRa configuration to NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  Serial.println("LoRa configuration saved to NVS: " + String(region) + "." + String(community) + "." + String(node));
+}
+
+bool loadLoRaConfiguration() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  uint8_t region, community, node;
+  
+  err = nvs_open("lora_config", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("No LoRa configuration found in NVS");
+    return false;
+  }
+  
+  // Read region
+  err = nvs_get_u8(nvs_handle, "region", &region);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  // Read community
+  err = nvs_get_u8(nvs_handle, "community", &community);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  // Read node
+  err = nvs_get_u8(nvs_handle, "node", &node);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  nvs_close(nvs_handle);
+  
+  // Set the loaded configuration
+  local.region = region;
+  local.community = community;
+  local.node = node;
+  
+  Serial.println("LoRa configuration loaded from NVS: " + String(region) + "." + String(community) + "." + String(node));
+  return true;
+}
+
+void clearLoRaConfiguration() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("lora_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for clearing LoRa configuration");
+    return;
+  }
+  
+  // Erase all keys in the namespace
+  err = nvs_erase_all(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error erasing LoRa configuration from NVS");
+  } else {
+    Serial.println("LoRa configuration cleared from NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  
+  // Reset to default values
+  local.region = 10;
+  local.community = 1;
+  local.node = 1;
+}
+
+// AP Password Management Functions
+void saveAPPassword(String password) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("ap_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for AP password");
+    return;
+  }
+  
+  // Save password
+  err = nvs_set_str(nvs_handle, "password", password.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving AP password to NVS");
+  }
+  
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error committing AP password to NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  Serial.println("AP password saved to NVS");
+}
+
+bool loadAPPassword() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  size_t required_size;
+  
+  err = nvs_open("ap_config", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("No AP password found in NVS, using default");
+    return false;
+  }
+  
+  // Get password length
+  err = nvs_get_str(nvs_handle, "password", NULL, &required_size);
+  if (err != ESP_OK || required_size == 0) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  // Read password
+  char password_buffer[required_size];
+  err = nvs_get_str(nvs_handle, "password", password_buffer, &required_size);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  
+  ap_password = String(password_buffer);
+  nvs_close(nvs_handle);
+  Serial.println("AP password loaded from NVS");
+  return true;
+}
+
+void clearAPPassword() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("ap_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for clearing AP password");
+    return;
+  }
+  
+  // Erase all keys in the namespace
+  err = nvs_erase_all(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error erasing AP password from NVS");
+  } else {
+    Serial.println("AP password cleared from NVS");
+  }
+  
+  nvs_close(nvs_handle);
+  
+  // Reset to default
+  ap_password = "radiodoge";
+}
+
+bool validatePassword(String password) {
+  // Check length
+  if (password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH) {
+    return false;
+  }
+  
+  // Check for at least one letter and one number
+  bool hasLetter = false;
+  bool hasNumber = false;
+  
+  for (int i = 0; i < password.length(); i++) {
+    char c = password.charAt(i);
+    if (isAlpha(c)) {
+      hasLetter = true;
+    } else if (isDigit(c)) {
+      hasNumber = true;
+    }
+  }
+  
+  return hasLetter && hasNumber;
+}
+
+void restartAP() {
+  Serial.println("Restarting Access Point with new password...");
+  
+  // Stop current AP
+  WiFi.softAPdisconnect(true);
+  delay(1000);
+  
+  // Start AP with new password
+  WiFi.softAP(ap_ssid, ap_password.c_str());
+  Serial.println("Access Point restarted");
+  Serial.print("SSID: ");
+  Serial.println(ap_ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.softAPIP());
+}
+
+// WiFi Management Functions
+void setupDualWiFi() {
+  // Load stored WiFi credentials
+  if (loadWiFiCredentials()) {
+    Serial.println("Found stored WiFi credentials, attempting connection...");
+  }
+  
+  // Start Access Point
+  WiFi.softAP(ap_ssid, ap_password.c_str());
+  Serial.println("WiFi AP started");
+  Serial.print("AP SSID: ");
+  Serial.println(ap_ssid);
+  Serial.print("AP IP address: ");
+  Serial.println(WiFi.softAPIP());
+  
+  // Try to connect to internet WiFi if credentials are available
+  if (internet_ssid.length() > 0) {
+    connectToInternetWiFi();
+  }
+  
+  // Display WiFi status
+  DisplayWiFiStatus();
+}
+
+void connectToInternetWiFi() {
+  if (internet_ssid.length() == 0) return;
+  
+  Serial.println("Attempting to connect to internet WiFi...");
+  DisplayCustomStringMessage("Connecting to WiFi...", 0);
+  
+  WiFi.begin(internet_ssid.c_str(), internet_password.c_str());
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    internet_connected = true;
+    dual_wifi_mode = true;
+    Serial.println("");
+    Serial.println("Internet WiFi connected!");
+    Serial.print("Internet IP address: ");
+    Serial.println(WiFi.localIP());
+    DisplayCustomStringMessage("Internet Connected!", 0);
+    
+    // Save credentials to NVS for future boots
+    saveWiFiCredentials(internet_ssid, internet_password);
+  } else {
+    internet_connected = false;
+    dual_wifi_mode = false;
+    Serial.println("");
+    Serial.println("Failed to connect to internet WiFi");
+    DisplayCustomStringMessage("No Internet", 0);
+  }
+}
+
+void disconnectInternetWiFi() {
+  if (internet_connected) {
+    WiFi.disconnect();
+    internet_connected = false;
+    dual_wifi_mode = false;
+    Serial.println("Disconnected from internet WiFi");
+    DisplayCustomStringMessage("Internet Disconnected", 0);
+  }
+}
+
+void DisplayWiFiStatus() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("WiFi Status:");
+  radioDogeDisplay.setCursor(0, 15);
+  radioDogeDisplay.println("AP: " + String(ap_ssid));
+  radioDogeDisplay.setCursor(0, 30);
+  if (internet_connected) {
+    radioDogeDisplay.println("Internet: " + internet_ssid);
+    radioDogeDisplay.setCursor(0, 45);
+    radioDogeDisplay.println("IP: " + WiFi.localIP().toString());
+  } else if (internet_ssid.length() > 0) {
+    radioDogeDisplay.println("Internet: " + internet_ssid);
+    radioDogeDisplay.setCursor(0, 45);
+    radioDogeDisplay.println("(Stored, not connected)");
+  } else {
+    radioDogeDisplay.println("Internet: Not Configured");
+  }
+  radioDogeDisplay.display();
+}
+
+// Internet Gateway Functions
+bool sendTransactionToInternet(String transactionData) {
+  if (!internet_connected) {
+    Serial.println("No internet connection available");
+    return false;
+  }
+  
+  HTTPClient http;
+  http.begin("https://api.blockcypher.com/v1/doge/main/txs/push");
+  http.addHeader("Content-Type", "application/json");
+  
+  String jsonPayload = "{\"tx\":\"" + transactionData + "\"}";
+  
+  int httpResponseCode = http.POST(jsonPayload);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("Transaction sent to internet gateway");
+    Serial.println("Response: " + response);
+    http.end();
+    return true;
+  } else {
+    Serial.println("Error sending transaction to internet: " + String(httpResponseCode));
+    http.end();
+    return false;
+  }
+}
+
+bool sendTransactionToCustomGateway(String transactionData, String gatewayUrl) {
+  if (!internet_connected) {
+    Serial.println("No internet connection available");
+    return false;
+  }
+  
+  HTTPClient http;
+  http.begin(gatewayUrl);
+  http.addHeader("Content-Type", "application/json");
+  
+  String jsonPayload = "{\"tx\":\"" + transactionData + "\"}";
+  
+  int httpResponseCode = http.POST(jsonPayload);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("Transaction sent to custom gateway");
+    Serial.println("Response: " + response);
+    http.end();
+    return true;
+  } else {
+    Serial.println("Error sending transaction to custom gateway: " + String(httpResponseCode));
+    http.end();
+    return false;
+  }
 }
 
 // Older test that allows for the sending of messages (specified from the host over serial) between devices without any addressing
@@ -607,6 +1131,8 @@ void HostSerialRead() {
       SetLocalAddressFromSerialBuffer(0);
       InitControlMessages();
       DisplayLocalAddress(local);
+      // Save LoRa configuration to NVS
+      saveLoRaConfiguration(local.region, local.community, local.node);
       Serial.write(hostACK, HOST_ACK_NACK_SIZE);
       break;
     case PING_REQUEST:
@@ -859,6 +1385,18 @@ void setupWebServer() {
   server.on("/api/address", HTTP_GET, handleApiAddress);
   server.on("/api/address", HTTP_POST, handleApiAddress);
   
+  // WiFi Configuration endpoints
+  server.on("/api/wifi", HTTP_GET, handleApiWifi);
+  server.on("/api/wifi", HTTP_POST, handleApiWifi);
+  server.on("/api/wifi/connect", HTTP_POST, handleApiWifiConnect);
+  server.on("/api/wifi/disconnect", HTTP_POST, handleApiWifiDisconnect);
+  server.on("/api/wifi/clear", HTTP_POST, handleApiWifiClear);
+  server.on("/api/lora/clear", HTTP_POST, handleApiLoRaClear);
+  server.on("/api/password/change", HTTP_POST, handleApiPasswordChange);
+  server.on("/api/password/reset", HTTP_POST, handleApiPasswordReset);
+  server.on("/api/password/status", HTTP_GET, handleApiPasswordStatus);
+  server.on("/api/gateway", HTTP_POST, handleApiGateway);
+  
   server.begin();
   Serial.println("Web server started");
 }
@@ -881,19 +1419,19 @@ void handleRoot() {
   html += ".button{background:linear-gradient(135deg,#ffc107 0%,#ffb300 100%);color:#121212;border:none;padding:15px 30px;margin:8px 0;border-radius:12px;cursor:pointer;font-size:16px;font-weight:700;transition:all 0.3s ease;text-transform:uppercase;letter-spacing:1px;box-shadow:0 4px 15px rgba(255,193,7,0.3);width:100%;box-sizing:border-box;}";
   html += ".button:hover{background:linear-gradient(135deg,#ffb300 0%,#ffa000 100%);transform:translateY(-3px);box-shadow:0 8px 25px rgba(255,193,7,0.4);}";
   html += ".button:active{transform:translateY(-1px);}";
-  html += ".button.danger{background:linear-gradient(135deg,#dc3545 0%,#c82333 100%);box-shadow:0 4px 15px rgba(220,53,69,0.3);}";
-  html += ".button.danger:hover{background:linear-gradient(135deg,#c82333 0%,#bd2130 100%);box-shadow:0 8px 25px rgba(220,53,69,0.4);}";
-  html += ".button.success{background:linear-gradient(135deg,#28a745 0%,#218838 100%);box-shadow:0 4px 15px rgba(40,167,69,0.3);}";
+  html += ".button.danger{background:linear-gradient(135deg,#6c757d 0%,#5a6268 100%);box-shadow:0 4px 15px rgba(108,117,125,0.3);color:#ffffff;}";
+  html += ".button.danger:hover{background:linear-gradient(135deg,#5a6268 0%,#495057 100%);box-shadow:0 8px 25px rgba(108,117,125,0.4);}";
+  html += ".button.success{background:linear-gradient(135deg,#28a745 0%,#218838 100%);box-shadow:0 4px 15px rgba(40,167,69,0.3);color:#ffffff;}";
   html += ".button.success:hover{background:linear-gradient(135deg,#218838 0%,#1e7e34 100%);box-shadow:0 8px 25px rgba(40,167,69,0.4);}";
-  html += "input[type=text],input[type=number],textarea,select{width:100%;padding:15px;margin:8px 0;border:2px solid #333;border-radius:12px;font-size:16px;box-sizing:border-box;background:#2a2a2a;color:#ffffff;transition:all 0.3s ease;}";
-  html += "input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#ffc107;outline:none;box-shadow:0 0 15px rgba(255,193,7,0.2);background:#333;}";
-  html += "input[type=text]::placeholder,input[type=number]::placeholder,textarea::placeholder{color:#888;}";
+  html += "input[type=text],input[type=number],input[type=password],textarea,select{width:100%;padding:15px;margin:8px 0;border:2px solid #333;border-radius:12px;font-size:16px;box-sizing:border-box;background:#2a2a2a;color:#ffffff;transition:all 0.3s ease;}";
+  html += "input[type=text]:focus,input[type=number]:focus,input[type=password]:focus,textarea:focus,select:focus{border-color:#ffc107;outline:none;box-shadow:0 0 15px rgba(255,193,7,0.2);background:#333;}";
+  html += "input[type=text]::placeholder,input[type=number]::placeholder,input[type=password]::placeholder,textarea::placeholder{color:#888;}";
   html += ".status{background:linear-gradient(135deg,#2a2a2a 0%,#333 100%);padding:20px;border-radius:15px;margin:20px 0;border-left:5px solid #ffc107;box-shadow:0 5px 15px rgba(0,0,0,0.3);}";
   html += ".section{background:linear-gradient(135deg,#1e1e1e 0%,#2a2a2a 100%);padding:25px;margin:20px 0;border-radius:15px;border:1px solid #333;box-shadow:0 5px 15px rgba(0,0,0,0.2);transition:all 0.3s ease;}";
   html += ".section:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,0.3);}";
   html += ".grid{display:grid;grid-template-columns:1fr 1fr;gap:25px;margin:25px 0;}";
   html += ".response{background:#1a1a1a;padding:20px;border-radius:12px;margin:20px 0;border-left:5px solid #ffc107;font-family:'Courier New',monospace;white-space:pre-wrap;color:#ffc107;box-shadow:0 5px 15px rgba(0,0,0,0.3);}";
-  html += ".address-display{background:linear-gradient(135deg,#ffc107 0%,#ffb300 100%);color:#121212;padding:15px;border-radius:10px;margin:10px 0;font-weight:700;text-align:center;box-shadow:0 4px 15px rgba(255,193,7,0.3);}";
+  html += ".address-display{background:linear-gradient(135deg,#ffc107 0%,#ffb300 100%);color:#121212;padding:5px;border-radius:10px;margin:10px 0;font-weight:700;text-align:center;box-shadow:0 4px 15px rgba(255,193,7,0.3);}";
   html += "label{color:#ffc107;font-weight:600;margin-bottom:8px;display:block;text-transform:uppercase;letter-spacing:1px;font-size:0.9em;}";
   html += "p{color:#ccc;margin:10px 0;}";
   html += ".button-group{margin:15px 0;}";
@@ -902,9 +1440,13 @@ void handleRoot() {
   html += ".accordion-header:hover{background:linear-gradient(135deg,#ffb300 0%,#ffa000 100%);}";
   html += ".accordion-header.active{background:linear-gradient(135deg,#ffa000 0%,#ff8f00 100%);}";
   html += ".accordion-content{padding:0;max-height:0;overflow:hidden;transition:max-height 0.3s ease;background:#1a1a1a;}";
-  html += ".accordion-content.active{max-height:1000px;padding:25px;}";
+  html += ".accordion-content.active{max-height:5000px;padding:25px;overflow-y:auto;}";
   html += ".accordion-icon{width:20px;height:20px;transition:transform 0.3s ease;fill:#121212;}";
   html += ".accordion-icon.rotated{transform:rotate(180deg);}";
+  html += ".section-header-gray{background:linear-gradient(135deg,#6c757d 0%,#5a6268 100%);color:#ffffff;}";
+  html += ".section-header-gray:hover{background:linear-gradient(135deg,#5a6268 0%,#495057 100%);}";
+  html += ".section-header-gray.active{background:linear-gradient(135deg,#495057 0%,#343a40 100%);}";
+  html += ".section-header-gray .accordion-icon{fill:#ffffff;}";
   html += ".status{background:linear-gradient(135deg,#2a2a2a 0%,#333 100%);padding:20px;border-radius:15px;margin:20px 0;border-left:5px solid #ffc107;box-shadow:0 5px 15px rgba(0,0,0,0.3);text-align:center;}";
   html += "@media (max-width: 768px) {.grid{grid-template-columns:1fr;} .container{padding:20px;margin:10px;} h1{font-size:2.2em;flex-direction:column;gap:10px;} .title-icon{width:50px;height:50px;} .button{padding:12px 20px;font-size:14px;} .accordion-header{font-size:1.2em;padding:15px 20px;}}";
   html += "</style></head><body>";
@@ -941,7 +1483,12 @@ void handleRoot() {
   html += "<div class='status'>";
   html += "<h3>DEVICE STATUS</h3>";
   html += "<p><strong>Address:</strong> <span class='address-display'>" + String(local.region) + "." + String(local.community) + "." + String(local.node) + "</span></p>";
-  html += "<p><strong>Status:</strong> Ready | <strong>LoRa:</strong> Active | <strong>WiFi:</strong> " + String(ssid) + "</p>";
+  html += "<p><strong>LoRa:</strong> Active | <strong>WiFi AP:</strong> " + String(ap_ssid) ;
+  if (internet_connected) {
+    html += "<p><strong>Internet:</strong> <span style='color:#28a745;'>Online</span> | <strong>IP:</strong> " + WiFi.localIP().toString() + "</p>";
+  } else {
+    html += "<p><strong>Internet:</strong> <span style='color:#888;'>Offline</span></p>";
+  }
   html += "</div>";
   
   
@@ -1035,37 +1582,6 @@ void handleRoot() {
   html += "</div>";
   html += "</div>";
   html += "</div>";
-
-   // Ping Section
-   html += "<div class='accordion'>";
-   html += "<div class='accordion-header' onclick='toggleAccordion(\"ping\")'>";
-   html += "<span>PING TEST</span>";
-   html += "<svg class='accordion-icon' id='ping-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
-   html += "</div>";
-   html += "<div class='accordion-content' id='ping-content'>";
-   html += "<p>Test connectivity between devices</p>";
-   html += "<div class='grid'>";
-   html += "<div>";
-   html += "<label>Target Region</label>";
-   html += "<input type='number' id='pingRegion' placeholder='10' min='0' max='255' value='10'>";
-   html += "</div>";
-   html += "<div>";
-   html += "<label>Target Community</label>";
-   html += "<input type='number' id='pingCommunity' placeholder='1' min='0' max='255' value='1'>";
-   html += "</div>";
-   html += "</div>";
-   html += "<div class='grid'>";
-   html += "<div>";
-   html += "<label>Target Node</label>";
-   html += "<input type='number' id='pingNode' placeholder='2' min='0' max='255' value='2'>";
-   html += "</div>";
-   html += "<div class='button-group'>";
-   html += "<button class='button' onclick='sendPing()'>SEND PING</button>";
-   html += "<button class='button' onclick='pingAll()'>PING ALL</button>";
-   html += "</div>";
-   html += "</div>";
-   html += "</div>";
-   html += "</div>";
    
    // Message Section
    html += "<div class='accordion'>";
@@ -1098,7 +1614,7 @@ void handleRoot() {
   
   // Device Configuration
   html += "<div class='accordion'>";
-  html += "<div class='accordion-header' onclick='toggleAccordion(\"config\")'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"config\")'>";
   html += "<span>DEVICE CONFIGURATION</span>";
   html += "<svg class='accordion-icon' id='config-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
   html += "</div>";
@@ -1121,8 +1637,178 @@ void handleRoot() {
   html += "<div class='button-group'>";
   html += "<button class='button' onclick='setAddress()'>SET ADDRESS</button>";
   html += "<button class='button' onclick='getStatus()'>GET STATUS</button>";
+  html += "<button class='button danger' onclick='clearLoRaConfig()'>CLEAR STORED CONFIG</button>";
   html += "</div>";
   html += "</div>";
+  html += "</div>";
+  html += "</div>";
+
+  // Ping Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"ping\")'>";
+  html += "<span>PING TEST</span>";
+  html += "<svg class='accordion-icon' id='ping-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='ping-content'>";
+  html += "<p>Test connectivity between devices</p>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Target Region</label>";
+  html += "<input type='number' id='pingRegion' placeholder='10' min='0' max='255' value='10'>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>Target Community</label>";
+  html += "<input type='number' id='pingCommunity' placeholder='1' min='0' max='255' value='1'>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Target Node</label>";
+  html += "<input type='number' id='pingNode' placeholder='2' min='0' max='255' value='2'>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button' onclick='sendPing()'>SEND PING</button>";
+  html += "<button class='button' onclick='pingAll()'>PING ALL</button>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";  
+  
+  // WiFi Configuration Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"wifi\")'>";
+  html += "<span>WIFI CONFIGURATION</span>";
+  html += "<svg class='accordion-icon' id='wifi-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='wifi-content'>";
+  html += "<p>Configure internet WiFi connection for transaction forwarding</p>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>WiFi SSID</label>";
+  html += "<input type='text' id='wifiSSID' placeholder='Your WiFi Network Name' value='" + internet_ssid + "'>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>WiFi Password</label>";
+  html += "<input type='password' id='wifiPassword' placeholder='Your WiFi Password' value='" + internet_password + "'>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button success' onclick='connectWiFi()'>CONNECT TO INTERNET</button>";
+  html += "<button class='button danger' onclick='disconnectWiFi()'>DISCONNECT</button>";
+  html += "<button class='button' onclick='getWiFiStatus()'>REFRESH STATUS</button>";
+  html += "<button class='button danger' onclick='clearWiFiCredentials()'>CLEAR STORED CREDENTIALS</button>";
+  html += "</div>";
+  html += "<div id='wifiStatus' class='response' style='display:none;'></div>";
+  html += "</div>";
+  html += "</div>";
+  
+  // AP Password Management Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"password\")'>";
+  html += "<span>ACCESS POINT</span>";
+  html += "<svg class='accordion-icon' id='password-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='password-content'>";
+  html += "<p>Change the RadioDoge WiFi access point password for enhanced security</p>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Current Password</label>";
+  html += "<input type='password' id='currentPassword' placeholder='Current password' value='" + ap_password + "' readonly>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>New Password</label>";
+  html += "<input type='password' id='newPassword' placeholder='Enter new password (8-32 chars, letters + numbers)'>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Confirm New Password</label>";
+  html += "<input type='password' id='confirmPassword' placeholder='Confirm new password'>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>Password Requirements</label>";
+  html += "<div style='background:#1a1a1a;padding:10px;border-radius:8px;font-size:0.9em;'>";
+  html += "<p><svg width='12' height='12' viewBox='0 0 24 24' fill='#28a745' style='vertical-align:middle;margin-right:8px;'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>8-32 characters long</p>";
+  html += "<p><svg width='12' height='12' viewBox='0 0 24 24' fill='#28a745' style='vertical-align:middle;margin-right:8px;'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>Must contain letters and numbers</p>";
+  html += "<p><svg width='12' height='12' viewBox='0 0 24 24' fill='#28a745' style='vertical-align:middle;margin-right:8px;'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>Special characters allowed</p>";
+  html += "<p><svg width='12' height='12' viewBox='0 0 24 24' fill='#28a745' style='vertical-align:middle;margin-right:8px;'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>Case sensitive</p>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button success' onclick='changePassword()'>CHANGE PASSWORD</button>";
+  html += "<button class='button danger' onclick='resetPassword()'>RESET TO DEFAULT</button>";
+  html += "<button class='button' onclick='getPasswordStatus()'>REFRESH STATUS</button>";
+  html += "</div>";
+  html += "<div id='passwordStatus' class='response' style='display:none;'></div>";
+  html += "</div>";
+  html += "</div>";
+  
+  // Doge Internet Gateway Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"gateway\")'>";
+  html += "<span>DOGE INTERNET GATEWAY</span>";
+  html += "<svg class='accordion-icon' id='gateway-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='gateway-content'>";
+  html += "<p>Send Dogecoin transactions to internet gateways</p>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Gateway Type</label>";
+  html += "<select id='gatewayType' onchange='updateGatewayFields()'>";
+  html += "<option value='none'>None</option>";
+  html += "<option value='core'>CORE</option>";
+  html += "<option value='dogebox'>DogeBox</option>";
+  html += "<option value='wallet'>Dogecoin Wallet</option>";
+  html += "<option value='custom'>Custom</option>";
+  html += "</select>";
+  html += "</div>";
+  html += "<div id='ipField'>";
+  html += "<label>IP Address</label>";
+  html += "<input type='text' id='gatewayIp' placeholder='192.168.1.100'>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div id='rpcFields' style='display:none;'>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>RPC Username</label>";
+  html += "<input type='text' id='rpcUsername' placeholder='rpcuser'>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>RPC Password</label>";
+  html += "<input type='password' id='rpcPassword' placeholder='rpcpassword'>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div id='customFields' style='display:none;'>";
+  html += "<div class='grid'>";
+  html += "<div>";
+  html += "<label>Port</label>";
+  html += "<input type='text' id='gatewayPort' placeholder='8080'>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>Endpoint</label>";
+  html += "<input type='text' id='gatewayEndpoint' placeholder='/api/push/tx'>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div id='gatewayInfo' style='display:none;'>";
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #ffc107;'>";
+  html += "<h4 style='color:#ffc107;margin:0 0 10px 0;'>Gateway Information</h4>";
+  html += "<p id='gatewayDescription' style='margin:5px 0;color:#ccc;'></p>";
+  html += "<p id='gatewayEndpoint' style='margin:5px 0;color:#ffc107;font-family:monospace;'></p>";
+  html += "<p id='gatewayRequirements' style='margin:5px 0;color:#888;font-size:0.9em;'></p>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div>";
+  html += "<label>Transaction Data</label>";
+  html += "<textarea id='gatewayTransaction' placeholder='Paste signed Dogecoin transaction here...' rows='4'></textarea>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button success' onclick='sendToGateway()'>SEND TO INTERNET</button>";
+  html += "<button class='button' onclick='testGateway()'>TEST CONNECTION</button>";
+  html += "</div>";
+  html += "<div id='gatewayStatus' class='response' style='display:none;'></div>";
   html += "</div>";
   html += "</div>";
   
@@ -1145,13 +1831,13 @@ void handleRoot() {
   html += "<p><strong>Note:</strong> Use WiFi web interface for mobile access.</p>";
   
   html += "<h3>API Commands (WiFi Only)</h3>";
-  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;'>";
-  html += "<p><strong>Send Ping:</strong><br><code>GET /api/ping?region=10&community=1&node=2</code></p>";
-  html += "<p><strong>Send Message:</strong><br><code>POST /api/message</code><br>Body: <code>address=10.1.2&type=text&message=Hello!</code></p>";
-  html += "<p><strong>Send Dogecoin Transaction:</strong><br><code>POST /api/transaction</code><br>Body: <code>address=10.1.2&type=signed&data=0100000001...</code></p>";
-  html += "<p><strong>Broadcast Message:</strong><br><code>POST /api/broadcast</code><br>Body: <code>type=announcement&priority=normal&message=Network update</code></p>";
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;word-wrap:break-word;white-space:pre-wrap;'>";
+  html += "<p><strong>Send Ping:</strong><br><code style='word-break:break-all;'>GET /api/ping?region=10&community=1&node=2</code></p>";
+  html += "<p><strong>Send Message:</strong><br><code>POST /api/message</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=text&message=Hello!</code></p>";
+  html += "<p><strong>Send Dogecoin Transaction:</strong><br><code>POST /api/transaction</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=signed&data=0100000001...</code></p>";
+  html += "<p><strong>Broadcast Message:</strong><br><code>POST /api/broadcast</code><br>Body: <code style='word-break:break-all;'>type=announcement&priority=normal&message=Network update</code></p>";
   html += "<p><strong>Get Status:</strong><br><code>GET /api/status</code></p>";
-  html += "<p><strong>Set Address:</strong><br><code>POST /api/address</code><br>Body: <code>region=10&community=1&node=5</code></p>";
+  html += "<p><strong>Set Address:</strong><br><code>POST /api/address</code><br>Body: <code style='word-break:break-all;'>region=10&community=1&node=5</code></p>";
   html += "</div>";
   
   html += "<h3>REST API</h3>";
@@ -1246,6 +1932,17 @@ void handleRoot() {
   html += "function setAddress(){var r=document.getElementById('region').value;var c=document.getElementById('community').value;var n=document.getElementById('node').value;fetch('/address?region='+r+'&community='+c+'&node='+n).then(r=>r.text()).then(d=>{showResponse('ADDRESS: '+d);updateStatusDisplay(r+'.'+c+'.'+n);});}";
   html += "function updateStatusDisplay(newAddress){var addressSpan=document.querySelector('.address-display');if(addressSpan){addressSpan.textContent=newAddress;}}";
   html += "function getStatus(){fetch('/status').then(r=>r.text()).then(d=>showResponse('STATUS: '+d));}";
+  html += "function clearLoRaConfig(){if(confirm('Are you sure you want to clear stored LoRa configuration? This will reset to default values.')){fetch('/api/lora/clear',{method:'POST'}).then(r=>r.json()).then(d=>{showResponse('LORA CONFIG: '+JSON.stringify(d,null,2));setTimeout(()=>location.reload(),2000);});}}";
+  html += "function changePassword(){var newPass=document.getElementById('newPassword').value;var confirmPass=document.getElementById('confirmPassword').value;if(!newPass||!confirmPass){showResponse('Please enter both new password and confirmation');return;}if(newPass!==confirmPass){showResponse('Passwords do not match');return;}if(newPass.length<8||newPass.length>32){showResponse('Password must be 8-32 characters long');return;}var hasLetter=/[a-zA-Z]/.test(newPass);var hasNumber=/[0-9]/.test(newPass);if(!hasLetter||!hasNumber){showResponse('Password must contain at least one letter and one number');return;}fetch('/api/password/change',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password='+encodeURIComponent(newPass)}).then(r=>r.json()).then(d=>{document.getElementById('passwordStatus').style.display='block';document.getElementById('passwordStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){setTimeout(()=>{alert('Password changed successfully! You will be disconnected. Please reconnect with the new password.');location.reload();},2000);}});}";
+  html += "function resetPassword(){if(confirm('Are you sure you want to reset the password to default (radiodoge)? This will disconnect all current users.')){fetch('/api/password/reset',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('passwordStatus').style.display='block';document.getElementById('passwordStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>{alert('Password reset to default! You will be disconnected. Please reconnect with password: radiodoge');location.reload();},2000);});}}";
+  html += "function getPasswordStatus(){fetch('/api/password/status').then(r=>r.json()).then(d=>{document.getElementById('passwordStatus').style.display='block';document.getElementById('passwordStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function connectWiFi(){var ssid=document.getElementById('wifiSSID').value;var password=document.getElementById('wifiPassword').value;if(!ssid){showResponse('Please enter WiFi SSID');return;}fetch('/api/wifi/connect',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password)}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){setTimeout(()=>location.reload(),2000);}});}";
+  html += "function disconnectWiFi(){fetch('/api/wifi/disconnect',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}";
+  html += "function getWiFiStatus(){fetch('/api/wifi').then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function clearWiFiCredentials(){if(confirm('Are you sure you want to clear stored WiFi credentials? This will prevent automatic reconnection on boot.')){fetch('/api/wifi/clear',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}}";
+  html += "function updateGatewayFields(){var type=document.getElementById('gatewayType').value;var customFields=document.getElementById('customFields');var rpcFields=document.getElementById('rpcFields');var ipField=document.getElementById('ipField');var gatewayInfo=document.getElementById('gatewayInfo');var description=document.getElementById('gatewayDescription');var endpoint=document.getElementById('gatewayEndpoint');var requirements=document.getElementById('gatewayRequirements');if(type==='none'){ipField.style.display='none';customFields.style.display='none';rpcFields.style.display='none';gatewayInfo.style.display='none';}else if(type==='core'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='block';gatewayInfo.style.display='block';description.innerHTML='Connect to your local Dogecoin Core node using RPC for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT] (RPC)';requirements.innerHTML='Requirements: Enable RPC in dogecoin.conf (server=1, rpcuser, rpcpassword, rpcport)';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='22555';document.getElementById('gatewayEndpoint').value='';}else if(type==='dogebox'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to DogeBox API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: DogeBox running on specified port';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='420';document.getElementById('gatewayEndpoint').value='/dogebox-api/tx/send';}else if(type==='wallet'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to Dogecoin Wallet API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Dogecoin Wallet with API enabled';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='80';document.getElementById('gatewayEndpoint').value='/tx/send';}else if(type==='custom'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to a custom gateway endpoint.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Custom gateway accepting POST requests with transaction data';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').placeholder='8080';document.getElementById('gatewayEndpoint').placeholder='/api/push/tx';}}";
+  html += "function sendToGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var tx=document.getElementById('gatewayTransaction').value;if(!tx){showResponse('Please enter transaction data');return;}if(!ip){showResponse('Please enter IP address');return;}var url='';var body='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;body='method=sendrawtransaction&params=[\"'+tx+'\"]&id=1&rpcuser='+encodeURIComponent(rpcUser)+'&rpcpassword='+encodeURIComponent(rpcPass);}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)+'&body='+encodeURIComponent(body)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function testGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;if(!ip){showResponse('Please enter IP address');return;}var url='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;}fetch('/api/gateway/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
   html += "</script></div></body></html>";
   
   server.send(200, "text/html", html);
@@ -1323,6 +2020,8 @@ void handleAddress() {
     local.node = server.arg("node").toInt();
     InitControlMessages();
     DisplayLocalAddress(local);
+    // Save LoRa configuration to NVS
+    saveLoRaConfiguration(local.region, local.community, local.node);
     server.send(200, "text/plain", "Address set to " + String(local.region) + "." + String(local.community) + "." + String(local.node));
   } else {
     // Get current address
@@ -1370,7 +2069,15 @@ void handleTransaction() {
     Radio.Send(txPacket, 8 + txLength);
     DisplayTXMessage("Transaction: " + transaction.substring(0, 20) + "...", dest);
     
-    server.send(200, "text/plain", "Transaction sent to " + address + " (" + type + ")");
+    // Forward to internet if connected
+    if (internet_connected) {
+      bool internetSuccess = sendTransactionToInternet(transaction);
+      if (internetSuccess) {
+        Serial.println("Transaction also forwarded to internet gateway");
+      }
+    }
+    
+    server.send(200, "text/plain", "Transaction sent to " + address + " (" + type + ")" + (internet_connected ? " + Internet" : ""));
   } else {
     server.send(400, "text/plain", "No transaction data provided");
   }
@@ -1441,7 +2148,7 @@ void handleStatus() {
   status += "Address: " + String(local.region) + "." + String(local.community) + "." + String(local.node) + "\n";
   status += "LoRa: Active\n";
   status += "Display: Working\n";
-  status += "WiFi: " + String(ssid) + "\n";
+  status += "WiFi: " + String(ap_ssid) + "\n";
   status += "Uptime: " + String(millis() / 1000) + " seconds\n";
   status += "Free Memory: " + String(ESP.getFreeHeap()) + " bytes";
   server.send(200, "text/plain", status);
@@ -1548,10 +2255,19 @@ void handleApiTransaction() {
       nodeAddress txDest = {region, community, node};
       SendTransaction(txDest, transaction, type);
       
+      // Forward to internet if connected
+      bool internetSuccess = false;
+      if (internet_connected) {
+        internetSuccess = sendTransactionToInternet(transaction);
+      }
+      
       response += "\"action\":\"transaction\",";
       response += "\"target\":\"" + address + "\",";
       response += "\"type\":\"" + type + "\",";
       response += "\"message\":\"Transaction sent to " + address + "\"";
+      if (internet_connected) {
+        response += ",\"internet_forwarded\":" + String(internetSuccess ? "true" : "false");
+      }
     } else {
       response += "\"success\":false,";
       response += "\"error\":\"Invalid address format. Use REGION.COMMUNITY.NODE\"";
@@ -1599,7 +2315,7 @@ void handleApiStatus() {
   response += "\"address\":\"" + String(local.region) + "." + String(local.community) + "." + String(local.node) + "\",";
   response += "\"status\":\"Ready\",";
   response += "\"lora\":\"Active\",";
-  response += "\"wifi\":\"" + String(ssid) + "\",";
+  response += "\"wifi\":\"" + String(ap_ssid) + "\",";
   response += "\"uptime\":" + String(millis() / 1000) + ",";
   response += "\"free_memory\":" + String(ESP.getFreeHeap());
   response += "}";
@@ -1620,10 +2336,12 @@ void handleApiAddress() {
       local.node = server.arg("node").toInt();
       InitControlMessages();
       DisplayLocalAddress(local);
+      // Save LoRa configuration to NVS
+      saveLoRaConfiguration(local.region, local.community, local.node);
       
       response += "\"action\":\"set_address\",";
       response += "\"address\":\"" + String(local.region) + "." + String(local.community) + "." + String(local.node) + "\",";
-      response += "\"message\":\"Address updated successfully\"";
+      response += "\"message\":\"Address updated and saved successfully\"";
     } else {
       response += "\"success\":false,";
       response += "\"error\":\"Missing required parameters: region, community, node\"";
@@ -1632,6 +2350,194 @@ void handleApiAddress() {
     // Get current address
     response += "\"action\":\"get_address\",";
     response += "\"address\":\"" + String(local.region) + "." + String(local.community) + "." + String(local.node) + "\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// WiFi Configuration API Handlers
+void handleApiWifi() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"wifi\":{";
+  response += "\"ap_ssid\":\"" + String(ap_ssid) + "\",";
+  response += "\"ap_ip\":\"" + WiFi.softAPIP().toString() + "\",";
+  response += "\"internet_connected\":" + String(internet_connected ? "true" : "false") + ",";
+  response += "\"internet_ssid\":\"" + internet_ssid + "\",";
+  if (internet_connected) {
+    response += "\"internet_ip\":\"" + WiFi.localIP().toString() + "\",";
+  }
+  response += "\"dual_mode\":" + String(dual_wifi_mode ? "true" : "false");
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiWifiConnect() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (server.hasArg("ssid") && server.hasArg("password")) {
+    internet_ssid = server.arg("ssid");
+    internet_password = server.arg("password");
+    
+    // Attempt to connect
+    connectToInternetWiFi();
+    
+    if (internet_connected) {
+      response += "\"action\":\"wifi_connect\",";
+      response += "\"message\":\"Successfully connected to " + internet_ssid + "\",";
+      response += "\"ip\":\"" + WiFi.localIP().toString() + "\"";
+    } else {
+      response += "\"success\":false,";
+      response += "\"action\":\"wifi_connect_failed\",";
+      response += "\"error\":\"Failed to connect to " + internet_ssid + "\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing SSID or password\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiWifiDisconnect() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  disconnectInternetWiFi();
+  
+  response += "\"action\":\"wifi_disconnect\",";
+  response += "\"message\":\"Disconnected from internet WiFi\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiWifiClear() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  clearWiFiCredentials();
+  
+  response += "\"action\":\"wifi_clear\",";
+  response += "\"message\":\"WiFi credentials cleared from storage\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiLoRaClear() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  clearLoRaConfiguration();
+  InitControlMessages();
+  
+  response += "\"action\":\"lora_clear\",";
+  response += "\"message\":\"LoRa configuration cleared from storage\",";
+  response += "\"new_address\":\"" + String(local.region) + "." + String(local.community) + "." + String(local.node) + "\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiPasswordChange() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (server.hasArg("password")) {
+    String newPassword = server.arg("password");
+    
+    // Validate password
+    if (!validatePassword(newPassword)) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Password does not meet requirements. Must be 8-32 characters with letters and numbers\"";
+    } else {
+      // Save new password
+      ap_password = newPassword;
+      saveAPPassword(newPassword);
+      
+      // Restart AP with new password
+      restartAP();
+      
+      response += "\"action\":\"password_change\",";
+      response += "\"message\":\"Password changed successfully. Access Point restarted with new password\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"No password provided\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiPasswordReset() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  // Clear stored password and reset to default
+  clearAPPassword();
+  
+  // Restart AP with default password
+  restartAP();
+  
+  response += "\"action\":\"password_reset\",";
+  response += "\"message\":\"Password reset to default (radiodoge). Access Point restarted\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiPasswordStatus() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"password\":{";
+  response += "\"current\":\"" + ap_password + "\",";
+  response += "\"is_default\":" + String(ap_password == "radiodoge" ? "true" : "false") + ",";
+  response += "\"length\":" + String(ap_password.length()) + ",";
+  response += "\"requirements\":{";
+  response += "\"min_length\":" + String(MIN_PASSWORD_LENGTH) + ",";
+  response += "\"max_length\":" + String(MAX_PASSWORD_LENGTH) + ",";
+  response += "\"needs_letter_number\":true";
+  response += "}";
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiGateway() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (!internet_connected) {
+    response += "\"success\":false,";
+    response += "\"error\":\"No internet connection available\"";
+  } else if (server.hasArg("transaction")) {
+    String transaction = server.arg("transaction");
+    String gatewayUrl = server.hasArg("url") ? server.arg("url") : "https://api.blockcypher.com/v1/doge/main/txs/push";
+    
+    bool success = sendTransactionToCustomGateway(transaction, gatewayUrl);
+    
+    if (success) {
+      response += "\"action\":\"gateway_send\",";
+      response += "\"message\":\"Transaction sent to gateway successfully\",";
+      response += "\"gateway\":\"" + gatewayUrl + "\"";
+    } else {
+      response += "\"success\":false,";
+      response += "\"error\":\"Failed to send transaction to gateway\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"No transaction data provided\"";
   }
   
   response += "}";
