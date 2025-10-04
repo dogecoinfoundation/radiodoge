@@ -11,6 +11,8 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Web Interface**: Modern, responsive web UI for device management
 - **REST API**: Complete API for programmatic control
 - **Persistent Configuration**: All settings stored in NVS flash memory
+- **Real-Time Logging**: Monitor all system activity with live log viewer
+- **Internet Gateway Support**: Direct transaction broadcasting to Dogecoin network
 
 ### Security Features
 - **Custom AP Password**: Secure, configurable WiFi access point password
@@ -23,6 +25,9 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 ### Network Features
 - **Internet Gateway**: Forward transactions to Dogecoin network
 - **Custom Gateways**: Support for custom transaction endpoints
+- **Dogecoin Core RPC**: Direct JSON-RPC communication with Dogecoin Core nodes
+- **Gateway Persistence**: Gateway credentials persist across reboots
+- **Multiple Gateway Types**: Support for CORE, DogeBox, Dogecoin Wallet, and custom gateways
 - **Auto-Reconnection**: Automatic WiFi reconnection on boot
 - **Dual Mode**: Simultaneous AP and internet connectivity
 - **WiFi Credential Storage**: Persistent storage of internet WiFi credentials
@@ -35,6 +40,26 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Display Support**: OLED display with status information
 - **LoRa Configuration Storage**: Persistent storage of LoRa network settings
 - **Auto-Configuration**: Automatic restoration of last known settings on boot
+
+### New Features (v3.2)
+- **Enhanced Real-Time Logging**: Comprehensive logging of all LoRa, WiFi, and API activities with detailed transmission/reception information
+- **Log Forwarding**: Send system logs to other RadioDoge devices via LoRa for remote monitoring
+- **Fixed Gateway Forwarding**: Transactions now properly forward to local gateways without requiring internet connection
+- **Improved Gateway UI**: Dynamic form fields that hide/show based on gateway type (CORE gateway hides endpoint field)
+- **Enhanced JSON Responses**: Dogecoin Core responses now return transaction ID on success or detailed error messages
+- **Auto-Refresh Logs**: Real-time logs auto-refresh by default for better monitoring
+- **Password Management**: Fixed RPC username/password storage and retrieval with proper NVS key handling
+- **User Guide**: Comprehensive examples for sending Dogecoin transactions via LoRa and direct API calls
+- **Security Improvements**: Removed sensitive password information from logs, enhanced credential storage
+
+### Previous Features (v3.1)
+- **Real-Time Logs**: Live monitoring of all system activity including display messages, network activity, and transaction processing
+- **Internet Gateway Integration**: Send transactions directly to Dogecoin Core, DogeBox, Dogecoin Wallet, or custom gateways
+- **JSON-RPC Support**: Direct communication with Dogecoin Core nodes using standard JSON-RPC protocol
+- **Persistent Gateway Configuration**: Gateway credentials automatically saved and restored across reboots
+- **Enhanced API**: Complete REST API for programmatic control including gateway management and transaction sending
+- **AJAX Web Interface**: Improved user experience with no-page-refresh operations
+- **Gateway Testing**: Built-in tools to test gateway connectivity and configuration
 
 ## 📋 Hardware Requirements
 
@@ -181,6 +206,35 @@ Send Dogecoin transaction via LoRa.
 - `address`: Target address (e.g., "10.1.2")
 - `type`: Transaction type ("signed", "raw", "utxo")
 - `data`: Transaction data (hex string)
+
+**Enhanced Response Format:**
+When a gateway is configured, the response includes forwarding information:
+
+**Success with Gateway:**
+```json
+{
+  "success": true,
+  "action": "transaction",
+  "target": "10.1.2",
+  "type": "signed",
+  "message": "Transaction sent to 10.1.2",
+  "internet_forwarded": true,
+  "internet_response": "{\"success\":true,\"transaction_id\":\"abc123...\"}"
+}
+```
+
+**Error with Gateway:**
+```json
+{
+  "success": true,
+  "action": "transaction",
+  "target": "10.1.2", 
+  "type": "signed",
+  "message": "Transaction sent to 10.1.2",
+  "internet_forwarded": true,
+  "internet_response": "{\"success\":false,\"error\":\"transaction already in block chain\"}"
+}
+```
 
 #### Broadcast Operations
 ```http
@@ -460,6 +514,7 @@ The web interface now includes new sections and improved styling:
 - **Access Point Password**: Change device password
 - **Internet Gateway**: Configure transaction forwarding
 - **Device Configuration**: Manage LoRa settings
+- **Real-Time Logs**: Live monitoring with auto-refresh and log forwarding
 
 **UI Improvements**:
 - Cleaner status display (Online/Offline for internet)
@@ -467,14 +522,45 @@ The web interface now includes new sections and improved styling:
 - SVG icons for better compatibility
 - Grey buttons instead of red for better aesthetics
 - White text on green buttons for better visibility
+- Dynamic form fields based on gateway type
+- Auto-refresh logs by default
+
+### Enhanced Real-Time Logging
+The system now provides comprehensive logging of all activities:
+
+**What's Logged**:
+- **LoRa Activity**: Transmission/reception with RSSI, SNR, packet length
+- **WiFi Events**: Access point startup, connection status changes
+- **API Calls**: All endpoint calls with client IP addresses
+- **Gateway Operations**: Transaction forwarding and responses
+- **System Events**: Configuration changes, errors, status updates
+
+**Log Features**:
+- **Auto-Refresh**: Logs automatically refresh every 2 seconds by default
+- **Log Forwarding**: Send current logs to other RadioDoge devices via LoRa
+- **Circular Buffer**: Maintains last 50 log entries in memory
+- **Detailed Information**: Includes timestamps, signal strength, error codes
+- **Security**: Sensitive information (passwords) excluded from logs
 
 ### Internet Gateway Integration
 Transactions can now be automatically forwarded to the internet:
 
-**Default Gateway**: BlockCypher API for Dogecoin transactions
-**Custom Gateway**: Support for custom transaction endpoints
-**Automatic Forwarding**: Transactions sent via LoRa are automatically forwarded to internet if connected
-**Status Tracking**: Real-time feedback on internet forwarding success
+**Gateway Types Supported**:
+- **Dogecoin Core**: Direct JSON-RPC communication with local Dogecoin Core nodes
+- **DogeBox**: Custom DogeBox API endpoints
+- **Dogecoin Wallet**: Standard wallet API endpoints
+- **Custom Gateways**: Any HTTP POST endpoint accepting transaction data
+
+**Enhanced Features**:
+- **Local Gateway Priority**: Uses configured local gateways even without internet
+- **Smart Forwarding**: Automatically forwards to best available gateway
+- **Detailed Responses**: Returns transaction ID on success or specific error messages
+- **Persistent Configuration**: Gateway credentials saved and restored across reboots
+- **Dynamic UI**: Form fields adapt based on selected gateway type
+
+**Response Format**:
+- **Success**: `{"success":true,"transaction_id":"abc123..."}`
+- **Error**: `{"success":false,"error":"specific error message"}`
 
 ## 🚨 Troubleshooting
 
@@ -500,11 +586,78 @@ Transactions can now be automatically forwarded to the internet:
 - Check API endpoint URLs
 - Verify parameter format
 
+#### Gateway Issues
+- **No internet_forwarded in response**: Check if gateway is configured in "Internet Gateway" section
+- **Gateway not working**: Verify IP address, port, and credentials are correct
+- **CORE gateway errors**: Ensure Dogecoin Core is running and RPC is enabled
+- **Password not saving**: Check password length (max 15 characters for NVS keys)
+
+#### Log Issues
+- **Logs not auto-refreshing**: Click "Toggle Auto-Refresh" button
+- **Missing log entries**: Check if logging is enabled in firmware
+- **Log forwarding fails**: Verify target device address is correct
+
 ### Reset to Defaults
 1. **LoRa Config**: Use "Clear Stored Config" button
 2. **WiFi Config**: Use "Clear Stored Credentials" button  
 3. **Password**: Use "Reset to Default" button
 4. **Full Reset**: Power cycle device
+
+## 🔌 API Reference
+
+### Base URL
+```
+http://192.168.4.1/api/
+```
+
+### Core Endpoints
+
+#### Transaction Management
+- **`POST /api/transaction`** - Send LoRa transaction
+  - Body: `address=10.1.2&type=signed&data=0100000001...`
+- **`POST /api/transaction/send`** - Send transaction to stored gateway
+  - Body: `transaction=0100000001...`
+
+#### Gateway Management
+- **`GET /api/gateway/status`** - Get current gateway configuration
+- **`POST /api/gateway/save`** - Save gateway credentials
+  - Body: `type=core&ip=192.168.1.100&port=22555&username=user&password=pass`
+- **`POST /api/gateway/clear`** - Clear gateway credentials
+- **`POST /api/gateway/test`** - Test gateway connection
+  - Body: `url=http://192.168.1.100:22555`
+- **`GET /api/gateway/config`** - Get gateway config (API)
+- **`POST /api/gateway/config`** - Set gateway config (API)
+
+#### JSON-RPC Support
+- **`POST /api/jsonrpc`** - Send JSON-RPC to Dogecoin Core
+  - Body: `transaction=0100000001...&url=http://192.168.1.100:22555&rpcuser=user&rpcpass=pass`
+
+#### System Monitoring
+- **`GET /api/logs`** - Get real-time system logs
+- **`POST /api/logs/send`** - Send logs to other RadioDoge devices via LoRa
+  - Body: `address=10.1.2&type=logs&logs=log_content`
+- **`GET /api/status`** - Get device status
+- **`GET /api/wifi`** - Get WiFi connection status
+
+#### Communication
+- **`POST /api/message`** - Send text message
+  - Body: `address=10.1.2&type=text&text=Hello`
+- **`POST /api/broadcast`** - Send broadcast message
+  - Body: `type=announcement&priority=normal&message=Update`
+- **`POST /api/ping`** - Send ping
+  - Query: `?region=10&community=1&node=2`
+
+### Response Format
+All API responses follow this JSON format:
+```json
+{
+  "success": true,
+  "timestamp": 1234567890,
+  "action": "action_name",
+  "message": "Description of action",
+  "data": { ... }
+}
+```
 
 ## 📊 Technical Specifications
 

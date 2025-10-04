@@ -34,9 +34,24 @@ String internet_password = "";
 bool internet_connected = false;
 bool dual_wifi_mode = false;
 
+// Gateway Configuration (persistent storage for all types)
+String gateway_type = "none";
+String gateway_ip = "";
+String gateway_port = "";
+String gateway_endpoint = "";
+String gateway_username = "";
+String gateway_password = "";
+
 // Password requirements
 const int MIN_PASSWORD_LENGTH = 8;
 const int MAX_PASSWORD_LENGTH = 32;
+
+// Real-time logging system
+const int MAX_LOG_ENTRIES = 100;
+const int MAX_LOG_LENGTH = 200;
+String logBuffer[MAX_LOG_ENTRIES];
+int logIndex = 0;
+int logCount = 0;
 
 // HTTP Client for internet requests
 #include <HTTPClient.h>
@@ -161,6 +176,13 @@ void setup() {
     Serial.println("Using default LoRa configuration");
   }
   
+  // Load stored gateway credentials
+  if (loadGatewayCredentials()) {
+    Serial.println("Gateway credentials restored from storage");
+  } else {
+    Serial.println("No gateway credentials found");
+  }
+  
   // Initialize control messages with loaded/default address
   InitControlMessages();
   
@@ -214,6 +236,7 @@ void DisplayTXMessage(String message, nodeAddress dest) {
   radioDogeDisplay.setCursor(0, 20);
   radioDogeDisplay.println("To: " + String(dest.region) + "." + String(dest.community) + "." + String(dest.node));
   radioDogeDisplay.display();
+  addDisplayLog("TX: " + message + " to " + String(dest.region) + "." + String(dest.community) + "." + String(dest.node));
 }
 
 void DisplayRXMessage(String message, nodeAddress sender) {
@@ -225,6 +248,7 @@ void DisplayRXMessage(String message, nodeAddress sender) {
   radioDogeDisplay.setCursor(0, 20);
   radioDogeDisplay.println("From: " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
   radioDogeDisplay.display();
+  addDisplayLog("RX: " + message + " from " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
 }
 
 void DisplayBroadcastMessage(String message, nodeAddress sender) {
@@ -236,6 +260,7 @@ void DisplayBroadcastMessage(String message, nodeAddress sender) {
   radioDogeDisplay.setCursor(0, 20);
   radioDogeDisplay.println("From: " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
   radioDogeDisplay.display();
+  addDisplayLog("BROADCAST: " + message + " from " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
 }
 
 void DisplayCommandAndControl(uint8_t command) {
@@ -616,6 +641,239 @@ void clearAPPassword() {
   ap_password = "radiodoge";
 }
 
+// Gateway Credential Management Functions
+void saveGatewayCredentials(String type, String ip, String port, String endpoint, String username, String password) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("gateway_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for gateway credentials: " + String(err));
+    addLog("ERROR: Failed to open NVS handle for gateway save - Error code: " + String(err));
+    return;
+  }
+  
+  // Clear any existing password keys to avoid conflicts
+  nvs_erase_key(nvs_handle, "gw_pass");
+  nvs_erase_key(nvs_handle, "gateway_pass");
+  nvs_erase_key(nvs_handle, "gateway_password");
+  
+  // Save gateway type
+  err = nvs_set_str(nvs_handle, "gateway_type", type.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving gateway type to NVS");
+  }
+  
+  // Save IP
+  err = nvs_set_str(nvs_handle, "gateway_ip", ip.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving gateway IP to NVS");
+  }
+  
+  // Save port
+  err = nvs_set_str(nvs_handle, "gateway_port", port.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving gateway port to NVS");
+  }
+  
+  // Save endpoint
+  err = nvs_set_str(nvs_handle, "gateway_endpoint", endpoint.c_str());
+  if (err != ESP_OK) {
+    Serial.println("Error saving gateway endpoint to NVS");
+  }
+  
+  // Save username (if provided)
+  if (username.length() > 0) {
+    err = nvs_set_str(nvs_handle, "gateway_user", username.c_str());
+    if (err != ESP_OK) {
+      Serial.println("Error saving gateway username to NVS");
+    } else {
+      Serial.println("Gateway username saved: " + username);
+    }
+  }
+  
+  // Save password (if provided)
+  if (password.length() > 0) {
+    Serial.println("Saving password with length: " + String(password.length()));
+    
+    // Use shorter key name (ESP32 NVS max key length is 15 characters)
+    err = nvs_set_str(nvs_handle, "gw_pass", password.c_str());
+    if (err != ESP_OK) {
+      Serial.println("Error saving gateway password to NVS: " + String(err));
+      addLog("ERROR: Failed to save gateway password to NVS - Error code: " + String(err));
+    } else {
+      Serial.println("Gateway password saved: [HIDDEN]");
+    }
+  } else {
+    Serial.println("No password provided for saving");
+    addLog("WARNING: No password provided for gateway save");
+  }
+  
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error committing gateway credentials to NVS: " + String(err));
+    addLog("ERROR: Failed to save gateway credentials to NVS");
+  } else {
+    Serial.println("Gateway credentials saved to NVS");
+    addLog("Gateway credentials saved: " + type + " at " + ip + ":" + port);
+  }
+  
+  nvs_close(nvs_handle);
+}
+
+bool loadGatewayCredentials() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("gateway_config", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("No gateway credentials found in NVS");
+    return false;
+  }
+  
+  // Load gateway type
+  size_t type_len = 16;
+  char type_buffer[16];
+  err = nvs_get_str(nvs_handle, "gateway_type", type_buffer, &type_len);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  gateway_type = String(type_buffer);
+  
+  // Load IP
+  size_t ip_len = 16;
+  char ip_buffer[16];
+  err = nvs_get_str(nvs_handle, "gateway_ip", ip_buffer, &ip_len);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  gateway_ip = String(ip_buffer);
+  
+  // Load port
+  size_t port_len = 8;
+  char port_buffer[8];
+  err = nvs_get_str(nvs_handle, "gateway_port", port_buffer, &port_len);
+  if (err != ESP_OK) {
+    nvs_close(nvs_handle);
+    return false;
+  }
+  gateway_port = String(port_buffer);
+  
+  // Load endpoint (optional)
+  size_t endpoint_len = 64;
+  char endpoint_buffer[64];
+  err = nvs_get_str(nvs_handle, "gateway_endpoint", endpoint_buffer, &endpoint_len);
+  if (err == ESP_OK) {
+    gateway_endpoint = String(endpoint_buffer);
+  } else {
+    gateway_endpoint = "";
+    Serial.println("No gateway endpoint found");
+  }
+  
+  // Load username (optional)
+  size_t username_len = 128;
+  char username_buffer[128];
+  err = nvs_get_str(nvs_handle, "gateway_user", username_buffer, &username_len);
+  if (err == ESP_OK) {
+    gateway_username = String(username_buffer);
+    Serial.println("Loaded gateway username: " + gateway_username);
+  } else {
+    Serial.println("No gateway username found");
+  }
+  
+  // Load password (optional) - try multiple key names
+  size_t password_len = 256;  // Increased buffer size
+  char password_buffer[256];
+  
+  // First try the working key name
+  err = nvs_get_str(nvs_handle, "gw_pass", password_buffer, &password_len);
+  if (err != ESP_OK) {
+    // Try old key name for backward compatibility
+    password_len = 256;
+    err = nvs_get_str(nvs_handle, "gateway_pass", password_buffer, &password_len);
+    if (err != ESP_OK) {
+      // Try the long key name (in case it was saved before the fix)
+      password_len = 256;
+      err = nvs_get_str(nvs_handle, "gateway_password", password_buffer, &password_len);
+    }
+  }
+  
+  if (err == ESP_OK) {
+    gateway_password = String(password_buffer);
+    Serial.println("Loaded gateway password: [HIDDEN]");
+    Serial.println("Password length loaded: " + String(password_len) + " characters");
+  } else {
+    Serial.println("No gateway password found: " + String(err));
+    addLog("WARNING: No gateway password found in NVS");
+    gateway_password = "";
+  }
+  
+  nvs_close(nvs_handle);
+  Serial.println("Gateway credentials loaded from NVS");
+  addLog("Gateway credentials loaded: " + gateway_type + " at " + gateway_ip + ":" + gateway_port);
+  return true;
+}
+
+void clearGatewayCredentials() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("gateway_config", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error opening NVS handle for clearing gateway credentials");
+    return;
+  }
+  
+  // Erase all keys in the namespace
+  err = nvs_erase_all(nvs_handle);
+  if (err != ESP_OK) {
+    Serial.println("Error erasing gateway credentials from NVS");
+    addLog("ERROR: Failed to clear gateway credentials from NVS");
+  } else {
+    Serial.println("Gateway credentials cleared from NVS");
+    addLog("Gateway credentials cleared from NVS");
+  }
+  
+  nvs_close(nvs_handle);
+}
+
+// Function to escape JSON strings
+String escapeJsonString(String input) {
+  input.replace("\\", "\\\\");
+  input.replace("\"", "\\\"");
+  input.replace("\n", "\\n");
+  input.replace("\r", "\\r");
+  input.replace("\t", "\\t");
+  return input;
+}
+
+// Logging functions
+void addLog(String message) {
+  String timestamp = String(millis());
+  String logEntry = "[" + timestamp + "] " + message;
+  
+  // Truncate if too long
+  if (logEntry.length() > MAX_LOG_LENGTH) {
+    logEntry = logEntry.substring(0, MAX_LOG_LENGTH - 3) + "...";
+  }
+  
+  logBuffer[logIndex] = logEntry;
+  logIndex = (logIndex + 1) % MAX_LOG_ENTRIES;
+  if (logCount < MAX_LOG_ENTRIES) {
+    logCount++;
+  }
+  
+  // Also print to Serial
+  Serial.println(logEntry);
+}
+
+void addDisplayLog(String message) {
+  addLog("[DISPLAY] " + message);
+}
+
 bool validatePassword(String password) {
   // Check length
   if (password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH) {
@@ -668,6 +926,7 @@ void setupDualWiFi() {
   Serial.println(ap_ssid);
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());
+  addLog("[WiFi] Access Point started - SSID: " + String(ap_ssid) + ", IP: " + WiFi.softAPIP().toString());
   
   // Try to connect to internet WiFi if credentials are available
   if (internet_ssid.length() > 0) {
@@ -683,6 +942,7 @@ void connectToInternetWiFi() {
   
   Serial.println("Attempting to connect to internet WiFi...");
   DisplayCustomStringMessage("Connecting to WiFi...", 0);
+  addLog("Attempting to connect to internet WiFi: " + internet_ssid);
   
   WiFi.begin(internet_ssid.c_str(), internet_password.c_str());
   
@@ -701,6 +961,7 @@ void connectToInternetWiFi() {
     Serial.print("Internet IP address: ");
     Serial.println(WiFi.localIP());
     DisplayCustomStringMessage("Internet Connected!", 0);
+    addLog("Internet WiFi connected! IP: " + WiFi.localIP().toString());
     
     // Save credentials to NVS for future boots
     saveWiFiCredentials(internet_ssid, internet_password);
@@ -710,6 +971,7 @@ void connectToInternetWiFi() {
     Serial.println("");
     Serial.println("Failed to connect to internet WiFi");
     DisplayCustomStringMessage("No Internet", 0);
+    addLog("Failed to connect to internet WiFi: " + internet_ssid);
   }
 }
 
@@ -747,10 +1009,10 @@ void DisplayWiFiStatus() {
 }
 
 // Internet Gateway Functions
-bool sendTransactionToInternet(String transactionData) {
+String sendTransactionToInternet(String transactionData) {
   if (!internet_connected) {
     Serial.println("No internet connection available");
-    return false;
+    return "{\"error\":\"No internet connection available\"}";
   }
   
   HTTPClient http;
@@ -760,24 +1022,26 @@ bool sendTransactionToInternet(String transactionData) {
   String jsonPayload = "{\"tx\":\"" + transactionData + "\"}";
   
   int httpResponseCode = http.POST(jsonPayload);
+  String response = "";
   
   if (httpResponseCode > 0) {
-    String response = http.getString();
+    response = http.getString();
     Serial.println("Transaction sent to internet gateway");
     Serial.println("Response: " + response);
-    http.end();
-    return true;
+    addLog("Transaction sent to internet gateway - Response: " + response);
   } else {
+    response = "{\"error\":\"HTTP Error " + String(httpResponseCode) + "\"}";
     Serial.println("Error sending transaction to internet: " + String(httpResponseCode));
-    http.end();
-    return false;
   }
+  
+  http.end();
+  return response;
 }
 
-bool sendTransactionToCustomGateway(String transactionData, String gatewayUrl) {
+String sendTransactionToCustomGateway(String transactionData, String gatewayUrl) {
   if (!internet_connected) {
     Serial.println("No internet connection available");
-    return false;
+    return "{\"error\":\"No internet connection available\"}";
   }
   
   HTTPClient http;
@@ -787,18 +1051,19 @@ bool sendTransactionToCustomGateway(String transactionData, String gatewayUrl) {
   String jsonPayload = "{\"tx\":\"" + transactionData + "\"}";
   
   int httpResponseCode = http.POST(jsonPayload);
+  String response = "";
   
   if (httpResponseCode > 0) {
-    String response = http.getString();
+    response = http.getString();
     Serial.println("Transaction sent to custom gateway");
     Serial.println("Response: " + response);
-    http.end();
-    return true;
   } else {
+    response = "{\"error\":\"HTTP Error " + String(httpResponseCode) + "\"}";
     Serial.println("Error sending transaction to custom gateway: " + String(httpResponseCode));
-    http.end();
-    return false;
   }
+  
+  http.end();
+  return response;
 }
 
 // Older test that allows for the sending of messages (specified from the host over serial) between devices without any addressing
@@ -852,6 +1117,7 @@ void CommandAndControlLoop() {
 void OnTxDone(void) {
   // Indicate that TX is done (debug)
   //Serial.println("WOW MUCH TX");
+  addLog("[LoRa] TX completed successfully");
   isLoRaIdle = true;
 }
 
@@ -859,6 +1125,7 @@ void OnTxTimeout(void) {
   Radio.Sleep();
   // Indicate that TX failed (debug)
   //Serial.println("OOPS TX BAD");
+  addLog("[LoRa] TX timeout - transmission failed");
   isLoRaIdle = true;
 }
 
@@ -867,6 +1134,7 @@ void OnRxTimeout(void) {
   // Indicate that RX failed (debug)
   // Probably should not see this since RX should not timeout
   //Serial.println("OOPS RX BAD");
+  addLog("[LoRa] RX timeout - no packet received");
   isLoRaIdle = true;
 }
 
@@ -880,6 +1148,7 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
   // Indicate we received a packet (debug)
   //Serial.println("WOW MUCH RX");
   //Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n", rssi, rxSize);
+  addLog("[LoRa] RX packet received - RSSI: " + String(rssi) + " dBm, Length: " + String(messageSize) + " bytes, SNR: " + String(snr) + " dB");
   ParseReceivedMessage();
   isLoRaIdle = true;
 }
@@ -973,6 +1242,7 @@ void SendPing(nodeAddress destination) {
   controlPacket[7] = destination.node;
   isLoRaIdle = false;
   DisplayTXMessage("Ping", destination);
+  addLog("[LoRa] Sending PING to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node));
   Radio.Send(controlPacket, CONTROL_SIZE);
   //Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Serial.write(hostACK, HOST_ACK_NACK_SIZE);
@@ -987,6 +1257,7 @@ void SendACK(nodeAddress destination) {
   controlPacket[7] = destination.node;
   DisplayTXMessage("ACK", destination);
   isLoRaIdle = false;
+  addLog("[LoRa] Sending ACK to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node));
   Radio.Send(controlPacket, CONTROL_SIZE);
   //Serial.printf("Sending ACK to %d.%d.%d\n", destination.region, destination.community, destination.node);
   Serial.write(hostACK, HOST_ACK_NACK_SIZE);
@@ -1012,6 +1283,7 @@ void SendMessage(nodeAddress destination, String message, String type) {
   
   // Update packet header and send the message over the air
   serialBuf[0] = (uint8_t)MESSAGE;
+  addLog("[LoRa] Sending MESSAGE to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(messageLength));
   Radio.Send(serialBuf, (uint8_t)messageLength);
 }
 
@@ -1035,6 +1307,7 @@ void SendTransaction(nodeAddress destination, String transaction, String type) {
   
   // Update packet header and send the transaction over the air
   serialBuf[0] = (uint8_t)TRANSACTION;
+  addLog("[LoRa] Sending TRANSACTION to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(txLength));
   Radio.Send(serialBuf, (uint8_t)txLength);
 }
 
@@ -1056,6 +1329,7 @@ void SendBroadcast(String message, String type, String priority) {
   
   // Update packet header and send the broadcast over the air
   serialBuf[0] = (uint8_t)BROADCAST;
+  addLog("[LoRa] Sending BROADCAST - Type: " + type + ", Priority: " + priority + ", Length: " + String(broadcastLength));
   Radio.Send(serialBuf, (uint8_t)broadcastLength);
 }
 
@@ -1260,6 +1534,7 @@ void ParseReceivedMessage() {
   if (CheckIfPacketForMe()) {
     //Serial.println("PACKET FOR ME");
     messageType mType = (messageType)rxPacket[0];
+    addLog("[LoRa] Processing received packet - Type: " + String(mType) + " from " + String(rxPacket[2]) + "." + String(rxPacket[3]) + "." + String(rxPacket[4]));
     switch (mType) {
       case ACK:
         ReceivedACK();
@@ -1396,9 +1671,23 @@ void setupWebServer() {
   server.on("/api/password/reset", HTTP_POST, handleApiPasswordReset);
   server.on("/api/password/status", HTTP_GET, handleApiPasswordStatus);
   server.on("/api/gateway", HTTP_POST, handleApiGateway);
+  server.on("/api/gateway/status", HTTP_GET, handleApiGatewayStatus);
+  server.on("/api/gateway/save", HTTP_POST, handleApiGatewaySave);
+  server.on("/api/gateway/clear", HTTP_POST, handleApiGatewayClear);
+  server.on("/api/gateway/test", HTTP_POST, handleApiGatewayTest);
+  server.on("/api/gateway/debug", HTTP_GET, handleApiGatewayDebug);
+  server.on("/api/gateway/load", HTTP_GET, handleApiGatewayLoad);
+  server.on("/api/logs", HTTP_GET, handleApiLogs);
+  server.on("/api/logs/send", HTTP_POST, handleApiLogsSend);
+  server.on("/api/transaction/send", HTTP_POST, handleApiTransactionSend);
+  server.on("/api/gateway/config", HTTP_GET, handleApiGatewayConfig);
+  server.on("/api/gateway/config", HTTP_POST, handleApiGatewayConfigSet);
+  server.on("/api/rpc", HTTP_POST, handleApiRpc);
+  server.on("/api/jsonrpc", HTTP_POST, handleApiJsonRpc);
   
   server.begin();
   Serial.println("Web server started");
+  addLog("Web server started");
 }
 
 void handleRoot() {
@@ -1448,6 +1737,13 @@ void handleRoot() {
   html += ".section-header-gray.active{background:linear-gradient(135deg,#495057 0%,#343a40 100%);}";
   html += ".section-header-gray .accordion-icon{fill:#ffffff;}";
   html += ".status{background:linear-gradient(135deg,#2a2a2a 0%,#333 100%);padding:20px;border-radius:15px;margin:20px 0;border-left:5px solid #ffc107;box-shadow:0 5px 15px rgba(0,0,0,0.3);text-align:center;}";
+  html += ".logs-container{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:15px;max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px;margin-top:15px;}";
+  html += ".log-entry{padding:5px 0;border-bottom:1px solid #333;color:#ccc;word-wrap:break-word;}";
+  html += ".log-entry:last-child{border-bottom:none;}";
+  html += ".log-entry.error{color:#ff6b6b;}";
+  html += ".log-entry.warning{color:#ffd93d;}";
+  html += ".log-entry.info{color:#6bcf7f;}";
+  html += ".log-entry.debug{color:#4dabf7;}";
   html += "@media (max-width: 768px) {.grid{grid-template-columns:1fr;} .container{padding:20px;margin:10px;} h1{font-size:2.2em;flex-direction:column;gap:10px;} .title-icon{width:50px;height:50px;} .button{padding:12px 20px;font-size:14px;} .accordion-header{font-size:1.2em;padding:15px 20px;}}";
   html += "</style></head><body>";
   
@@ -1682,16 +1978,18 @@ void handleRoot() {
   html += "</div>";
   html += "<div class='accordion-content' id='wifi-content'>";
   html += "<p>Configure internet WiFi connection for transaction forwarding</p>";
+  html += "<form>";
   html += "<div class='grid'>";
   html += "<div>";
   html += "<label>WiFi SSID</label>";
-  html += "<input type='text' id='wifiSSID' placeholder='Your WiFi Network Name' value='" + internet_ssid + "'>";
+  html += "<input type='text' id='wifiSSID' placeholder='Your WiFi Network Name' value='" + internet_ssid + "' autocomplete='username'>";
   html += "</div>";
   html += "<div>";
   html += "<label>WiFi Password</label>";
-  html += "<input type='password' id='wifiPassword' placeholder='Your WiFi Password' value='" + internet_password + "'>";
+  html += "<input type='password' id='wifiPassword' placeholder='Your WiFi Password' value='" + internet_password + "' autocomplete='current-password'>";
   html += "</div>";
   html += "</div>";
+  html += "</form>";
   html += "<div class='button-group'>";
   html += "<button class='button success' onclick='connectWiFi()'>CONNECT TO INTERNET</button>";
   html += "<button class='button danger' onclick='disconnectWiFi()'>DISCONNECT</button>";
@@ -1710,21 +2008,23 @@ void handleRoot() {
   html += "</div>";
   html += "<div class='accordion-content' id='password-content'>";
   html += "<p>Change the RadioDoge WiFi access point password for enhanced security</p>";
+  html += "<form>";
   html += "<div class='grid'>";
   html += "<div>";
   html += "<label>Current Password</label>";
-  html += "<input type='password' id='currentPassword' placeholder='Current password' value='" + ap_password + "' readonly>";
+  html += "<input type='password' id='currentPassword' placeholder='Current password' value='" + ap_password + "' readonly autocomplete='current-password'>";
   html += "</div>";
   html += "<div>";
   html += "<label>New Password</label>";
-  html += "<input type='password' id='newPassword' placeholder='Enter new password (8-32 chars, letters + numbers)'>";
+  html += "<input type='password' id='newPassword' placeholder='Enter new password (8-32 chars, letters + numbers)' autocomplete='new-password'>";
   html += "</div>";
   html += "</div>";
   html += "<div class='grid'>";
   html += "<div>";
   html += "<label>Confirm New Password</label>";
-  html += "<input type='password' id='confirmPassword' placeholder='Confirm new password'>";
+  html += "<input type='password' id='confirmPassword' placeholder='Confirm new password' autocomplete='new-password'>";
   html += "</div>";
+  html += "</form>";
   html += "<div>";
   html += "<label>Password Requirements</label>";
   html += "<div style='background:#1a1a1a;padding:10px;border-radius:8px;font-size:0.9em;'>";
@@ -1769,16 +2069,18 @@ void handleRoot() {
   html += "</div>";
   html += "</div>";
   html += "<div id='rpcFields' style='display:none;'>";
+  html += "<form>";
   html += "<div class='grid'>";
   html += "<div>";
   html += "<label>RPC Username</label>";
-  html += "<input type='text' id='rpcUsername' placeholder='rpcuser'>";
+  html += "<input type='text' id='rpcUsername' placeholder='rpcuser' autocomplete='username'>";
   html += "</div>";
   html += "<div>";
   html += "<label>RPC Password</label>";
-  html += "<input type='password' id='rpcPassword' placeholder='rpcpassword'>";
+  html += "<input type='password' id='rpcPassword' placeholder='rpcpassword' autocomplete='current-password'>";
   html += "</div>";
   html += "</div>";
+  html += "</form>";
   html += "</div>";
   html += "<div id='customFields' style='display:none;'>";
   html += "<div class='grid'>";
@@ -1786,7 +2088,7 @@ void handleRoot() {
   html += "<label>Port</label>";
   html += "<input type='text' id='gatewayPort' placeholder='8080'>";
   html += "</div>";
-  html += "<div>";
+  html += "<div id='endpointField'>";
   html += "<label>Endpoint</label>";
   html += "<input type='text' id='gatewayEndpoint' placeholder='/api/push/tx'>";
   html += "</div>";
@@ -1807,8 +2109,51 @@ void handleRoot() {
   html += "<div class='button-group'>";
   html += "<button class='button success' onclick='sendToGateway()'>SEND TO INTERNET</button>";
   html += "<button class='button' onclick='testGateway()'>TEST CONNECTION</button>";
+  html += "<button class='button' onclick='saveGatewayCredentials()'>SAVE CREDENTIALS</button>";
+  html += "<button class='button danger' onclick='clearGatewayCredentials()'>CLEAR CREDENTIALS</button>";
   html += "</div>";
   html += "<div id='gatewayStatus' class='response' style='display:none;'></div>";
+  html += "</div>";
+  html += "</div>";
+  
+  // Real-Time Logs Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"logs\")'>";
+  html += "<span>REAL-TIME LOGS</span>";
+  html += "<svg class='accordion-icon' id='logs-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div id='logs-content' class='accordion-content'>";
+  html += "<div class='section'>";
+  html += "<h3>System Logs</h3>";
+  html += "<p>Monitor all RadioDoge system logs including display messages, network activity, and transaction processing.</p>";
+  html += "<div class='button-group'>";
+  html += "<button class='button' onclick='refreshLogs()'>REFRESH LOGS</button>";
+  html += "<button class='button' onclick='clearLogs()'>CLEAR LOGS</button>";
+  html += "<button class='button' onclick='toggleAutoRefresh()' id='autoRefreshBtn'>AUTO REFRESH: OFF</button>";
+  html += "</div>";
+  html += "<div id='logsContainer' class='logs-container'>";
+  html += "<div class='log-entry'>Loading logs...</div>";
+  html += "</div>";
+  html += "<div class='section' style='margin-top:20px;'>";
+  html += "<h4>Send Logs to Other Devices</h4>";
+  html += "<p>Send current logs to another RadioDoge device via LoRa for remote monitoring.</p>";
+  html += "<div class='form-group'>";
+  html += "<label>Target Address (region.community.node)</label>";
+  html += "<input type='text' id='logAddress' placeholder='10.1.2' value='10.1.2'>";
+  html += "</div>";
+  html += "<div class='form-group'>";
+  html += "<label>Log Type</label>";
+  html += "<select id='logType'>";
+  html += "<option value='logs'>System Logs</option>";
+  html += "<option value='debug'>Debug Info</option>";
+  html += "<option value='error'>Error Logs</option>";
+  html += "<option value='all'>All Logs</option>";
+  html += "</select>";
+  html += "</div>";
+  html += "<button class='button success' onclick='sendLogs()'>SEND LOGS VIA LORA</button>";
+  html += "<div id='logSendStatus' class='response' style='display:none;'></div>";
+  html += "</div>";
+  html += "</div>";
   html += "</div>";
   html += "</div>";
   
@@ -1849,13 +2194,25 @@ void handleRoot() {
   html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;'>";
   html += "<p><strong>Send Ping:</strong><br><code>GET /api/ping?region=10&community=1&node=2</code></p>";
   html += "<p><strong>Send Message:</strong><br><code>POST /api/message</code><br>Body: <code>address=10.1.2&type=text&text=Hello</code></p>";
-  html += "<p><strong>Send Transaction:</strong><br><code>POST /api/transaction</code><br>Body: <code>address=10.1.2&type=signed&data=0100000001...</code></p>";
+  html += "<p><strong>Send Transaction (LoRa):</strong><br><code>POST /api/transaction</code><br>Body: <code>address=10.1.2&type=signed&data=0100000001...</code></p>";
+  html += "<p><strong>Send Transaction (Internet):</strong><br><code>POST /api/transaction/send</code><br>Body: <code>transaction=0100000001...</code></p>";
   html += "<p><strong>Broadcast:</strong><br><code>POST /api/broadcast</code><br>Body: <code>type=announcement&priority=normal&message=Update</code></p>";
   html += "<p><strong>Get Status:</strong><br><code>GET /api/status</code></p>";
   html += "<p><strong>Set Address:</strong><br><code>POST /api/address</code><br>Body: <code>region=10&community=1&node=5</code></p>";
+  html += "<p><strong>Gateway Config:</strong><br><code>GET /api/gateway/config</code> - Get stored gateway settings</p>";
+  html += "<p><strong>Gateway Config Set:</strong><br><code>POST /api/gateway/config</code><br>Body: <code>type=core&ip=192.168.1.100&port=22555&username=user&password=pass</code></p>";
+  html += "<p><strong>JSON-RPC:</strong><br><code>POST /api/jsonrpc</code><br>Body: <code>transaction=0100000001...&url=http://192.168.1.100:22555&rpcuser=user&rpcpass=pass</code><br>Returns: <code>{\"success\":true,\"transaction_id\":\"abc123...\"}</code> or <code>{\"success\":false,\"error\":\"error message\"}</code></p>";
+  html += "<p><strong>Real-Time Logs:</strong><br><code>GET /api/logs</code> - Get system logs<br><code>POST /api/logs/send</code> - Send logs to other devices via LoRa</p>";
   html += "</div>";
   
-  html += "<h3>Dogecoin Transactions</h3>";
+  html += "<h3>New Features</h3>";
+  html += "<p><strong>Real-Time Logs:</strong> Monitor all system activity including display messages, network activity, and transaction processing in real-time.</p>";
+  html += "<p><strong>Internet Gateway Support:</strong> Send transactions directly to Dogecoin Core, DogeBox, Dogecoin Wallet, or custom gateways via internet connection.</p>";
+  html += "<p><strong>Persistent Gateway Configuration:</strong> Save gateway credentials that persist across device reboots.</p>";
+  html += "<p><strong>JSON-RPC Support:</strong> Direct communication with Dogecoin Core nodes using JSON-RPC protocol.</p>";
+  html += "<p><strong>Enhanced API:</strong> Complete REST API for programmatic control of all device functions.</p>";
+  
+  html += "<h3>Sending Dogecoin Transactions</h3>";
   html += "<p><strong>What you need:</strong> A <strong>signed Dogecoin transaction</strong> from your wallet</p>";
   html += "<p><strong>Transaction Types:</strong></p>";
   html += "<ul style='margin:10px 0;padding-left:20px;'>";
@@ -1864,7 +2221,7 @@ void handleRoot() {
   html += "<li><strong>utxo:</strong> UTXO data for transaction construction (advanced users)</li>";
   html += "</ul>";
   
-  html += "<h4>How to Send Dogecoin via RadioDoge:</h4>";
+  html += "<h4>Step-by-Step Guide</h4>";
   html += "<ol style='margin:10px 0;padding-left:20px;'>";
   html += "<li><strong>Create Transaction:</strong> Use your Dogecoin wallet to create a transaction</li>";
   html += "<li><strong>Sign Transaction:</strong> Sign the transaction with your private key (this creates a <strong>signed transaction</strong>)</li>";
@@ -1873,6 +2230,132 @@ void handleRoot() {
   html += "<li><strong>Broadcast:</strong> RadioDoge transmits the signed transaction via LoRa to other devices</li>";
   html += "<li><strong>Network Propagation:</strong> Other RadioDoge devices can relay the signed transaction to the Dogecoin network</li>";
   html += "</ol>";
+  
+  html += "<h4>Method 1: LoRa to LoRa (RadioDoge Network)</h4>";
+  html += "<p>Send transaction via LoRa to another RadioDoge device. If the receiving device has an internet gateway configured, it will automatically broadcast to the Dogecoin network and return the transaction ID.</p>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;'>";
+  html += "<p><strong>Web Interface:</strong></p>";
+  html += "<p>1. Go to <strong>LoRa Messaging</strong> section</p>";
+  html += "<p>2. Select <strong>Transaction</strong> tab</p>";
+  html += "<p>3. Enter target address (e.g., 10.1.2)</p>";
+  html += "<p>4. Paste your signed transaction hex</p>";
+  html += "<p>5. Click <strong>SEND TRANSACTION</strong></p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;'>";
+  html += "<p><strong>API Example (cURL):</strong></p>";
+  html += "<p><code>curl -X POST \"http://192.168.4.1/api/transaction\" \\</code></p>";
+  html += "<p><code>&nbsp;&nbsp;-d \"address=10.1.2&type=signed&data=0100000001...\"</code></p>";
+  html += "<p><strong>Response (Success):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"transaction\",\"target\":\"10.1.2\",\"message\":\"Transaction sent to 10.1.2\",\"internet_forwarded\":true,\"internet_response\":\"{\\\"success\\\":true,\\\"transaction_id\\\":\\\"abc123...\\\"}\"}</code></p>";
+  html += "<p><strong>Response (Error):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"transaction\",\"target\":\"10.1.2\",\"message\":\"Transaction sent to 10.1.2\",\"internet_forwarded\":true,\"internet_response\":\"{\\\"success\\\":false,\\\"error\\\":\\\"transaction already in block chain\\\"}\"}</code></p>";
+  html += "</div>";
+  
+  html += "<h4>Method 2: Direct to Internet Gateway</h4>";
+  html += "<p>Send transaction directly to your configured internet gateway (Dogecoin Core, DogeBox, etc.) for immediate broadcast to the Dogecoin network.</p>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;'>";
+  html += "<p><strong>Web Interface:</strong></p>";
+  html += "<p>1. Go to <strong>DOGE Internet Gateway</strong> section</p>";
+  html += "<p>2. Configure your gateway (IP, Port, RPC credentials for Core)</p>";
+  html += "<p>3. Click <strong>SAVE CREDENTIALS</strong></p>";
+  html += "<p>4. Paste your signed transaction hex</p>";
+  html += "<p>5. Click <strong>SEND TO INTERNET</strong></p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;'>";
+  html += "<p><strong>API Example - Direct Gateway (cURL):</strong></p>";
+  html += "<p><code>curl -X POST \"http://192.168.4.1/api/transaction/send\" \\</code></p>";
+  html += "<p><code>&nbsp;&nbsp;-d \"transaction=0100000001...\"</code></p>";
+  html += "<p><strong>Response (Success):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"transaction_send\",\"message\":\"Transaction sent to stored gateway\",\"gateway_type\":\"core\",\"server_response\":\"{\\\"success\\\":true,\\\"transaction_id\\\":\\\"abc123...\\\"}\"}</code></p>";
+  html += "<p><strong>Response (Error):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"transaction_send\",\"message\":\"Transaction sent to stored gateway\",\"gateway_type\":\"core\",\"server_response\":\"{\\\"success\\\":false,\\\"error\\\":\\\"insufficient funds\\\"}\"}</code></p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;'>";
+  html += "<p><strong>API Example - JSON-RPC (cURL):</strong></p>";
+  html += "<p><code>curl -X POST \"http://192.168.4.1/api/jsonrpc\" \\</code></p>";
+  html += "<p><code>&nbsp;&nbsp;-d \"transaction=0100000001...&url=http://192.168.1.100:22555&rpcuser=myuser&rpcpass=mypass\"</code></p>";
+  html += "<p><strong>Response (Success):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"jsonrpc_send\",\"message\":\"JSON-RPC call sent to Dogecoin Core\",\"gateway\":\"http://192.168.1.100:22555\",\"parsed_response\":\"{\\\"success\\\":true,\\\"transaction_id\\\":\\\"abc123...\\\"}\"}</code></p>";
+  html += "<p><strong>Response (Error):</strong></p>";
+  html += "<p><code>{\"success\":true,\"action\":\"jsonrpc_send\",\"message\":\"JSON-RPC call sent to Dogecoin Core\",\"gateway\":\"http://192.168.1.100:22555\",\"parsed_response\":\"{\\\"success\\\":false,\\\"error\\\":\\\"transaction already in block chain\\\"}\"}</code></p>";
+  html += "</div>";
+  
+  html += "<h4>Gateway Configuration</h4>";
+  html += "<p><strong>Dogecoin Core:</strong> Most reliable, requires RPC credentials</p>";
+  html += "<p><strong>DogeBox:</strong> Alternative gateway, requires endpoint configuration</p>";
+  html += "<p><strong>Custom Gateway:</strong> Your own Dogecoin service</p>";
+  html += "<p><strong>Note:</strong> Configure gateway in <strong>DOGE Internet Gateway</strong> section for automatic forwarding</p>";
+  
+  html += "<h4>Real-World Examples</h4>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h5 style='color:#ffc107;margin:0 0 10px 0;'>Example 1: Remote Village Payment</h5>";
+  html += "<p><strong>Scenario:</strong> Send 100 DOGE from village A to village B (no internet in village A)</p>";
+  html += "<p><strong>Steps:</strong></p>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>Create signed transaction in village A (with internet)</li>";
+  html += "<li>Send via RadioDoge to village B device (address 10.1.2)</li>";
+  html += "<li>Village B device has internet gateway configured</li>";
+  html += "<li>Transaction automatically broadcasts to Dogecoin network</li>";
+  html += "<li>Both devices receive transaction ID confirmation</li>";
+  html += "</ol>";
+  html += "<p><strong>API Call:</strong></p>";
+  html += "<p><code>curl -X POST \"http://192.168.4.1/api/transaction\" -d \"address=10.1.2&type=signed&data=0100000001...\"</code></p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h5 style='color:#ffc107;margin:0 0 10px 0;'>Example 2: Emergency Internet Broadcast</h5>";
+  html += "<p><strong>Scenario:</strong> You have internet but want to use RadioDoge's gateway for reliability</p>";
+  html += "<p><strong>Steps:</strong></p>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>Configure Dogecoin Core gateway (192.168.1.100:22555)</li>";
+  html += "<li>Save RPC credentials (username/password)</li>";
+  html += "<li>Send transaction directly to gateway</li>";
+  html += "<li>Get immediate transaction ID or error message</li>";
+  html += "</ol>";
+  html += "<p><strong>API Call:</strong></p>";
+  html += "<p><code>curl -X POST \"http://192.168.4.1/api/transaction/send\" -d \"transaction=0100000001...\"</code></p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h5 style='color:#ffc107;margin:0 0 10px 0;'>Example 3: Mobile App Integration</h5>";
+  html += "<p><strong>Scenario:</strong> Integrate RadioDoge into your mobile app</p>";
+  html += "<p><strong>JavaScript Example:</strong></p>";
+  html += "<pre style='margin:5px 0;overflow-x:auto;'><code>async function sendDogecoinTransaction(signedTx, targetAddress) {";
+  html += "  const response = await fetch('http://192.168.4.1/api/transaction', {";
+  html += "    method: 'POST',";
+  html += "    headers: {'Content-Type': 'application/x-www-form-urlencoded'},";
+  html += "    body: 'address=' + targetAddress + '&type=signed&data=' + signedTx";
+  html += "  });";
+  html += "  ";
+  html += "  const result = await response.json();";
+  html += "  ";
+  html += "  if (result.internet_forwarded) {";
+  html += "    const internetResult = JSON.parse(result.internet_response);";
+  html += "    if (internetResult.success) {";
+  html += "      console.log('Transaction ID:', internetResult.transaction_id);";
+  html += "    } else {";
+  html += "      console.error('Error:', internetResult.error);";
+  html += "    }";
+  html += "  }";
+  html += "  ";
+  html += "  return result;";
+  html += "}</code></pre>";
+  html += "</div>";
+  
+  html += "<h4>Important Notes</h4>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>Always use signed transactions</strong> - Never send raw private keys</li>";
+  html += "<li><strong>Test with small amounts first</strong> - Verify everything works</li>";
+  html += "<li><strong>Check transaction ID</strong> - Verify on Dogecoin explorer</li>";
+  html += "<li><strong>Keep RPC credentials secure</strong> - Don't share them</li>";
+  html += "<li><strong>Monitor logs</strong> - Check Real-Time Logs for debugging</li>";
+  html += "</ul>";
   
   html += "<h3>LoRa Network</h3>";
   html += "<p><strong>Address Format:</strong> Region.Community.Node (e.g., 10.1.3)</p>";
@@ -1921,7 +2404,7 @@ void handleRoot() {
   
   // JavaScript
   html += "<script>";
-  html += "function toggleAccordion(section){var content=document.getElementById(section+'-content');var icon=document.getElementById(section+'-icon');var header=icon.parentElement;if(content.classList.contains('active')){content.classList.remove('active');header.classList.remove('active');icon.classList.remove('rotated');}else{content.classList.add('active');header.classList.add('active');icon.classList.add('rotated');}}";
+  html += "function toggleAccordion(section){var content=document.getElementById(section+'-content');var icon=document.getElementById(section+'-icon');if(!content||!icon)return;var header=icon.parentElement;if(content.classList.contains('active')){content.classList.remove('active');header.classList.remove('active');icon.classList.remove('rotated');}else{content.classList.add('active');header.classList.add('active');icon.classList.add('rotated');}}";
   html += "function showResponse(msg){document.getElementById('response').style.display='block';document.getElementById('response').innerHTML=msg;}";
   html += "function sendPing(){var r=document.getElementById('pingRegion').value;var c=document.getElementById('pingCommunity').value;var n=document.getElementById('pingNode').value;fetch('/ping?region='+r+'&community='+c+'&node='+n).then(r=>r.text()).then(d=>showResponse('PING: '+d));}";
   html += "function pingAll(){fetch('/ping?broadcast=1').then(r=>r.text()).then(d=>showResponse('BROADCAST PING: '+d));}";
@@ -1940,9 +2423,15 @@ void handleRoot() {
   html += "function disconnectWiFi(){fetch('/api/wifi/disconnect',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}";
   html += "function getWiFiStatus(){fetch('/api/wifi').then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);});}";
   html += "function clearWiFiCredentials(){if(confirm('Are you sure you want to clear stored WiFi credentials? This will prevent automatic reconnection on boot.')){fetch('/api/wifi/clear',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}}";
-  html += "function updateGatewayFields(){var type=document.getElementById('gatewayType').value;var customFields=document.getElementById('customFields');var rpcFields=document.getElementById('rpcFields');var ipField=document.getElementById('ipField');var gatewayInfo=document.getElementById('gatewayInfo');var description=document.getElementById('gatewayDescription');var endpoint=document.getElementById('gatewayEndpoint');var requirements=document.getElementById('gatewayRequirements');if(type==='none'){ipField.style.display='none';customFields.style.display='none';rpcFields.style.display='none';gatewayInfo.style.display='none';}else if(type==='core'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='block';gatewayInfo.style.display='block';description.innerHTML='Connect to your local Dogecoin Core node using RPC for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT] (RPC)';requirements.innerHTML='Requirements: Enable RPC in dogecoin.conf (server=1, rpcuser, rpcpassword, rpcport)';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='22555';document.getElementById('gatewayEndpoint').value='';}else if(type==='dogebox'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to DogeBox API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: DogeBox running on specified port';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='420';document.getElementById('gatewayEndpoint').value='/dogebox-api/tx/send';}else if(type==='wallet'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to Dogecoin Wallet API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Dogecoin Wallet with API enabled';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='80';document.getElementById('gatewayEndpoint').value='/tx/send';}else if(type==='custom'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';description.innerHTML='Connect to a custom gateway endpoint.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Custom gateway accepting POST requests with transaction data';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').placeholder='8080';document.getElementById('gatewayEndpoint').placeholder='/api/push/tx';}}";
-  html += "function sendToGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var tx=document.getElementById('gatewayTransaction').value;if(!tx){showResponse('Please enter transaction data');return;}if(!ip){showResponse('Please enter IP address');return;}var url='';var body='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;body='method=sendrawtransaction&params=[\"'+tx+'\"]&id=1&rpcuser='+encodeURIComponent(rpcUser)+'&rpcpassword='+encodeURIComponent(rpcPass);}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;body='transaction='+encodeURIComponent(tx);}fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)+'&body='+encodeURIComponent(body)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function updateGatewayFields(){var type=document.getElementById('gatewayType').value;var customFields=document.getElementById('customFields');var rpcFields=document.getElementById('rpcFields');var ipField=document.getElementById('ipField');var gatewayInfo=document.getElementById('gatewayInfo');var description=document.getElementById('gatewayDescription');var endpoint=document.getElementById('gatewayEndpoint');var requirements=document.getElementById('gatewayRequirements');var endpointField=document.getElementById('endpointField');if(type==='none'){ipField.style.display='none';customFields.style.display='none';rpcFields.style.display='none';gatewayInfo.style.display='none';}else if(type==='core'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='block';gatewayInfo.style.display='block';endpointField.style.display='none';description.innerHTML='Connect to your local Dogecoin Core node using RPC for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT] (RPC)';requirements.innerHTML='Requirements: Enable RPC in dogecoin.conf (server=1, rpcuser, rpcpassword, rpcport)';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='22555';document.getElementById('gatewayEndpoint').value='';}else if(type==='dogebox'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to DogeBox API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: DogeBox running on specified port';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='420';document.getElementById('gatewayEndpoint').value='/dogebox-api/tx/send';}else if(type==='wallet'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to Dogecoin Wallet API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Dogecoin Wallet with API enabled';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='80';document.getElementById('gatewayEndpoint').value='/tx/send';}else if(type==='custom'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to a custom gateway endpoint.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Custom gateway accepting POST requests with transaction data';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').placeholder='8080';document.getElementById('gatewayEndpoint').placeholder='/api/push/tx';}}";
+  html += "function sendToGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var tx=document.getElementById('gatewayTransaction').value;if(!tx){showResponse('Please enter transaction data');return;}if(!ip){showResponse('Please enter IP address');return;}var url='';var body='';var endpoint='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;endpoint='/api/jsonrpc';body='transaction='+encodeURIComponent(tx)+'&url='+encodeURIComponent(url)+'&rpcuser='+encodeURIComponent(rpcUser)+'&rpcpass='+encodeURIComponent(rpcPass);}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
   html += "function testGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;if(!ip){showResponse('Please enter IP address');return;}var url='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;}fetch('/api/gateway/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function loadStoredGatewayCredentials(){fetch('/api/gateway/load').then(r=>r.json()).then(d=>{if(d.success&&d.gateway){document.getElementById('gatewayType').value=d.gateway.type||'none';updateGatewayFields();document.getElementById('gatewayIp').value=d.gateway.ip||'';document.getElementById('gatewayPort').value=d.gateway.port||'';document.getElementById('gatewayEndpoint').value=d.gateway.endpoint||'';document.getElementById('rpcUsername').value=d.gateway.username||'';document.getElementById('rpcPassword').value=d.gateway.password||'';}}).catch(e=>{console.log('No stored gateway credentials found');});}";
+  html += "function saveGatewayCredentials(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;var username=document.getElementById('rpcUsername').value;var password=document.getElementById('rpcPassword').value;if(!ip){showResponse('Please enter IP address');return;}if(!port){showResponse('Please enter port');return;}if(type!='core'&&!endpoint){showResponse('Please enter endpoint');return;}if(type==='core'&&(!username||!password)){showResponse('Please enter RPC username and password for CORE gateway');return;}var button=event.target;button.disabled=true;button.textContent='Saving...';fetch('/api/gateway/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'type='+encodeURIComponent(type)+'&ip='+encodeURIComponent(ip)+'&port='+encodeURIComponent(port)+'&endpoint='+encodeURIComponent(endpoint)+'&username='+encodeURIComponent(username)+'&password='+encodeURIComponent(password)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){button.textContent='Saved!';setTimeout(()=>{button.disabled=false;button.textContent='SAVE CREDENTIALS';},2000);}else{button.disabled=false;button.textContent='SAVE CREDENTIALS';}}).catch(e=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML='Error: '+e.message;button.disabled=false;button.textContent='SAVE CREDENTIALS';});}";
+  html += "function clearGatewayCredentials(){if(confirm('Are you sure you want to clear stored gateway credentials?')){fetch('/api/gateway/clear',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}}";
+  html += "var autoRefreshInterval=null;function refreshLogs(){fetch('/api/logs').then(r=>r.json()).then(d=>{if(d.success){var container=document.getElementById('logsContainer');container.innerHTML='';d.logs.forEach(log=>{var entry=document.createElement('div');entry.className='log-entry';if(log.includes('ERROR')||log.includes('Error')){entry.className+=' error';}else if(log.includes('WARNING')||log.includes('Warning')){entry.className+=' warning';}else if(log.includes('INFO')||log.includes('Info')){entry.className+=' info';}else if(log.includes('DEBUG')||log.includes('Debug')){entry.className+=' debug';}entry.textContent=log;container.appendChild(entry);});container.scrollTop=container.scrollHeight;}}).catch(e=>{console.error('Error fetching logs:',e);});}function clearLogs(){if(confirm('Clear all logs? This will remove all log entries from memory.')){document.getElementById('logsContainer').innerHTML='<div class=\"log-entry\">Logs cleared</div>';}}function toggleAutoRefresh(){var btn=document.getElementById('autoRefreshBtn');if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;btn.textContent='AUTO REFRESH: OFF';}else{autoRefreshInterval=setInterval(refreshLogs,2000);btn.textContent='AUTO REFRESH: ON';}}";
+  html += "function sendLogs(){var address=document.getElementById('logAddress').value;var type=document.getElementById('logType').value;var statusDiv=document.getElementById('logSendStatus');if(!address){statusDiv.innerHTML='<div class=\"error\">Please enter a target address</div>';statusDiv.style.display='block';return;}fetch('/api/logs/send',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'address='+encodeURIComponent(address)+'&type='+encodeURIComponent(type)+'&logs='+encodeURIComponent(document.getElementById('logsContainer').innerText)}).then(r=>r.json()).then(d=>{statusDiv.innerHTML='<div class=\"success\">Logs sent successfully to '+address+'</div>';statusDiv.style.display='block';setTimeout(()=>{statusDiv.style.display='none';},3000);}).catch(e=>{statusDiv.innerHTML='<div class=\"error\">Error sending logs: '+e.message+'</div>';statusDiv.style.display='block';});}";
+  html += "window.onload=function(){loadStoredGatewayCredentials();refreshLogs();toggleAutoRefresh();};";
   html += "</script></div></body></html>";
   
   server.send(200, "text/html", html);
@@ -2071,10 +2560,9 @@ void handleTransaction() {
     
     // Forward to internet if connected
     if (internet_connected) {
-      bool internetSuccess = sendTransactionToInternet(transaction);
-      if (internetSuccess) {
-        Serial.println("Transaction also forwarded to internet gateway");
-      }
+      String internetResponse = sendTransactionToInternet(transaction);
+      Serial.println("Transaction also forwarded to internet gateway");
+      Serial.println("Internet response: " + internetResponse);
     }
     
     server.send(200, "text/plain", "Transaction sent to " + address + " (" + type + ")" + (internet_connected ? " + Internet" : ""));
@@ -2183,6 +2671,7 @@ void handleApiPing() {
 }
 
 void handleApiMessage() {
+  addLog("[API] Message endpoint called - IP: " + server.client().remoteIP().toString());
   String response = "{";
   response += "\"success\":true,";
   response += "\"timestamp\":" + String(millis()) + ",";
@@ -2191,6 +2680,7 @@ void handleApiMessage() {
     String message = server.arg("text");
     String address = server.hasArg("address") ? server.arg("address") : "10.1.2";
     String type = server.hasArg("type") ? server.arg("type") : "text";
+    addLog("[API] Sending message via LoRa - To: " + address + ", Type: " + type + ", Length: " + String(message.length()));
     
     // Parse address
     int dots[2];
@@ -2228,6 +2718,7 @@ void handleApiMessage() {
 }
 
 void handleApiTransaction() {
+  addLog("[API] Transaction endpoint called - IP: " + server.client().remoteIP().toString());
   String response = "{";
   response += "\"success\":true,";
   response += "\"timestamp\":" + String(millis()) + ",";
@@ -2236,6 +2727,7 @@ void handleApiTransaction() {
     String transaction = server.arg("data");
     String address = server.hasArg("address") ? server.arg("address") : "10.1.2";
     String type = server.hasArg("type") ? server.arg("type") : "signed";
+    addLog("[API] Sending transaction via LoRa - To: " + address + ", Type: " + type + ", Length: " + String(transaction.length()));
     
     // Parse address
     int dots[2];
@@ -2255,18 +2747,42 @@ void handleApiTransaction() {
       nodeAddress txDest = {region, community, node};
       SendTransaction(txDest, transaction, type);
       
-      // Forward to internet if connected
-      bool internetSuccess = false;
-      if (internet_connected) {
-        internetSuccess = sendTransactionToInternet(transaction);
+      // Forward to gateway if configured
+      String internetResponse = "";
+      bool gateway_forwarded = false;
+      
+      if (gateway_type != "none" && gateway_ip.length() > 0) {
+        String gatewayUrl = "http://" + gateway_ip + ":" + gateway_port;
+        if (gateway_type != "core" && gateway_endpoint.length() > 0) {
+          gatewayUrl += gateway_endpoint;
+        }
+        
+        if (gateway_type == "core") {
+          // Use JSON-RPC for Dogecoin Core
+          String rawResponse = sendJsonRpcToGateway(transaction, gatewayUrl, gateway_username, gateway_password);
+          internetResponse = parseDogecoinCoreResponse(rawResponse);
+          addLog("Transaction forwarded to stored Dogecoin Core gateway");
+          gateway_forwarded = true;
+        } else {
+          // Use regular HTTP POST for other gateways
+          internetResponse = sendTransactionToCustomGateway(transaction, gatewayUrl);
+          addLog("Transaction forwarded to stored " + gateway_type + " gateway");
+          gateway_forwarded = true;
+        }
+      } else if (internet_connected) {
+        // Fallback to default internet gateway only if no local gateway and internet is available
+        internetResponse = sendTransactionToInternet(transaction);
+        addLog("Transaction forwarded to default internet gateway");
+        gateway_forwarded = true;
       }
       
       response += "\"action\":\"transaction\",";
       response += "\"target\":\"" + address + "\",";
       response += "\"type\":\"" + type + "\",";
       response += "\"message\":\"Transaction sent to " + address + "\"";
-      if (internet_connected) {
-        response += ",\"internet_forwarded\":" + String(internetSuccess ? "true" : "false");
+      if (gateway_forwarded) {
+        response += ",\"internet_forwarded\":true,";
+        response += "\"internet_response\":\"" + escapeJsonString(internetResponse) + "\"";
       }
     } else {
       response += "\"success\":false,";
@@ -2282,6 +2798,7 @@ void handleApiTransaction() {
 }
 
 void handleApiBroadcast() {
+  addLog("[API] Broadcast endpoint called - IP: " + server.client().remoteIP().toString());
   String response = "{";
   response += "\"success\":true,";
   response += "\"timestamp\":" + String(millis()) + ",";
@@ -2290,6 +2807,7 @@ void handleApiBroadcast() {
     String message = server.arg("message");
     String type = server.hasArg("type") ? server.arg("type") : "announcement";
     String priority = server.hasArg("priority") ? server.arg("priority") : "normal";
+    addLog("[API] Sending broadcast via LoRa - Type: " + type + ", Priority: " + priority + ", Length: " + String(message.length()));
     
     SendBroadcast(message, type, priority);
     
@@ -2525,16 +3043,12 @@ void handleApiGateway() {
     String transaction = server.arg("transaction");
     String gatewayUrl = server.hasArg("url") ? server.arg("url") : "https://api.blockcypher.com/v1/doge/main/txs/push";
     
-    bool success = sendTransactionToCustomGateway(transaction, gatewayUrl);
+    String serverResponse = sendTransactionToCustomGateway(transaction, gatewayUrl);
     
-    if (success) {
-      response += "\"action\":\"gateway_send\",";
-      response += "\"message\":\"Transaction sent to gateway successfully\",";
-      response += "\"gateway\":\"" + gatewayUrl + "\"";
-    } else {
-      response += "\"success\":false,";
-      response += "\"error\":\"Failed to send transaction to gateway\"";
-    }
+    response += "\"action\":\"gateway_send\",";
+    response += "\"message\":\"Transaction sent to gateway\",";
+    response += "\"gateway\":\"" + gatewayUrl + "\",";
+    response += "\"server_response\":\"" + escapeJsonString(serverResponse) + "\"";
   } else {
     response += "\"success\":false,";
     response += "\"error\":\"No transaction data provided\"";
@@ -2542,4 +3056,614 @@ void handleApiGateway() {
   
   response += "}";
   server.send(200, "application/json", response);
+}
+
+// Gateway Status API Handler
+void handleApiGatewayStatus() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"gateway\":{";
+  response += "\"type\":\"" + gateway_type + "\",";
+  response += "\"ip\":\"" + gateway_ip + "\",";
+  response += "\"port\":\"" + gateway_port + "\",";
+  response += "\"endpoint\":\"" + gateway_endpoint + "\",";
+  response += "\"username\":\"" + gateway_username + "\",";
+  response += "\"password\":\"";
+  response += (gateway_password.length() > 0 ? "***" : "");
+  response += "\"";
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Save API Handler
+void handleApiGatewaySave() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (server.hasArg("type") && server.hasArg("ip") && server.hasArg("port")) {
+    String type = server.arg("type");
+    String ip = server.arg("ip");
+    String port = server.arg("port");
+    String endpoint = server.hasArg("endpoint") ? server.arg("endpoint") : "";
+    String username = server.hasArg("username") ? server.arg("username") : "";
+    String password = server.hasArg("password") ? server.arg("password") : "";
+    
+    addLog("[API] Gateway save request - Type: " + type + ", IP: " + ip + ", Port: " + port + ", Username: " + username + ", Password: [HIDDEN]");
+    
+    // Validate required fields
+    if (type == "none") {
+      response += "\"success\":false,";
+      response += "\"error\":\"Please select a gateway type\"";
+    } else if (ip.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Please enter IP address\"";
+    } else if (port.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Please enter port\"";
+    } else if (type != "core" && endpoint.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Please enter endpoint for this gateway type\"";
+    } else if (type == "core" && (username.length() == 0 || password.length() == 0)) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Please enter RPC username and password for CORE gateway\"";
+    } else {
+      // Save credentials
+      saveGatewayCredentials(type, ip, port, endpoint, username, password);
+      
+      // Update global variables
+      gateway_type = type;
+      gateway_ip = ip;
+      gateway_port = port;
+      gateway_endpoint = endpoint;
+      gateway_username = username;
+      gateway_password = password;
+      
+      response += "\"action\":\"gateway_save\",";
+      response += "\"message\":\"Gateway credentials saved successfully\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing required parameters\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Clear API Handler
+void handleApiGatewayClear() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  clearGatewayCredentials();
+  
+  // Reset global variables
+  gateway_type = "none";
+  gateway_ip = "";
+  gateway_port = "";
+  gateway_endpoint = "";
+  gateway_username = "";
+  gateway_password = "";
+  
+  response += "\"action\":\"gateway_clear\",";
+  response += "\"message\":\"Gateway credentials cleared successfully\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Debug API Handler
+void handleApiGatewayDebug() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  nvs_handle_t nvs_handle;
+  esp_err_t err = nvs_open("gateway_config", NVS_READONLY, &nvs_handle);
+  
+  if (err != ESP_OK) {
+    response += "\"error\":\"Failed to open NVS handle: " + String(err) + "\"";
+  } else {
+    response += "\"nvs_status\":\"opened\",";
+    
+    // Check each key
+    size_t type_len = 16;
+    char type_buffer[16];
+    err = nvs_get_str(nvs_handle, "gateway_type", type_buffer, &type_len);
+    response += "\"gateway_type_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_type_error\":" + String(err) + ",";
+    
+    size_t ip_len = 16;
+    char ip_buffer[16];
+    err = nvs_get_str(nvs_handle, "gateway_ip", ip_buffer, &ip_len);
+    response += "\"gateway_ip_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_ip_error\":" + String(err) + ",";
+    
+    size_t port_len = 8;
+    char port_buffer[8];
+    err = nvs_get_str(nvs_handle, "gateway_port", port_buffer, &port_len);
+    response += "\"gateway_port_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_port_error\":" + String(err) + ",";
+    
+    size_t endpoint_len = 64;
+    char endpoint_buffer[64];
+    err = nvs_get_str(nvs_handle, "gateway_endpoint", endpoint_buffer, &endpoint_len);
+    response += "\"gateway_endpoint_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_endpoint_error\":" + String(err) + ",";
+    
+    size_t username_len = 128;
+    char username_buffer[128];
+    err = nvs_get_str(nvs_handle, "gateway_user", username_buffer, &username_len);
+    response += "\"gateway_user_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_user_error\":" + String(err) + ",";
+    
+    size_t password_len = 256;
+    char password_buffer[256];
+    err = nvs_get_str(nvs_handle, "gateway_pass", password_buffer, &password_len);
+    response += "\"gateway_pass_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_pass_error\":" + String(err) + ",";
+    
+    // Also check the new key name
+    password_len = 256;
+    err = nvs_get_str(nvs_handle, "gateway_password", password_buffer, &password_len);
+    response += "\"gateway_password_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gateway_password_error\":" + String(err) + ",";
+    
+    // Check fallback key name
+    password_len = 256;
+    err = nvs_get_str(nvs_handle, "gw_pass", password_buffer, &password_len);
+    response += "\"gw_pass_exists\":" + String(err == ESP_OK ? "true" : "false") + ",";
+    response += "\"gw_pass_error\":" + String(err) + ",";
+    
+    nvs_close(nvs_handle);
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Load API Handler (returns actual password for web interface)
+void handleApiGatewayLoad() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"gateway\":{";
+  response += "\"type\":\"" + gateway_type + "\",";
+  response += "\"ip\":\"" + gateway_ip + "\",";
+  response += "\"port\":\"" + gateway_port + "\",";
+  response += "\"endpoint\":\"" + gateway_endpoint + "\",";
+  response += "\"username\":\"" + gateway_username + "\",";
+  response += "\"password\":\"" + gateway_password + "\"";  // Return actual password
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Test API Handler
+void handleApiGatewayTest() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (!internet_connected) {
+    response += "\"success\":false,";
+    response += "\"error\":\"No internet connection available\"";
+  } else if (server.hasArg("url")) {
+    String gatewayUrl = server.arg("url");
+    
+    // Simple HTTP GET test to check if gateway is reachable
+    HTTPClient http;
+    http.begin(gatewayUrl);
+    http.setTimeout(5000); // 5 second timeout
+    
+    int httpResponseCode = http.GET();
+    String serverResponse = "";
+    
+    if (httpResponseCode > 0) {
+      serverResponse = http.getString();
+      response += "\"action\":\"gateway_test\",";
+      response += "\"message\":\"Gateway test completed\",";
+      response += "\"gateway\":\"" + gatewayUrl + "\",";
+      response += "\"http_code\":" + String(httpResponseCode) + ",";
+      response += "\"server_response\":\"" + escapeJsonString(serverResponse) + "\"";
+    } else {
+      response += "\"success\":false,";
+      response += "\"error\":\"Gateway not reachable (HTTP " + String(httpResponseCode) + ")\"";
+    }
+    
+    http.end();
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"No gateway URL provided\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// New RPC handler for Dogecoin Core sendrawtransaction
+void handleApiRpc() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (!internet_connected) {
+    response += "\"success\":false,";
+    response += "\"error\":\"No internet connection available\"";
+  } else if (server.hasArg("body")) {
+    String rpcBody = server.arg("body");
+    String gatewayUrl = server.hasArg("url") ? server.arg("url") : "";
+    
+    if (gatewayUrl.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"No gateway URL provided\"";
+    } else {
+      bool success = sendRpcToGateway(rpcBody, gatewayUrl);
+      
+      if (success) {
+        response += "\"action\":\"rpc_send\",";
+        response += "\"message\":\"RPC call sent to gateway successfully\",";
+        response += "\"gateway\":\"" + gatewayUrl + "\"";
+      } else {
+        response += "\"success\":false,";
+        response += "\"error\":\"Failed to send RPC call to gateway\"";
+      }
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"No RPC body provided\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// New JSON-RPC handler for Dogecoin Core sendrawtransaction
+void handleApiJsonRpc() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (!internet_connected) {
+    response += "\"success\":false,";
+    response += "\"error\":\"No internet connection available\"";
+  } else if (server.hasArg("transaction") && server.hasArg("url") && server.hasArg("rpcuser") && server.hasArg("rpcpass")) {
+    String transaction = server.arg("transaction");
+    String gatewayUrl = server.arg("url");
+    String rpcUser = server.arg("rpcuser");
+    String rpcPass = server.arg("rpcpass");
+    
+    String serverResponse = sendJsonRpcToGateway(transaction, gatewayUrl, rpcUser, rpcPass);
+    String parsedResponse = parseDogecoinCoreResponse(serverResponse);
+    
+    response += "\"action\":\"jsonrpc_send\",";
+    response += "\"message\":\"JSON-RPC call sent to Dogecoin Core\",";
+    response += "\"gateway\":\"" + gatewayUrl + "\",";
+    response += "\"server_response\":\"" + escapeJsonString(serverResponse) + "\",";
+    response += "\"parsed_response\":" + parsedResponse;
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing required parameters: transaction, url, rpcuser, rpcpass\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// New function to send RPC calls to Dogecoin Core
+bool sendRpcToGateway(String rpcBody, String gatewayUrl) {
+  if (!internet_connected) {
+    Serial.println("No internet connection available");
+    return false;
+  }
+  
+  HTTPClient http;
+  http.begin(gatewayUrl);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  
+  int httpResponseCode = http.POST(rpcBody);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("RPC call sent to gateway");
+    Serial.println("Response: " + response);
+    http.end();
+    return true;
+  } else {
+    Serial.println("Error sending RPC call to gateway: " + String(httpResponseCode));
+    http.end();
+    return false;
+  }
+}
+
+// Logs API Handler
+void handleApiLogs() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"action\":\"logs_retrieve\",";
+  response += "\"total_logs\":" + String(logCount) + ",";
+  response += "\"logs\":[";
+  
+  if (logCount > 0) {
+    int startIndex = (logCount < MAX_LOG_ENTRIES) ? 0 : logIndex;
+    int entriesToShow = min(logCount, MAX_LOG_ENTRIES);
+    
+    for (int i = 0; i < entriesToShow; i++) {
+      int actualIndex = (startIndex + i) % MAX_LOG_ENTRIES;
+      if (i > 0) response += ",";
+      response += "\"" + escapeJsonString(logBuffer[actualIndex]) + "\"";
+    }
+  }
+  
+  response += "]}";
+  server.send(200, "application/json", response);
+}
+
+// Logs Send API Handler - Send logs to other devices via LoRa
+void handleApiLogsSend() {
+  addLog("[API] Logs send endpoint called - IP: " + server.client().remoteIP().toString());
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (server.hasArg("address") && server.hasArg("logs")) {
+    String address = server.arg("address");
+    String logs = server.arg("logs");
+    String type = server.hasArg("type") ? server.arg("type") : "logs";
+    
+    // Parse address
+    int dots[2];
+    int dotCount = 0;
+    for (int i = 0; i < address.length() && dotCount < 2; i++) {
+      if (address.charAt(i) == '.') {
+        dots[dotCount] = i;
+        dotCount++;
+      }
+    }
+    
+    if (dotCount == 2) {
+      int region = address.substring(0, dots[0]).toInt();
+      int community = address.substring(dots[0] + 1, dots[1]).toInt();
+      int node = address.substring(dots[1] + 1).toInt();
+      
+      nodeAddress logDest = {region, community, node};
+      
+      // Send logs as a message
+      SendMessage(logDest, logs, type);
+      
+      addLog("[API] Sending logs via LoRa - To: " + address + ", Type: " + type + ", Length: " + String(logs.length()));
+      
+      response += "\"action\":\"logs_send\",";
+      response += "\"target\":\"" + address + "\",";
+      response += "\"type\":\"" + type + "\",";
+      response += "\"message\":\"Logs sent to " + address + "\"";
+    } else {
+      response += "\"success\":false,";
+      response += "\"error\":\"Invalid address format. Use region.community.node\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing required parameters: address and logs\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Transaction Send API Handler - Send transaction using stored gateway credentials
+void handleApiTransactionSend() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (!internet_connected) {
+    response += "\"success\":false,";
+    response += "\"error\":\"No internet connection available\"";
+  } else if (server.hasArg("transaction")) {
+    String transaction = server.arg("transaction");
+    
+    if (gateway_type == "none" || gateway_ip.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"No gateway configured. Please configure a gateway first.\"";
+    } else {
+      String gatewayUrl = "http://" + gateway_ip + ":" + gateway_port;
+      if (gateway_type != "core" && gateway_endpoint.length() > 0) {
+        gatewayUrl += gateway_endpoint;
+      }
+      
+      String serverResponse = "";
+      
+      if (gateway_type == "core") {
+        // Use JSON-RPC for Dogecoin Core
+        String rawResponse = sendJsonRpcToGateway(transaction, gatewayUrl, gateway_username, gateway_password);
+        serverResponse = parseDogecoinCoreResponse(rawResponse);
+        addLog("Transaction sent to Dogecoin Core via JSON-RPC");
+      } else {
+        // Use regular HTTP POST for other gateways
+        serverResponse = sendTransactionToCustomGateway(transaction, gatewayUrl);
+        addLog("Transaction sent to " + gateway_type + " gateway");
+      }
+      
+      response += "\"action\":\"transaction_send\",";
+      response += "\"message\":\"Transaction sent to stored gateway\",";
+      response += "\"gateway_type\":\"" + gateway_type + "\",";
+      response += "\"gateway_url\":\"" + gatewayUrl + "\",";
+      response += "\"server_response\":\"" + escapeJsonString(serverResponse) + "\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing required parameter: transaction\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Config API Handler - Get current gateway configuration
+void handleApiGatewayConfig() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"action\":\"gateway_config_get\",";
+  response += "\"config\":{";
+  response += "\"type\":\"" + gateway_type + "\",";
+  response += "\"ip\":\"" + gateway_ip + "\",";
+  response += "\"port\":\"" + gateway_port + "\",";
+  response += "\"endpoint\":\"" + gateway_endpoint + "\",";
+  response += "\"username\":\"" + gateway_username + "\",";
+  response += "\"password\":\"";
+  if (gateway_password.length() > 0) {
+    response += "***";
+  }
+  response += "\"";
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Gateway Config Set API Handler - Set gateway configuration
+void handleApiGatewayConfigSet() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  if (server.hasArg("type") && server.hasArg("ip") && server.hasArg("port")) {
+    String type = server.arg("type");
+    String ip = server.arg("ip");
+    String port = server.arg("port");
+    String endpoint = server.hasArg("endpoint") ? server.arg("endpoint") : "";
+    String username = server.hasArg("username") ? server.arg("username") : "";
+    String password = server.hasArg("password") ? server.arg("password") : "";
+    
+    // Validate required fields
+    if (type == "none") {
+      response += "\"success\":false,";
+      response += "\"error\":\"Invalid gateway type\"";
+    } else if (ip.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"IP address is required\"";
+    } else if (port.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Port is required\"";
+    } else if (type != "core" && endpoint.length() == 0) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Endpoint is required for non-CORE gateways\"";
+    } else if (type == "core" && (username.length() == 0 || password.length() == 0)) {
+      response += "\"success\":false,";
+      response += "\"error\":\"Username and password are required for CORE gateway\"";
+    } else {
+      // Save the configuration
+      saveGatewayCredentials(type, ip, port, endpoint, username, password);
+      
+      // Update global variables
+      gateway_type = type;
+      gateway_ip = ip;
+      gateway_port = port;
+      gateway_endpoint = endpoint;
+      gateway_username = username;
+      gateway_password = password;
+      
+      addLog("Gateway configuration updated via API");
+      
+      response += "\"action\":\"gateway_config_set\",";
+      response += "\"message\":\"Gateway configuration updated successfully\"";
+    }
+  } else {
+    response += "\"success\":false,";
+    response += "\"error\":\"Missing required parameters: type, ip, port\"";
+  }
+  
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// Function to send proper JSON-RPC calls to Dogecoin Core
+String sendJsonRpcToGateway(String transaction, String gatewayUrl, String rpcUser, String rpcPass) {
+  if (!internet_connected) {
+    Serial.println("No internet connection available");
+    return "{\"error\":\"No internet connection available\"}";
+  }
+  
+  Serial.println("=== JSON-RPC Debug Info ===");
+  Serial.println("Gateway URL: " + gatewayUrl);
+  Serial.println("RPC User: " + rpcUser);
+  Serial.println("Transaction length: " + String(transaction.length()));
+  
+  HTTPClient http;
+  http.setTimeout(10000); // 10 second timeout
+  http.begin(gatewayUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.setAuthorization(rpcUser.c_str(), rpcPass.c_str());
+  
+  // Create proper JSON-RPC payload
+  String jsonPayload = "{\"jsonrpc\":\"1.0\",\"id\":\"curl\",\"method\":\"sendrawtransaction\",\"params\":[\"" + transaction + "\"]}";
+  Serial.println("JSON Payload: " + jsonPayload);
+  
+  int httpResponseCode = http.POST(jsonPayload);
+  String response = "";
+  
+  Serial.println("HTTP Response Code: " + String(httpResponseCode));
+  
+  if (httpResponseCode > 0) {
+    response = http.getString();
+    Serial.println("Raw Response: " + response);
+    
+    if (response.length() == 0) {
+      response = "{\"error\":\"Empty response from server (HTTP " + String(httpResponseCode) + ")\"}";
+    }
+  } else {
+    response = "{\"error\":\"HTTP Error " + String(httpResponseCode) + " - " + http.errorToString(httpResponseCode) + "\"}";
+    Serial.println("Error sending JSON-RPC call to gateway: " + String(httpResponseCode) + " - " + http.errorToString(httpResponseCode));
+  }
+  
+  http.end();
+  Serial.println("=== End JSON-RPC Debug ===");
+  return response;
+}
+
+// Parse Dogecoin Core JSON-RPC response to extract transaction ID or error
+String parseDogecoinCoreResponse(String jsonResponse) {
+  // Expected success response: {"result":"48801f8e4def6e8e427de4a89d6b40dda46998916729a051b086d70646bce0b8","error":null,"id":"curl"}
+  // Expected error response: {"result":null,"error":{"code":-27,"message":"transaction already in block chain"},"id":"curl"}
+  
+  String result = "";
+  String error = "";
+  
+  // Simple JSON parsing - look for "result" and "error" fields
+  int resultStart = jsonResponse.indexOf("\"result\":\"");
+  int errorStart = jsonResponse.indexOf("\"error\":{");
+  
+  if (resultStart != -1) {
+    // Extract transaction ID from result field
+    int resultValueStart = resultStart + 10; // Skip "result":"
+    int resultValueEnd = jsonResponse.indexOf("\"", resultValueStart);
+    if (resultValueEnd != -1) {
+      result = jsonResponse.substring(resultValueStart, resultValueEnd);
+    }
+  }
+  
+  if (errorStart != -1) {
+    // Extract error message
+    int messageStart = jsonResponse.indexOf("\"message\":\"", errorStart);
+    if (messageStart != -1) {
+      int messageValueStart = messageStart + 11; // Skip "message":"
+      int messageValueEnd = jsonResponse.indexOf("\"", messageValueStart);
+      if (messageValueEnd != -1) {
+        error = jsonResponse.substring(messageValueStart, messageValueEnd);
+      }
+    }
+  }
+  
+  // Return parsed response
+  if (!result.isEmpty() && result != "null") {
+    return "{\"success\":true,\"transaction_id\":\"" + result + "\",\"raw_response\":\"" + escapeJsonString(jsonResponse) + "\"}";
+  } else if (!error.isEmpty()) {
+    return "{\"success\":false,\"error\":\"" + error + "\",\"raw_response\":\"" + escapeJsonString(jsonResponse) + "\"}";
+  } else {
+    return "{\"success\":false,\"error\":\"Unknown response format\",\"raw_response\":\"" + escapeJsonString(jsonResponse) + "\"}";
+  }
 }
