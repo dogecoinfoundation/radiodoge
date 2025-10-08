@@ -86,6 +86,16 @@ Adafruit_SSD1306 radioDogeDisplay(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET
 #define SENDER_ADDRESS_OFFSET 2
 #define COMMAND_ACK_CODE 6 // 0x06 = 'ACK'
 #define COMMAND_NACK_CODE 21 // 0x15 = 'NAK'
+
+// Multipart packet constants
+#define MAX_MULTIPART_PARTS 20
+#define MULTIPART_CHUNK_SIZE 200  // Leave room for headers
+#define MULTIPART_TIMEOUT_MS 30000  // 30 seconds timeout for reassembly
+#define MULTIPART_HEADER_SIZE 12  // Packet type + dest + src + part info
+
+// Mesh networking configuration
+#define ENABLE_MESH_REBROADCAST true
+#define MAX_REBROADCAST_HOPS 3
 #define HOST_ACK_NACK_SIZE 3
 #define FIRMWARE_VERSION 1
 
@@ -100,6 +110,39 @@ char rxPacket[BUFFER_SIZE];
 uint8_t controlPacket[CONTROL_SIZE];
 uint8_t serialBuf[BUFFER_SIZE];
 uint8_t hostReplyBuf[BUFFER_SIZE];
+
+// Multipart packet structures
+struct MultipartPacket {
+  uint8_t packetType;
+  uint8_t destRegion;
+  uint8_t destCommunity;
+  uint8_t destNode;
+  uint8_t srcRegion;
+  uint8_t srcCommunity;
+  uint8_t srcNode;
+  uint8_t partNumber;
+  uint8_t totalParts;
+  uint8_t dataType;  // 0=transaction, 1=message, 2=broadcast
+  uint8_t reserved;
+  char data[MULTIPART_CHUNK_SIZE];
+};
+
+struct MultipartReassembly {
+  uint8_t srcRegion;
+  uint8_t srcCommunity;
+  uint8_t srcNode;
+  uint8_t totalParts;
+  uint8_t receivedParts;
+  uint8_t dataType;
+  unsigned long startTime;
+  char assembledData[MAX_MULTIPART_PARTS * MULTIPART_CHUNK_SIZE];
+  bool partsReceived[MAX_MULTIPART_PARTS];
+  uint16_t partSizes[MAX_MULTIPART_PARTS]; // Track actual size of each part
+};
+
+// Global multipart reassembly buffer
+MultipartReassembly multipartBuffer[MAX_MULTIPART_PARTS];
+int activeMultipartSessions = 0;
 uint8_t serialHeader[SERIAL_HEADER_SIZE];
 uint8_t hostCommandReply[BUFFER_SIZE];
 uint8_t hostACK[3] = {RESULT_CODE, 1, COMMAND_ACK_CODE};
@@ -207,6 +250,8 @@ void loop() {
   // Handle web server requests
   server.handleClient();
   
+  // Cleanup expired multipart sessions
+  CleanupExpiredMultipartSessions();
   
   //RawSerialMessageSendAndReceive()
   CommandAndControlLoop();
@@ -847,6 +892,14 @@ String escapeJsonString(String input) {
   input.replace("\n", "\\n");
   input.replace("\r", "\\r");
   input.replace("\t", "\\t");
+  input.replace("\b", "\\b");
+  input.replace("\f", "\\f");
+  // Remove any other control characters that might break JSON
+  for (int i = 0; i < input.length(); i++) {
+    if (input.charAt(i) < 32 && input.charAt(i) != '\n' && input.charAt(i) != '\r' && input.charAt(i) != '\t') {
+      input.setCharAt(i, '?');
+    }
+  }
   return input;
 }
 
@@ -1071,7 +1124,7 @@ void RawSerialMessageSendAndReceive() {
   if (isLoRaIdle) {
     isLoRaIdle = false;
     // Indicating that we are moving into rx mode (debug)
-    //Serial.println("VERY RX");
+    addLog("[LoRa] Detected idle state - switching to RX mode");
     // Enter back into RX mode
     Radio.Rx(0);
   }
@@ -1101,7 +1154,7 @@ void CommandAndControlLoop() {
   if (isLoRaIdle) {
     isLoRaIdle = false;
     // Indicating that we are moving into rx mode (debug)
-    //Serial.println("VERY RX");
+    addLog("[LoRa] Detected idle state - switching to RX mode");
     // Enter back into RX mode
     Radio.Rx(0);
   }
@@ -1202,9 +1255,18 @@ void SetDestinationAsBroadcast()
 // Extracts the address of the sending node from the received packet buffer
 void SetSenderAddress()
 {
-  senderAddress.region = rxPacket[SENDER_ADDRESS_OFFSET];
-  senderAddress.community = rxPacket[SENDER_ADDRESS_OFFSET + 1];
-  senderAddress.node = rxPacket[SENDER_ADDRESS_OFFSET + 2];
+  // For multipart packets, addresses are in different positions
+  if (rxPacket[0] == MULTIPART_PACKET) {
+    // Multipart packet: [type][dest_region][dest_community][dest_node][src_region][src_community][src_node]...
+    senderAddress.region = rxPacket[4];
+    senderAddress.community = rxPacket[5];
+    senderAddress.node = rxPacket[6];
+  } else {
+    // Regular packet: [type][header][src_region][src_community][src_node][dest_region][dest_community][dest_node]...
+    senderAddress.region = rxPacket[SENDER_ADDRESS_OFFSET];
+    senderAddress.community = rxPacket[SENDER_ADDRESS_OFFSET + 1];
+    senderAddress.node = rxPacket[SENDER_ADDRESS_OFFSET + 2];
+  }
 }
 
 // Retrieve the local address
@@ -1271,20 +1333,106 @@ void SendMessage(nodeAddress destination, String message, String type) {
   String messageData = type + ":" + message;
   int messageLength = messageData.length();
   
-  if (messageLength > 255) {
-    messageLength = 255;
+  // Account for header bytes (8 bytes: type + header + src + dest)
+  int totalPacketLength = messageLength + 8;
+  
+  if (totalPacketLength > 255) {
+    totalPacketLength = 255;
+    messageLength = totalPacketLength - 8;
   }
   
-  // Copy message to serial buffer
-  messageData.getBytes(serialBuf, messageLength + 1);
+  // Copy message to serial buffer (starting at offset 8 for header)
+  messageData.getBytes(serialBuf + 8, messageLength + 1);
   
   // Display message on display
   DisplayTXMessage(message, dest);
   
-  // Update packet header and send the message over the air
+  // Update packet header with addressing and send the message over the air
   serialBuf[0] = (uint8_t)MESSAGE;
-  addLog("[LoRa] Sending MESSAGE to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(messageLength));
-  Radio.Send(serialBuf, (uint8_t)messageLength);
+  serialBuf[1] = 0;  // Header byte (not used)
+  serialBuf[2] = local.region;
+  serialBuf[3] = local.community;
+  serialBuf[4] = local.node;
+  serialBuf[5] = destination.region;
+  serialBuf[6] = destination.community;
+  serialBuf[7] = destination.node;
+  
+  addLog("[LoRa] Sending MESSAGE to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(totalPacketLength));
+  addLog("[LoRa] Message content: " + messageData.substring(0, min(50, (int)messageData.length())) + "...");
+  Radio.Send(serialBuf, (uint8_t)totalPacketLength);
+  addLog("[LoRa] MESSAGE transmission completed");
+}
+
+// Send a multipart message to the specified destination
+void SendMultipartMessage(nodeAddress destination, String message, String type) {
+  // Prepare message data
+  String messageData = type + ":" + message;
+  int totalLength = messageData.length();
+  
+  // Calculate number of parts needed
+  int totalParts = (totalLength + MULTIPART_CHUNK_SIZE - 1) / MULTIPART_CHUNK_SIZE;
+  
+  addLog("[LoRa] Sending MULTIPART MESSAGE to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(totalLength) + ", Parts: " + String(totalParts));
+  
+  for (int part = 0; part < totalParts; part++) {
+    // Calculate chunk size
+    int startPos = part * MULTIPART_CHUNK_SIZE;
+    int chunkSize = min(MULTIPART_CHUNK_SIZE, totalLength - startPos);
+    String chunk = messageData.substring(startPos, startPos + chunkSize);
+    
+    // Create multipart packet
+    MultipartPacket mpPacket;
+    mpPacket.packetType = (uint8_t)MULTIPART_PACKET;
+    mpPacket.destRegion = destination.region;
+    mpPacket.destCommunity = destination.community;
+    mpPacket.destNode = destination.node;
+    mpPacket.srcRegion = local.region;
+    mpPacket.srcCommunity = local.community;
+    mpPacket.srcNode = local.node;
+    mpPacket.partNumber = part + 1;  // 1-based part numbering
+    mpPacket.totalParts = totalParts;
+    mpPacket.dataType = 1;  // Message
+    mpPacket.reserved = 0;
+    
+    // Copy chunk data
+    chunk.getBytes((unsigned char*)mpPacket.data, chunkSize + 1);
+    
+    // Convert to serial buffer format
+    uint8_t packetSize = MULTIPART_HEADER_SIZE + chunkSize;
+    uint8_t packet[256];
+    packet[0] = mpPacket.packetType;
+    packet[1] = mpPacket.destRegion;
+    packet[2] = mpPacket.destCommunity;
+    packet[3] = mpPacket.destNode;
+    packet[4] = mpPacket.srcRegion;
+    packet[5] = mpPacket.srcCommunity;
+    packet[6] = mpPacket.srcNode;
+    packet[7] = mpPacket.partNumber;
+    packet[8] = mpPacket.totalParts;
+    packet[9] = mpPacket.dataType;
+    packet[10] = mpPacket.reserved;
+    packet[11] = 0;  // Padding
+    
+    // Copy data
+    for (int i = 0; i < chunkSize; i++) {
+      packet[12 + i] = mpPacket.data[i];
+    }
+    
+    // Display progress
+    char tempBuf[64];
+    sprintf(tempBuf, "MSG Part %i/%i", part + 1, totalParts);
+    DisplayTXMessage(String(tempBuf), destination);
+    
+    // Send the packet
+    addLog("[LoRa] Sending MULTIPART MESSAGE part " + String(part + 1) + "/" + String(totalParts) + " to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node));
+    Radio.Send(packet, packetSize);
+    
+    // Small delay between parts
+    delay(100);
+  }
+  
+  addLog("[LoRa] MULTIPART MESSAGE completed - " + String(totalParts) + " parts sent");
+  isLoRaIdle = true;
 }
 
 // Send a transaction to the specified destination
@@ -1309,6 +1457,668 @@ void SendTransaction(nodeAddress destination, String transaction, String type) {
   serialBuf[0] = (uint8_t)TRANSACTION;
   addLog("[LoRa] Sending TRANSACTION to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(txLength));
   Radio.Send(serialBuf, (uint8_t)txLength);
+}
+
+// Send a large transaction using multipart packets
+void SendMultipartTransaction(nodeAddress destination, String transaction, String type) {
+  dest = destination;
+  
+  // Prepare transaction data
+  String txData = type + ":" + transaction;
+  int totalLength = txData.length();
+  
+  // Calculate number of parts needed
+  int totalParts = (totalLength + MULTIPART_CHUNK_SIZE - 1) / MULTIPART_CHUNK_SIZE;
+  
+  if (totalParts > MAX_MULTIPART_PARTS) {
+    addLog("[ERROR] Transaction too large for multipart - " + String(totalLength) + " bytes, max " + String(MAX_MULTIPART_PARTS * MULTIPART_CHUNK_SIZE) + " bytes");
+    return;
+  }
+  
+  addLog("[LoRa] Sending MULTIPART TRANSACTION to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node) + " - Type: " + type + ", Length: " + String(totalLength) + ", Parts: " + String(totalParts));
+  
+  // Send each part
+  for (int part = 0; part < totalParts; part++) {
+    int startPos = part * MULTIPART_CHUNK_SIZE;
+    int chunkSize = min(MULTIPART_CHUNK_SIZE, totalLength - startPos);
+    String chunk = txData.substring(startPos, startPos + chunkSize);
+    
+    // Create multipart packet
+    MultipartPacket mpPacket;
+    mpPacket.packetType = (uint8_t)MULTIPART_PACKET;
+    mpPacket.destRegion = destination.region;
+    mpPacket.destCommunity = destination.community;
+    mpPacket.destNode = destination.node;
+    mpPacket.srcRegion = local.region;
+    mpPacket.srcCommunity = local.community;
+    mpPacket.srcNode = local.node;
+    mpPacket.partNumber = part + 1;  // 1-based part numbering
+    mpPacket.totalParts = totalParts;
+    mpPacket.dataType = 0;  // Transaction
+    mpPacket.reserved = 0;
+    
+    // Copy chunk data
+    chunk.getBytes((unsigned char*)mpPacket.data, chunkSize + 1);
+    
+    // Convert to serial buffer format
+    uint8_t packetSize = MULTIPART_HEADER_SIZE + chunkSize;
+    uint8_t packet[256];
+    packet[0] = mpPacket.packetType;
+    packet[1] = mpPacket.destRegion;
+    packet[2] = mpPacket.destCommunity;
+    packet[3] = mpPacket.destNode;
+    packet[4] = mpPacket.srcRegion;
+    packet[5] = mpPacket.srcCommunity;
+    packet[6] = mpPacket.srcNode;
+    packet[7] = mpPacket.partNumber;
+    packet[8] = mpPacket.totalParts;
+    packet[9] = mpPacket.dataType;
+    packet[10] = mpPacket.reserved;
+    packet[11] = 0;  // Padding
+    
+    // Copy data
+    for (int i = 0; i < chunkSize; i++) {
+      packet[12 + i] = mpPacket.data[i];
+    }
+    
+    // Display progress
+    char tempBuf[64];
+    sprintf(tempBuf, "TX Part %i/%i", part + 1, totalParts);
+    DisplayTXMessage(String(tempBuf), dest);
+    
+    // Send the packet
+    addLog("[LoRa] Sending MULTIPART part " + String(part + 1) + "/" + String(totalParts) + " to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node));
+    Radio.Send(packet, packetSize);
+    
+    // Small delay between parts to avoid overwhelming the receiver
+    delay(500);
+  }
+  
+  addLog("[LoRa] MULTIPART TRANSACTION completed - " + String(totalParts) + " parts sent");
+  isLoRaIdle = true;
+}
+
+// Send a large broadcast using multipart packets
+void SendMultipartBroadcast(String message, String type, String priority) {
+  // Prepare broadcast data
+  String broadcastData = type + ":" + priority + ":" + message;
+  int totalLength = broadcastData.length();
+  
+  // Calculate number of parts needed
+  int totalParts = (totalLength + MULTIPART_CHUNK_SIZE - 1) / MULTIPART_CHUNK_SIZE;
+  
+  if (totalParts > MAX_MULTIPART_PARTS) {
+    addLog("[ERROR] Broadcast too large for multipart - " + String(totalLength) + " bytes, max " + String(MAX_MULTIPART_PARTS * MULTIPART_CHUNK_SIZE) + " bytes");
+    return;
+  }
+  
+  addLog("[LoRa] Sending MULTIPART BROADCAST - Type: " + type + ", Priority: " + priority + ", Length: " + String(totalLength) + ", Parts: " + String(totalParts));
+  
+  // Set destination as broadcast
+  SetDestinationAsBroadcast();
+  
+  // Send each part
+  for (int part = 0; part < totalParts; part++) {
+    int startPos = part * MULTIPART_CHUNK_SIZE;
+    int chunkSize = min(MULTIPART_CHUNK_SIZE, totalLength - startPos);
+    String chunk = broadcastData.substring(startPos, startPos + chunkSize);
+    
+    // Create multipart packet
+    MultipartPacket mpPacket;
+    mpPacket.packetType = (uint8_t)MULTIPART_PACKET;
+    mpPacket.destRegion = 255;  // Broadcast
+    mpPacket.destCommunity = 255;
+    mpPacket.destNode = 255;
+    mpPacket.srcRegion = local.region;
+    mpPacket.srcCommunity = local.community;
+    mpPacket.srcNode = local.node;
+    mpPacket.partNumber = part + 1;  // 1-based part numbering
+    mpPacket.totalParts = totalParts;
+    mpPacket.dataType = 2;  // Broadcast
+    mpPacket.reserved = 0;
+    
+    // Copy chunk data
+    chunk.getBytes((unsigned char*)mpPacket.data, chunkSize + 1);
+    
+    // Convert to serial buffer format
+    uint8_t packetSize = MULTIPART_HEADER_SIZE + chunkSize;
+    uint8_t packet[256];
+    packet[0] = mpPacket.packetType;
+    packet[1] = mpPacket.destRegion;
+    packet[2] = mpPacket.destCommunity;
+    packet[3] = mpPacket.destNode;
+    packet[4] = mpPacket.srcRegion;
+    packet[5] = mpPacket.srcCommunity;
+    packet[6] = mpPacket.srcNode;
+    packet[7] = mpPacket.partNumber;
+    packet[8] = mpPacket.totalParts;
+    packet[9] = mpPacket.dataType;
+    packet[10] = mpPacket.reserved;
+    packet[11] = 0;  // Padding
+    
+    // Copy data
+    for (int i = 0; i < chunkSize; i++) {
+      packet[12 + i] = mpPacket.data[i];
+    }
+    
+    // Display progress
+    char tempBuf[64];
+    sprintf(tempBuf, "BC Part %i/%i", part + 1, totalParts);
+    DisplayBroadcastMessage(String(tempBuf), local);
+    
+    // Send the packet
+    addLog("[LoRa] Sending MULTIPART BROADCAST part " + String(part + 1) + "/" + String(totalParts));
+    Radio.Send(packet, packetSize);
+    
+    // Small delay between parts
+    delay(500);
+  }
+  
+  addLog("[LoRa] MULTIPART BROADCAST completed - " + String(totalParts) + " parts sent");
+  addLog("[LoRa] Setting isLoRaIdle = true to enable RX mode");
+  isLoRaIdle = true;
+}
+
+// Multipart packet reassembly functions
+int FindMultipartSession(uint8_t srcRegion, uint8_t srcCommunity, uint8_t srcNode, uint8_t dataType) {
+  for (int i = 0; i < activeMultipartSessions; i++) {
+    if (multipartBuffer[i].srcRegion == srcRegion && 
+        multipartBuffer[i].srcCommunity == srcCommunity && 
+        multipartBuffer[i].srcNode == srcNode &&
+        multipartBuffer[i].dataType == dataType) {
+      return i;
+    }
+  }
+  return -1;  // Not found
+}
+
+int CreateMultipartSession(uint8_t srcRegion, uint8_t srcCommunity, uint8_t srcNode, uint8_t totalParts, uint8_t dataType) {
+  if (activeMultipartSessions >= MAX_MULTIPART_PARTS) {
+    addLog("[ERROR] No space for new multipart session");
+    return -1;
+  }
+  
+  int index = activeMultipartSessions++;
+  multipartBuffer[index].srcRegion = srcRegion;
+  multipartBuffer[index].srcCommunity = srcCommunity;
+  multipartBuffer[index].srcNode = srcNode;
+  multipartBuffer[index].totalParts = totalParts;
+  multipartBuffer[index].receivedParts = 0;
+  multipartBuffer[index].dataType = dataType;
+  multipartBuffer[index].startTime = millis();
+  
+  // Initialize parts received array
+  for (int i = 0; i < MAX_MULTIPART_PARTS; i++) {
+    multipartBuffer[index].partsReceived[i] = false;
+  }
+  
+  addLog("[LoRa] Created multipart session for " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode) + " - " + String(totalParts) + " parts");
+  return index;
+}
+
+bool ProcessMultipartPacket() {
+  // Extract packet information
+  uint8_t srcRegion = rxPacket[4];
+  uint8_t srcCommunity = rxPacket[5];
+  uint8_t srcNode = rxPacket[6];
+  uint8_t partNumber = rxPacket[7];
+  uint8_t totalParts = rxPacket[8];
+  uint8_t dataType = rxPacket[9];
+  
+  // Find or create session
+  int sessionIndex = FindMultipartSession(srcRegion, srcCommunity, srcNode, dataType);
+  if (sessionIndex == -1) {
+    sessionIndex = CreateMultipartSession(srcRegion, srcCommunity, srcNode, totalParts, dataType);
+    if (sessionIndex == -1) {
+      addLog("[LoRa] Failed to create multipart session - buffer full");
+      return false;
+    }
+    addLog("[LoRa] Created multipart session for " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode) + " - " + String(totalParts) + " parts, Type: " + String(dataType));
+    addLog("[DEBUG] Session created for part " + String(partNumber) + " of " + String(totalParts));
+  } else {
+    addLog("[LoRa] Using existing multipart session for " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode) + " - " + String(multipartBuffer[sessionIndex].receivedParts) + "/" + String(multipartBuffer[sessionIndex].totalParts) + " parts, Type: " + String(dataType));
+    addLog("[DEBUG] Session exists, receiving part " + String(partNumber) + " of " + String(totalParts));
+  }
+  
+  // Check if part number is valid
+  if (partNumber < 1 || partNumber > totalParts) {
+    addLog("[ERROR] Invalid part number: " + String(partNumber) + " (max: " + String(totalParts) + ")");
+    return false;
+  }
+  
+  // Check if we already have this part
+  if (multipartBuffer[sessionIndex].partsReceived[partNumber - 1]) {
+    addLog("[LoRa] Duplicate part " + String(partNumber) + " received, ignoring");
+    return true;
+  }
+  
+  // Log which parts we already have
+  String receivedParts = "";
+  for (int i = 0; i < multipartBuffer[sessionIndex].totalParts; i++) {
+    if (multipartBuffer[sessionIndex].partsReceived[i]) {
+      receivedParts += String(i + 1) + ",";
+    }
+  }
+  addLog("[DEBUG] Already received parts: " + receivedParts + " now receiving part " + String(partNumber));
+  
+  // Extract data from packet (starts at offset 12)
+  int dataSize = rxSize - MULTIPART_HEADER_SIZE;
+  int startPos = (partNumber - 1) * MULTIPART_CHUNK_SIZE;
+  
+  // Copy data to reassembly buffer
+  for (int i = 0; i < dataSize && (startPos + i) < (MAX_MULTIPART_PARTS * MULTIPART_CHUNK_SIZE); i++) {
+    multipartBuffer[sessionIndex].assembledData[startPos + i] = rxPacket[12 + i];
+  }
+  
+  // Store actual part size
+  multipartBuffer[sessionIndex].partSizes[partNumber - 1] = dataSize;
+  
+  // Mark part as received
+  multipartBuffer[sessionIndex].partsReceived[partNumber - 1] = true;
+  multipartBuffer[sessionIndex].receivedParts++;
+  
+  addLog("[LoRa] Received multipart part " + String(partNumber) + "/" + String(totalParts) + " from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode) + " (Data size: " + String(dataSize) + " bytes)");
+  
+  // Check if all parts received
+  if (multipartBuffer[sessionIndex].receivedParts == totalParts) {
+    addLog("[LoRa] All multipart parts received, reassembling...");
+    return ReassembleMultipartPacket(sessionIndex);
+  }
+  
+  return true;
+}
+
+bool ReassembleMultipartPacket(int sessionIndex) {
+  MultipartReassembly* session = &multipartBuffer[sessionIndex];
+  
+  // Calculate total data size
+  int totalDataSize = 0;
+  for (int part = 0; part < session->totalParts; part++) {
+    if (session->partsReceived[part]) {
+      int partSize = MULTIPART_CHUNK_SIZE;
+      if (part == session->totalParts - 1) {
+        // Last part might be smaller
+        partSize = strlen(session->assembledData + (part * MULTIPART_CHUNK_SIZE));
+      }
+      totalDataSize += partSize;
+    }
+  }
+  
+  // Create final assembled data using a proper buffer
+  char assembledBuffer[MAX_MULTIPART_PARTS * MULTIPART_CHUNK_SIZE + 1];
+  int assembledLength = 0;
+  
+  for (int part = 0; part < session->totalParts; part++) {
+    if (session->partsReceived[part]) {
+      int startPos = part * MULTIPART_CHUNK_SIZE;
+      int partSize = session->partSizes[part]; // Use stored actual part size
+      addLog("[DEBUG] Part " + String(part + 1) + " size: " + String(partSize) + " bytes");
+      
+      // Copy binary data properly to buffer
+      for (int i = 0; i < partSize; i++) {
+        assembledBuffer[assembledLength + i] = session->assembledData[startPos + i];
+      }
+      assembledLength += partSize;
+    }
+  }
+  // Create String from buffer with proper length
+  String assembledData = "";
+  assembledData.reserve(assembledLength);
+  for (int i = 0; i < assembledLength; i++) {
+    assembledData += (char)assembledBuffer[i];
+  }
+  
+  addLog("[LoRa] Reassembled multipart data - " + String(assembledLength) + " bytes, Type: " + String(session->dataType) + " from " + String(session->srcRegion) + "." + String(session->srcCommunity) + "." + String(session->srcNode));
+  addLog("[DEBUG] Assembled data (first 50 chars): " + assembledData.substring(0, min(50, (int)assembledData.length())));
+  addLog("[DEBUG] Assembled data (last 50 chars): " + assembledData.substring(max(0, (int)assembledData.length() - 50)));
+  
+  // Process based on data type
+  switch (session->dataType) {
+    case 0:  // Transaction
+      ProcessReassembledTransaction(assembledData, session->srcRegion, session->srcCommunity, session->srcNode);
+      break;
+    case 1:  // Message
+      ProcessReassembledMessage(assembledData, session->srcRegion, session->srcCommunity, session->srcNode);
+      break;
+    case 2:  // Broadcast
+      ProcessReassembledBroadcast(assembledData, session->srcRegion, session->srcCommunity, session->srcNode);
+      break;
+    default:
+      addLog("[ERROR] Unknown multipart data type: " + String(session->dataType));
+      break;
+  }
+  
+  // Remove session
+  RemoveMultipartSession(sessionIndex);
+  return true;
+}
+
+void ProcessReassembledTransaction(String transactionData, uint8_t srcRegion, uint8_t srcCommunity, uint8_t srcNode) {
+  addLog("[LoRa] Processing reassembled TRANSACTION from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+  
+  // Set sender address
+  senderAddress.region = srcRegion;
+  senderAddress.community = srcCommunity;
+  senderAddress.node = srcNode;
+  
+  // Display on screen
+  DisplayRXMessage("TX: " + transactionData.substring(0, min(50, (int)transactionData.length())) + "...", senderAddress);
+  
+  // Extract transaction type and data
+  int colonPos = transactionData.indexOf(':');
+  String txType = "signed";
+  String txData = transactionData;
+  if (colonPos > 0) {
+    txType = transactionData.substring(0, colonPos);
+    txData = transactionData.substring(colonPos + 1);
+  }
+  
+  // Forward to host via serial
+  String fullMessage = "TRANSACTION:" + transactionData;
+  Serial.write(fullMessage.c_str(), fullMessage.length());
+  Serial.write('\n');
+  
+  // Auto-forward to configured gateway if available
+  String internetResponse = "";
+  bool gateway_forwarded = false;
+  
+  if (gateway_type != "none" && gateway_ip.length() > 0) {
+    String gatewayUrl = "http://" + gateway_ip + ":" + gateway_port;
+    if (gateway_type != "core" && gateway_endpoint.length() > 0) {
+      gatewayUrl += gateway_endpoint;
+    }
+    
+    addLog("[GATEWAY] Forwarding transaction to " + gateway_type + " gateway at " + gatewayUrl);
+    addLog("[GATEWAY] Transaction data length: " + String(txData.length()) + " bytes");
+    addLog("[GATEWAY] Transaction type: " + txType);
+    addLog("[GATEWAY] Transaction data (first 50 chars): " + txData.substring(0, min(50, (int)txData.length())));
+    addLog("[GATEWAY] Transaction data (last 50 chars): " + txData.substring(max(0, (int)txData.length() - 50)));
+    
+    if (gateway_type == "core") {
+      // Use JSON-RPC for Dogecoin Core
+      addLog("[GATEWAY] Using JSON-RPC method for Dogecoin Core");
+      internetResponse = sendJsonRpcToGateway(txData, gatewayUrl, gateway_username, gateway_password);
+      addLog("[GATEWAY] Dogecoin Core response: " + internetResponse);
+      gateway_forwarded = true;
+    } else {
+      // Use regular HTTP POST for other gateways
+      addLog("[GATEWAY] Using HTTP POST method for " + gateway_type);
+      internetResponse = sendTransactionToCustomGateway(txData, gatewayUrl);
+      addLog("[GATEWAY] " + gateway_type + " response: " + internetResponse);
+      gateway_forwarded = true;
+    }
+  } else if (internet_connected) {
+    // Fallback to default internet gateway
+    addLog("[GATEWAY] No configured gateway, using default internet gateway (BlockCypher)");
+    addLog("[GATEWAY] Transaction data length: " + String(txData.length()) + " bytes");
+    internetResponse = sendTransactionToInternet(txData);
+    addLog("[GATEWAY] BlockCypher response: " + internetResponse);
+    gateway_forwarded = true;
+  } else {
+    addLog("[GATEWAY] No gateway configured and no internet connection available");
+  }
+  
+  if (gateway_forwarded) {
+    addLog("[LoRa] Gateway forwarding successful, sending confirmation back to " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+    addLog("[LoRa] Gateway response: " + internetResponse);
+    
+    // Send confirmation back to original sender via LoRa
+    String confirmMessage = "DOGECOIN_RESPONSE:" + internetResponse;
+    nodeAddress originalSender = {srcRegion, srcCommunity, srcNode};
+    addLog("[LoRa] Sending Dogecoin node response to original sender: " + confirmMessage);
+    
+    // Small delay to ensure sender is ready to receive
+    delay(2000);
+    
+    // Check if message is too long for regular message
+    if (confirmMessage.length() > 240) {
+      addLog("[LoRa] Confirmation message too long, using multipart");
+      SendMultipartMessage(originalSender, confirmMessage, "confirmation");
+    } else {
+      addLog("[LoRa] Using regular message for confirmation");
+      SendMessage(originalSender, confirmMessage, "confirmation");
+    }
+    
+    // Send a second confirmation after a delay to ensure delivery
+    delay(3000);
+    addLog("[LoRa] Sending second confirmation to ensure delivery");
+    if (confirmMessage.length() > 240) {
+      addLog("[LoRa] Second confirmation also using multipart");
+      SendMultipartMessage(originalSender, confirmMessage, "confirmation");
+    } else {
+      SendMessage(originalSender, confirmMessage, "confirmation");
+    }
+  } else {
+    addLog("[LoRa] No gateway forwarding performed - transaction stored locally only");
+    
+    // Rebroadcast transaction to other LoRa devices for mesh networking
+    if (ENABLE_MESH_REBROADCAST) {
+      addLog("[LoRa] Rebroadcasting transaction to other LoRa devices for mesh networking");
+      String rebroadcastData = "transaction:" + txType + ":" + txData;
+      if (rebroadcastData.length() > 255) {
+        addLog("[LoRa] Transaction too large for rebroadcast, using multipart");
+        SendMultipartBroadcast(rebroadcastData, "transaction", "normal");
+      } else {
+        SendBroadcast(rebroadcastData, "transaction", "normal");
+      }
+    } else {
+      addLog("[LoRa] Mesh rebroadcasting disabled - transaction stored locally only");
+    }
+  }
+  
+  addLog("[LoRa] Reassembled transaction processed and forwarded to host" + String(gateway_forwarded ? " and gateway" : ""));
+}
+
+void ProcessReassembledMessage(String messageData, uint8_t srcRegion, uint8_t srcCommunity, uint8_t srcNode) {
+  addLog("[LoRa] Processing reassembled MESSAGE from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+  
+  // Set sender address
+  senderAddress.region = srcRegion;
+  senderAddress.community = srcCommunity;
+  senderAddress.node = srcNode;
+  
+  // Check if this is a Dogecoin node response
+  if (messageData.startsWith("DOGECOIN_RESPONSE:")) {
+    addLog("[LoRa] Received Dogecoin node response from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+    addLog("[LoRa] Dogecoin response: " + messageData);
+    addLog("[LoRa] Full Dogecoin node message received and displayed on screen");
+  }
+  
+  // Display on screen
+  DisplayRXMessage(messageData, senderAddress);
+  
+  // Forward to host via serial
+  String fullMessage = "MESSAGE:" + messageData;
+  Serial.write(fullMessage.c_str(), fullMessage.length());
+  Serial.write('\n');
+  
+  addLog("[LoRa] Reassembled message forwarded to host");
+}
+
+void ProcessReassembledBroadcast(String broadcastData, uint8_t srcRegion, uint8_t srcCommunity, uint8_t srcNode) {
+  addLog("[LoRa] Processing reassembled BROADCAST from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+  
+  // Set sender address
+  senderAddress.region = srcRegion;
+  senderAddress.community = srcCommunity;
+  senderAddress.node = srcNode;
+  
+  // Display on screen
+  DisplayBroadcastMessage(broadcastData, senderAddress);
+  
+  // Forward to host via serial
+  String fullMessage = "BROADCAST:" + broadcastData;
+  Serial.write(fullMessage.c_str(), fullMessage.length());
+  Serial.write('\n');
+  
+  // Auto-forward to configured gateway if available
+  String internetResponse = "";
+  bool gateway_forwarded = false;
+  
+  // Extract transaction data from broadcast (format: "transaction:normal:HEXDATA")
+  String txData = broadcastData;
+  if (broadcastData.startsWith("transaction:normal:")) {
+    txData = broadcastData.substring(19); // Remove "transaction:normal:" prefix
+  } else if (broadcastData.startsWith("transaction:")) {
+    int colonPos = broadcastData.indexOf(':', 12);
+    if (colonPos > 0) {
+      txData = broadcastData.substring(colonPos + 1);
+    }
+  }
+  
+  if (gateway_type != "none" && gateway_ip.length() > 0) {
+    String gatewayUrl = "http://" + gateway_ip + ":" + gateway_port;
+    if (gateway_type != "core" && gateway_endpoint.length() > 0) {
+      gatewayUrl += gateway_endpoint;
+    }
+    
+    addLog("[GATEWAY] Forwarding broadcast to " + gateway_type + " gateway at " + gatewayUrl);
+    
+    addLog("[GATEWAY] Broadcast transaction data length: " + String(txData.length()) + " bytes");
+    addLog("[GATEWAY] Transaction data (first 50 chars): " + txData.substring(0, min(50, (int)txData.length())));
+    addLog("[GATEWAY] Transaction data (last 50 chars): " + txData.substring(max(0, (int)txData.length() - 50)));
+    
+    if (gateway_type == "core") {
+      // Use JSON-RPC for Dogecoin Core
+      addLog("[GATEWAY] Using JSON-RPC method for Dogecoin Core");
+      internetResponse = sendJsonRpcToGateway(txData, gatewayUrl, gateway_username, gateway_password);
+      addLog("[GATEWAY] Dogecoin Core response: " + internetResponse);
+      gateway_forwarded = true;
+    } else {
+      // Use regular HTTP POST for other gateways
+      addLog("[GATEWAY] Using HTTP POST method for " + gateway_type);
+      internetResponse = sendTransactionToCustomGateway(txData, gatewayUrl);
+      addLog("[GATEWAY] " + gateway_type + " response: " + internetResponse);
+      gateway_forwarded = true;
+    }
+  } else if (internet_connected) {
+    // Fallback to default internet gateway
+    addLog("[GATEWAY] No configured gateway, using default internet gateway (BlockCypher)");
+    addLog("[GATEWAY] Broadcast transaction data length: " + String(txData.length()) + " bytes");
+    internetResponse = sendTransactionToInternet(txData);
+    addLog("[GATEWAY] BlockCypher response: " + internetResponse);
+    gateway_forwarded = true;
+  } else {
+    addLog("[GATEWAY] No gateway configured and no internet connection available");
+  }
+  
+  if (gateway_forwarded) {
+    addLog("[LoRa] Gateway forwarding successful, sending confirmation back to " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+    addLog("[LoRa] Gateway response: " + internetResponse);
+    
+    // Send confirmation back to original sender via LoRa
+    String confirmMessage = "DOGECOIN_RESPONSE:" + internetResponse;
+    nodeAddress originalSender = {srcRegion, srcCommunity, srcNode};
+    addLog("[LoRa] Sending Dogecoin node response to original sender: " + confirmMessage);
+    addLog("[LoRa] Original sender address: " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
+    addLog("[LoRa] Dogecoin response length: " + String(confirmMessage.length()) + " bytes");
+    
+    // Small delay to ensure sender is ready to receive
+    delay(2000);
+    
+    // Check if message is too long for regular message
+    if (confirmMessage.length() > 240) {
+      addLog("[LoRa] Confirmation message too long, using multipart");
+      SendMultipartMessage(originalSender, confirmMessage, "confirmation");
+    } else {
+      addLog("[LoRa] Using regular message for confirmation");
+      SendMessage(originalSender, confirmMessage, "confirmation");
+    }
+    
+    // Send a second confirmation after a delay to ensure delivery
+    delay(3000);
+    addLog("[LoRa] Sending second confirmation to ensure delivery");
+    if (confirmMessage.length() > 240) {
+      addLog("[LoRa] Second confirmation also using multipart");
+      SendMultipartMessage(originalSender, confirmMessage, "confirmation");
+    } else {
+      SendMessage(originalSender, confirmMessage, "confirmation");
+    }
+  } else {
+    addLog("[LoRa] No gateway forwarding performed - broadcast stored locally only");
+    
+    // Rebroadcast to other LoRa devices for mesh networking
+    if (ENABLE_MESH_REBROADCAST) {
+      addLog("[LoRa] Rebroadcasting to other LoRa devices for mesh networking");
+      // Extract type and priority from original broadcast data
+      String rebroadcastType = "transaction";
+      String rebroadcastPriority = "normal";
+      if (broadcastData.startsWith("transaction:normal:")) {
+        rebroadcastType = "transaction";
+        rebroadcastPriority = "normal";
+      } else if (broadcastData.startsWith("transaction:")) {
+        rebroadcastType = "transaction";
+        int colonPos = broadcastData.indexOf(':', 12);
+        if (colonPos > 0) {
+          rebroadcastPriority = broadcastData.substring(12, colonPos);
+        }
+      }
+      
+      String rebroadcastData = rebroadcastType + ":" + rebroadcastPriority + ":" + txData;
+      if (rebroadcastData.length() > 255) {
+        addLog("[LoRa] Broadcast too large for rebroadcast, using multipart");
+        SendMultipartBroadcast(rebroadcastData, rebroadcastType, rebroadcastPriority);
+      } else {
+        SendBroadcast(rebroadcastData, rebroadcastType, rebroadcastPriority);
+      }
+    } else {
+      addLog("[LoRa] Mesh rebroadcasting disabled - broadcast stored locally only");
+    }
+  }
+  
+  addLog("[LoRa] Reassembled broadcast forwarded to host and gateway");
+}
+
+void RemoveMultipartSession(int sessionIndex) {
+  if (sessionIndex < 0 || sessionIndex >= activeMultipartSessions) return;
+  
+  // Shift remaining sessions down
+  for (int i = sessionIndex; i < activeMultipartSessions - 1; i++) {
+    multipartBuffer[i] = multipartBuffer[i + 1];
+  }
+  
+  activeMultipartSessions--;
+  addLog("[LoRa] Removed multipart session " + String(sessionIndex));
+}
+
+// API handler for multipart status
+void handleApiMultipartStatus() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"active_sessions\":" + String(activeMultipartSessions) + ",";
+  response += "\"max_sessions\":" + String(MAX_MULTIPART_PARTS) + ",";
+  response += "\"chunk_size\":" + String(MULTIPART_CHUNK_SIZE) + ",";
+  response += "\"max_parts\":" + String(MAX_MULTIPART_PARTS) + ",";
+  response += "\"timeout_ms\":" + String(MULTIPART_TIMEOUT_MS) + ",";
+  response += "\"sessions\":[";
+  
+  for (int i = 0; i < activeMultipartSessions; i++) {
+    if (i > 0) response += ",";
+    response += "{";
+    response += "\"src\":\"" + String(multipartBuffer[i].srcRegion) + "." + String(multipartBuffer[i].srcCommunity) + "." + String(multipartBuffer[i].srcNode) + "\",";
+    response += "\"total_parts\":" + String(multipartBuffer[i].totalParts) + ",";
+    response += "\"received_parts\":" + String(multipartBuffer[i].receivedParts) + ",";
+    response += "\"data_type\":" + String(multipartBuffer[i].dataType) + ",";
+    response += "\"age_ms\":" + String(millis() - multipartBuffer[i].startTime);
+    response += "}";
+  }
+  
+  response += "]";
+  response += "}";
+  
+  server.send(200, "application/json", response);
+}
+
+void CleanupExpiredMultipartSessions() {
+  unsigned long currentTime = millis();
+  
+  for (int i = activeMultipartSessions - 1; i >= 0; i--) {
+    if (currentTime - multipartBuffer[i].startTime > MULTIPART_TIMEOUT_MS) {
+      addLog("[LoRa] Multipart session expired for " + String(multipartBuffer[i].srcRegion) + "." + String(multipartBuffer[i].srcCommunity) + "." + String(multipartBuffer[i].srcNode) + " - Received " + String(multipartBuffer[i].receivedParts) + "/" + String(multipartBuffer[i].totalParts) + " parts");
+      RemoveMultipartSession(i);
+    }
+  }
 }
 
 // Send a broadcast message
@@ -1531,10 +2341,31 @@ void ParseHostFormedPacket(uint8_t payloadSize) {
 
 // Parse a LoRa message received over the air from another module
 void ParseReceivedMessage() {
+  addLog("[DEBUG] Received packet - Size: " + String(rxSize) + " bytes, First byte: " + String(rxPacket[0]));
+  
   if (CheckIfPacketForMe()) {
+    addLog("[DEBUG] Packet is for me - processing...");
     //Serial.println("PACKET FOR ME");
     messageType mType = (messageType)rxPacket[0];
-    addLog("[LoRa] Processing received packet - Type: " + String(mType) + " from " + String(rxPacket[2]) + "." + String(rxPacket[3]) + "." + String(rxPacket[4]));
+    addLog("[DEBUG] Packet type: " + String(mType) + ", Is multipart: " + String(mType == MULTIPART_PACKET));
+    // For multipart packets, addresses are in different positions
+    if (mType == MULTIPART_PACKET) {
+      addLog("[LoRa] Processing received packet - Type: " + String(mType) + " from " + String((int)rxPacket[4]) + "." + String((int)rxPacket[5]) + "." + String((int)rxPacket[6]) + " (Packet size: " + String(rxSize) + " bytes)");
+    } else {
+      addLog("[LoRa] Processing received packet - Type: " + String(mType) + " from " + String((int)rxPacket[2]) + "." + String((int)rxPacket[3]) + "." + String((int)rxPacket[4]) + " (Packet size: " + String(rxSize) + " bytes)");
+    }
+    
+    // Debug: Log packet contents for multipart packets
+    if (mType == MULTIPART_PACKET) {
+      addLog("[DEBUG] Multipart packet - Part: " + String(rxPacket[7]) + "/" + String(rxPacket[8]) + ", DataType: " + String(rxPacket[9]));
+      addLog("[DEBUG] Multipart addresses - To: " + String((int)rxPacket[1]) + "." + String((int)rxPacket[2]) + "." + String((int)rxPacket[3]) + ", From: " + String((int)rxPacket[4]) + "." + String((int)rxPacket[5]) + "." + String((int)rxPacket[6]));
+      // Raw packet debugging
+      String rawBytes = "";
+      for (int i = 0; i < min(16, (int)rxSize); i++) {
+        rawBytes += String(rxPacket[i], HEX) + " ";
+      }
+      addLog("[DEBUG] Raw packet bytes: " + rawBytes);
+    }
     switch (mType) {
       case ACK:
         ReceivedACK();
@@ -1554,6 +2385,14 @@ void ParseReceivedMessage() {
         {
           String messageString = ExtractStringMessageFromBuffer((uint8_t *)rxPacket, rxSize);
           SetSenderAddress();
+          
+          // Check if this is a Dogecoin node response
+          if (messageString.startsWith("DOGECOIN_RESPONSE:")) {
+            addLog("[LoRa] Received Dogecoin node response from " + String(senderAddress.region) + "." + String(senderAddress.community) + "." + String(senderAddress.node));
+            addLog("[LoRa] Dogecoin response: " + messageString);
+            addLog("[LoRa] Full Dogecoin node message received and displayed on screen");
+          }
+          
           DisplayRXMessage(messageString, senderAddress);
           //Serial.printf("MUCH TLK FR %d.%d.%d:\n", senderAddress.region, senderAddress.community, senderAddress.node);
           //Serial.println(messageString);
@@ -1586,9 +2425,11 @@ void ParseReceivedMessage() {
       case MULTIPART_PACKET:
         SetSenderAddress();
         char tempBuf[64];
-        sprintf(tempBuf, "Packet part %i of %i", rxPacket[10], rxPacket[11]);
+        sprintf(tempBuf, "Packet part %i of %i", rxPacket[7], rxPacket[8]);
         DisplayRXMessage(String(tempBuf), senderAddress);
-        Serial.write(rxPacket, rxSize);
+        addLog("[LoRa] Processing MULTIPART packet - Part " + String(rxPacket[7]) + "/" + String(rxPacket[8]) + " from " + String(senderAddress.region) + "." + String(senderAddress.community) + "." + String(senderAddress.node));
+        ProcessMultipartPacket();
+        return; // Exit after processing multipart packet
         break;
       default:
         // (debug)
@@ -1597,28 +2438,69 @@ void ParseReceivedMessage() {
     }
   } 
   else if (CheckIfPacketIsGlobalBroadcast()){
-    // Now that we know that the packet is a global broadcast...
-    SetSenderAddress();
-    DisplayBroadcastMessage("Broadcast Received!", senderAddress);
-    // Check broadcast type
-    // @TODO
-    // We will just pass on the broadcast message directly to the host
-    Serial.write(rxPacket, rxSize);
+    addLog("[DEBUG] Global broadcast packet received");
+    messageType mType = (messageType)rxPacket[0];
+    addLog("[DEBUG] Broadcast packet type: " + String(mType) + ", Is multipart: " + String(mType == MULTIPART_PACKET));
+    // Check if it's a multipart broadcast
+    if (rxPacket[0] == MULTIPART_PACKET) {
+      addLog("[DEBUG] Multipart broadcast packet received");
+      // Raw packet debugging for broadcast
+      String rawBytes = "";
+      for (int i = 0; i < min(16, (int)rxSize); i++) {
+        rawBytes += String(rxPacket[i], HEX) + " ";
+      }
+      addLog("[DEBUG] Broadcast raw packet bytes: " + rawBytes);
+      SetSenderAddress();
+      char tempBuf[64];
+      sprintf(tempBuf, "BC Part %i of %i", rxPacket[7], rxPacket[8]);
+      DisplayBroadcastMessage(String(tempBuf), senderAddress);
+      ProcessMultipartPacket();
+      return; // Exit after processing multipart broadcast
+    } else {
+      // Regular broadcast
+      SetSenderAddress();
+      DisplayBroadcastMessage("Broadcast Received!", senderAddress);
+      // Check broadcast type
+      // @TODO
+      // We will just pass on the broadcast message directly to the host
+      Serial.write(rxPacket, rxSize);
+    }
   }
   else {
+    // For multipart packets, addresses are in different positions
+    if (rxPacket[0] == MULTIPART_PACKET) {
+      addLog("[DEBUG] Multipart packet not for me - From: " + String((int)rxPacket[4]) + "." + String((int)rxPacket[5]) + "." + String((int)rxPacket[6]) + ", To: " + String((int)rxPacket[1]) + "." + String((int)rxPacket[2]) + "." + String((int)rxPacket[3]));
+      addLog("[DEBUG] Multipart broadcast check: " + String(CheckIfPacketIsGlobalBroadcast()));
+    } else {
+      addLog("[DEBUG] Packet not for me - From: " + String((int)rxPacket[2]) + "." + String((int)rxPacket[3]) + "." + String((int)rxPacket[4]) + ", To: " + String((int)rxPacket[5]) + "." + String((int)rxPacket[6]) + "." + String((int)rxPacket[7]));
+    }
     //Serial.printf("NOT FR ME: FR %d.%d.%d\n", rxPacket[4], rxPacket[5], rxPacket[6]);
   }
 }
 
 // Checks to see if the received packet's destination is the same as the local address
 bool CheckIfPacketForMe() {
-  return (local.region == rxPacket[5]) && (local.community == rxPacket[6]) && (local.node == rxPacket[7]);
+  // For multipart packets, addresses are in different positions
+  if (rxPacket[0] == MULTIPART_PACKET) {
+    // Multipart packet: [type][dest_region][dest_community][dest_node][src_region][src_community][src_node]...
+    return (local.region == rxPacket[1]) && (local.community == rxPacket[2]) && (local.node == rxPacket[3]);
+  } else {
+    // Regular packet: [type][header][src_region][src_community][src_node][dest_region][dest_community][dest_node]...
+    return (local.region == rxPacket[5]) && (local.community == rxPacket[6]) && (local.node == rxPacket[7]);
+  }
 }
 
 // Checks to see if the received packet's destination is intended for every listening node
 bool CheckIfPacketIsGlobalBroadcast()
 {
-  return (255 == rxPacket[5]) && (255 == rxPacket[6]) && (255 == rxPacket[7]);
+  // For multipart packets, addresses are in different positions
+  if (rxPacket[0] == MULTIPART_PACKET) {
+    // Multipart packet: [type][dest_region][dest_community][dest_node][src_region][src_community][src_node]...
+    return (255 == rxPacket[1]) && (255 == rxPacket[2]) && (255 == rxPacket[3]);
+  } else {
+    // Regular packet: [type][header][src_region][src_community][src_node][dest_region][dest_community][dest_node]...
+    return (255 == rxPacket[5]) && (255 == rxPacket[6]) && (255 == rxPacket[7]);
+  }
 }
 
 // Extract the payload message from the given buffer (assists with displaying on screen)
@@ -1678,12 +2560,14 @@ void setupWebServer() {
   server.on("/api/gateway/debug", HTTP_GET, handleApiGatewayDebug);
   server.on("/api/gateway/load", HTTP_GET, handleApiGatewayLoad);
   server.on("/api/logs", HTTP_GET, handleApiLogs);
+  server.on("/api/logs/text", HTTP_GET, handleApiLogsText);
   server.on("/api/logs/send", HTTP_POST, handleApiLogsSend);
   server.on("/api/transaction/send", HTTP_POST, handleApiTransactionSend);
   server.on("/api/gateway/config", HTTP_GET, handleApiGatewayConfig);
   server.on("/api/gateway/config", HTTP_POST, handleApiGatewayConfigSet);
   server.on("/api/rpc", HTTP_POST, handleApiRpc);
   server.on("/api/jsonrpc", HTTP_POST, handleApiJsonRpc);
+  server.on("/api/multipart/status", HTTP_GET, handleApiMultipartStatus);
   
   server.begin();
   Serial.println("Web server started");
@@ -1933,6 +2817,9 @@ void handleRoot() {
   html += "<div class='button-group'>";
   html += "<button class='button' onclick='setAddress()'>SET ADDRESS</button>";
   html += "<button class='button' onclick='getStatus()'>GET STATUS</button>";
+  html += "<button class='button' onclick='getCurrentAddress()'>CURRENT ADDRESS</button>";
+  html += "<button class='button' onclick='getMultipartStatus()'>MULTIPART STATUS</button>";
+  html += "<button class='button' onclick='getDetailedLogs()'>DETAILED LOGS</button>";
   html += "<button class='button danger' onclick='clearLoRaConfig()'>CLEAR STORED CONFIG</button>";
   html += "</div>";
   html += "</div>";
@@ -2164,8 +3051,10 @@ void handleRoot() {
   html += "<svg class='accordion-icon' id='guide-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
   html += "</div>";
   html += "<div class='accordion-content' id='guide-content'>";
-  html += "<h3>RadioDoge Features Overview</h3>";
-  html += "<p>RadioDoge enables wireless P2P Dogecoin transactions and messaging via LoRa radio. No internet required!</p>";
+  html += "<h3>Blockchain-Like LoRa Network</h3>";
+  html += "<p><strong>RadioDoge creates a decentralized mesh network that works like a blockchain for Dogecoin transactions!</strong></p>";
+  html += "<p><strong>RECOMMENDED:</strong> Use the <strong>BROADCAST</strong> feature for Dogecoin transactions - it automatically finds devices with internet connectivity and forwards your transaction to the Dogecoin network!</p>";
+  html += "<p><strong>How it works:</strong> Broadcast → Mesh Propagation → Gateway Discovery → Blockchain Integration → Response Relay</p>";
   
   html += "<h3>Web Interface</h3>";
   html += "<p><strong>Access:</strong> Connect to WiFi 'RadioDoge' (password: radiodoge) and open <code>http://192.168.4.1</code></p>";
@@ -2175,13 +3064,14 @@ void handleRoot() {
   html += "<p><strong>WiFi Access:</strong> Connect to 'RadioDoge' WiFi network (password: radiodoge) and open <code>http://192.168.4.1</code></p>";
   html += "<p><strong>Note:</strong> Use WiFi web interface for mobile access.</p>";
   
-  html += "<h3>API Commands (WiFi Only)</h3>";
+  html += "<h3>RECOMMENDED: Broadcast API Commands</h3>";
   html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;overflow-x:auto;word-wrap:break-word;white-space:pre-wrap;'>";
-  html += "<p><strong>Send Ping:</strong><br><code style='word-break:break-all;'>GET /api/ping?region=10&community=1&node=2</code></p>";
-  html += "<p><strong>Send Message:</strong><br><code>POST /api/message</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=text&message=Hello!</code></p>";
-  html += "<p><strong>Send Dogecoin Transaction:</strong><br><code>POST /api/transaction</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=signed&data=0100000001...</code></p>";
-  html += "<p><strong>Broadcast Message:</strong><br><code>POST /api/broadcast</code><br>Body: <code style='word-break:break-all;'>type=announcement&priority=normal&message=Network update</code></p>";
-  html += "<p><strong>Get Status:</strong><br><code>GET /api/status</code></p>";
+  html += "<p><strong>BROADCAST Dogecoin Transaction (Blockchain-Like):</strong><br><code>POST /api/broadcast</code><br>Body: <code style='word-break:break-all;'>type=transaction&priority=normal&message=0100000001...</code><br><em>No internet required! Automatically finds gateway and forwards to Dogecoin network</em></p>";
+  html += "<p><strong>Send Direct Message:</strong><br><code>POST /api/message</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=text&message=Hello!</code></p>";
+  html += "<p><strong>Send Direct Transaction (Requires Internet):</strong><br><code>POST /api/transaction</code><br>Body: <code style='word-break:break-all;'>address=10.1.2&type=signed&data=0100000001...</code><br><em>Large transactions (>255 bytes) automatically use multipart packets</em></p>";
+  html += "<p><strong>Broadcast General Message:</strong><br><code>POST /api/broadcast</code><br>Body: <code style='word-break:break-all;'>type=announcement&priority=normal&message=Network update</code><br><em>Large broadcasts (>255 bytes) automatically use multipart packets</em></p>";
+  html += "<p><strong>System Status:</strong><br><code>GET /api/status</code></p>";
+  html += "<p><strong>Multipart Status:</strong><br><code>GET /api/multipart/status</code> - View active multipart sessions</p>";
   html += "<p><strong>Set Address:</strong><br><code>POST /api/address</code><br>Body: <code style='word-break:break-all;'>region=10&community=1&node=5</code></p>";
   html += "</div>";
   
@@ -2206,14 +3096,24 @@ void handleRoot() {
   html += "</div>";
   
   html += "<h3>New Features</h3>";
+  html += "<p><strong>Multipart Packets:</strong> Automatically split large transactions (>255 bytes) into multiple LoRa packets for transmission. Supports up to 4KB transactions across 20 packets with automatic reassembly.</p>";
   html += "<p><strong>Real-Time Logs:</strong> Monitor all system activity including display messages, network activity, and transaction processing in real-time.</p>";
   html += "<p><strong>Internet Gateway Support:</strong> Send transactions directly to Dogecoin Core, DogeBox, Dogecoin Wallet, or custom gateways via internet connection.</p>";
   html += "<p><strong>Persistent Gateway Configuration:</strong> Save gateway credentials that persist across device reboots.</p>";
   html += "<p><strong>JSON-RPC Support:</strong> Direct communication with Dogecoin Core nodes using JSON-RPC protocol.</p>";
   html += "<p><strong>Enhanced API:</strong> Complete REST API for programmatic control of all device functions.</p>";
   
-  html += "<h3>Sending Dogecoin Transactions</h3>";
+  html += "<h3>Sending Dogecoin Transactions (Blockchain-Like)</h3>";
+  html += "<p><strong>RECOMMENDED METHOD:</strong> Use <strong>BROADCAST</strong> for the best experience!</p>";
   html += "<p><strong>What you need:</strong> A <strong>signed Dogecoin transaction</strong> from your wallet</p>";
+  html += "<p><strong>Why Use Broadcast?</strong></p>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>No Internet Required:</strong> Your device doesn't need internet connectivity</li>";
+  html += "<li><strong>Automatic Propagation:</strong> Transaction spreads through the entire RadioDoge network</li>";
+  html += "<li><strong>Gateway Discovery:</strong> Automatically finds devices with internet connectivity</li>";
+  html += "<li><strong>Full Response:</strong> Get detailed blockchain responses back to your device</li>";
+  html += "<li><strong>Decentralized:</strong> No single point of failure - works like a blockchain</li>";
+  html += "</ul>";
   html += "<p><strong>Transaction Types:</strong></p>";
   html += "<ul style='margin:10px 0;padding-left:20px;'>";
   html += "<li><strong>signed (Recommended):</strong> Complete signed transaction ready for broadcast - <em>This is what you should use</em></li>";
@@ -2221,14 +3121,15 @@ void handleRoot() {
   html += "<li><strong>utxo:</strong> UTXO data for transaction construction (advanced users)</li>";
   html += "</ul>";
   
-  html += "<h4>Step-by-Step Guide</h4>";
+  html += "<h4>Step-by-Step Guide (Broadcast Method)</h4>";
   html += "<ol style='margin:10px 0;padding-left:20px;'>";
   html += "<li><strong>Create Transaction:</strong> Use your Dogecoin wallet to create a transaction</li>";
   html += "<li><strong>Sign Transaction:</strong> Sign the transaction with your private key (this creates a <strong>signed transaction</strong>)</li>";
   html += "<li><strong>Export Signed Transaction:</strong> Get the signed transaction as a hex string from your wallet</li>";
-  html += "<li><strong>Send via RadioDoge:</strong> Use web interface or API to send the <strong>signed transaction</strong></li>";
-  html += "<li><strong>Broadcast:</strong> RadioDoge transmits the signed transaction via LoRa to other devices</li>";
-  html += "<li><strong>Network Propagation:</strong> Other RadioDoge devices can relay the signed transaction to the Dogecoin network</li>";
+  html += "<li><strong>Use BROADCAST:</strong> Go to <strong>BROADCAST MESSAGE</strong> section, select <strong>Transaction</strong> type, paste your signed transaction</li>";
+  html += "<li><strong>Automatic Propagation:</strong> RadioDoge broadcasts to all devices in range, which rebroadcast to extend the network</li>";
+  html += "<li><strong>Gateway Discovery:</strong> When a device with internet receives your transaction, it forwards to the Dogecoin network</li>";
+  html += "<li><strong>Response Relay:</strong> The detailed blockchain response travels back through the mesh to your device</li>";
   html += "</ol>";
   
   html += "<h4>Method 1: LoRa to LoRa (RadioDoge Network)</h4>";
@@ -2415,6 +3316,9 @@ void handleRoot() {
   html += "function setAddress(){var r=document.getElementById('region').value;var c=document.getElementById('community').value;var n=document.getElementById('node').value;fetch('/address?region='+r+'&community='+c+'&node='+n).then(r=>r.text()).then(d=>{showResponse('ADDRESS: '+d);updateStatusDisplay(r+'.'+c+'.'+n);});}";
   html += "function updateStatusDisplay(newAddress){var addressSpan=document.querySelector('.address-display');if(addressSpan){addressSpan.textContent=newAddress;}}";
   html += "function getStatus(){fetch('/status').then(r=>r.text()).then(d=>showResponse('STATUS: '+d));}";
+  html += "function getMultipartStatus(){fetch('/api/multipart/status').then(r=>r.json()).then(d=>{document.getElementById('response').style.display='block';document.getElementById('response').innerHTML='MULTIPART STATUS:<br><pre>'+JSON.stringify(d,null,2)+'</pre>';});}";
+  html += "function getDetailedLogs(){fetch('/api/logs/text').then(r=>r.text()).then(d=>{document.getElementById('response').style.display='block';document.getElementById('response').innerHTML='<h3>DETAILED SYSTEM LOGS</h3><pre style=\"max-height:400px;overflow-y:auto;background:#000;color:#0f0;padding:10px;\">'+d+'</pre>';}).catch(e=>{document.getElementById('response').style.display='block';document.getElementById('response').innerHTML='<h3>ERROR LOADING LOGS</h3><p>Error: '+e.message+'</p>';});}";
+  html += "function getCurrentAddress(){fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('response').style.display='block';document.getElementById('response').innerHTML='<h3>CURRENT ADDRESS</h3><pre>'+JSON.stringify(d,null,2)+'</pre>';});}";
   html += "function clearLoRaConfig(){if(confirm('Are you sure you want to clear stored LoRa configuration? This will reset to default values.')){fetch('/api/lora/clear',{method:'POST'}).then(r=>r.json()).then(d=>{showResponse('LORA CONFIG: '+JSON.stringify(d,null,2));setTimeout(()=>location.reload(),2000);});}}";
   html += "function changePassword(){var newPass=document.getElementById('newPassword').value;var confirmPass=document.getElementById('confirmPassword').value;if(!newPass||!confirmPass){showResponse('Please enter both new password and confirmation');return;}if(newPass!==confirmPass){showResponse('Passwords do not match');return;}if(newPass.length<8||newPass.length>32){showResponse('Password must be 8-32 characters long');return;}var hasLetter=/[a-zA-Z]/.test(newPass);var hasNumber=/[0-9]/.test(newPass);if(!hasLetter||!hasNumber){showResponse('Password must contain at least one letter and one number');return;}fetch('/api/password/change',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password='+encodeURIComponent(newPass)}).then(r=>r.json()).then(d=>{document.getElementById('passwordStatus').style.display='block';document.getElementById('passwordStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){setTimeout(()=>{alert('Password changed successfully! You will be disconnected. Please reconnect with the new password.');location.reload();},2000);}});}";
   html += "function resetPassword(){if(confirm('Are you sure you want to reset the password to default (radiodoge)? This will disconnect all current users.')){fetch('/api/password/reset',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('passwordStatus').style.display='block';document.getElementById('passwordStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>{alert('Password reset to default! You will be disconnected. Please reconnect with password: radiodoge');location.reload();},2000);});}}";
@@ -2429,7 +3333,7 @@ void handleRoot() {
   html += "function loadStoredGatewayCredentials(){fetch('/api/gateway/load').then(r=>r.json()).then(d=>{if(d.success&&d.gateway){document.getElementById('gatewayType').value=d.gateway.type||'none';updateGatewayFields();document.getElementById('gatewayIp').value=d.gateway.ip||'';document.getElementById('gatewayPort').value=d.gateway.port||'';document.getElementById('gatewayEndpoint').value=d.gateway.endpoint||'';document.getElementById('rpcUsername').value=d.gateway.username||'';document.getElementById('rpcPassword').value=d.gateway.password||'';}}).catch(e=>{console.log('No stored gateway credentials found');});}";
   html += "function saveGatewayCredentials(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;var username=document.getElementById('rpcUsername').value;var password=document.getElementById('rpcPassword').value;if(!ip){showResponse('Please enter IP address');return;}if(!port){showResponse('Please enter port');return;}if(type!='core'&&!endpoint){showResponse('Please enter endpoint');return;}if(type==='core'&&(!username||!password)){showResponse('Please enter RPC username and password for CORE gateway');return;}var button=event.target;button.disabled=true;button.textContent='Saving...';fetch('/api/gateway/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'type='+encodeURIComponent(type)+'&ip='+encodeURIComponent(ip)+'&port='+encodeURIComponent(port)+'&endpoint='+encodeURIComponent(endpoint)+'&username='+encodeURIComponent(username)+'&password='+encodeURIComponent(password)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){button.textContent='Saved!';setTimeout(()=>{button.disabled=false;button.textContent='SAVE CREDENTIALS';},2000);}else{button.disabled=false;button.textContent='SAVE CREDENTIALS';}}).catch(e=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML='Error: '+e.message;button.disabled=false;button.textContent='SAVE CREDENTIALS';});}";
   html += "function clearGatewayCredentials(){if(confirm('Are you sure you want to clear stored gateway credentials?')){fetch('/api/gateway/clear',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}}";
-  html += "var autoRefreshInterval=null;function refreshLogs(){fetch('/api/logs').then(r=>r.json()).then(d=>{if(d.success){var container=document.getElementById('logsContainer');container.innerHTML='';d.logs.forEach(log=>{var entry=document.createElement('div');entry.className='log-entry';if(log.includes('ERROR')||log.includes('Error')){entry.className+=' error';}else if(log.includes('WARNING')||log.includes('Warning')){entry.className+=' warning';}else if(log.includes('INFO')||log.includes('Info')){entry.className+=' info';}else if(log.includes('DEBUG')||log.includes('Debug')){entry.className+=' debug';}entry.textContent=log;container.appendChild(entry);});container.scrollTop=container.scrollHeight;}}).catch(e=>{console.error('Error fetching logs:',e);});}function clearLogs(){if(confirm('Clear all logs? This will remove all log entries from memory.')){document.getElementById('logsContainer').innerHTML='<div class=\"log-entry\">Logs cleared</div>';}}function toggleAutoRefresh(){var btn=document.getElementById('autoRefreshBtn');if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;btn.textContent='AUTO REFRESH: OFF';}else{autoRefreshInterval=setInterval(refreshLogs,2000);btn.textContent='AUTO REFRESH: ON';}}";
+  html += "var autoRefreshInterval=null;function refreshLogs(){fetch('/api/logs').then(r=>r.json()).then(d=>{if(d.success){var container=document.getElementById('logsContainer');container.innerHTML='';d.logs.forEach(log=>{var entry=document.createElement('div');entry.className='log-entry';if(log.includes('ERROR')||log.includes('Error')){entry.className+=' error';entry.style.backgroundColor='#f8d7da';entry.style.borderLeft='4px solid #dc3545';entry.style.color='#000000';}else if(log.includes('WARNING')||log.includes('Warning')){entry.className+=' warning';entry.style.backgroundColor='#fff3cd';entry.style.borderLeft='4px solid #ffc107';entry.style.color='#000000';}else if(log.includes('INFO')||log.includes('Info')){entry.className+=' info';entry.style.backgroundColor='#d1ecf1';entry.style.borderLeft='4px solid #17a2b8';entry.style.color='#000000';}else if(log.includes('DEBUG')||log.includes('Debug')){entry.className+=' debug';entry.style.backgroundColor='#e2e3e5';entry.style.borderLeft='4px solid #6c757d';entry.style.color='#000000';}else if(log.includes('DOGECOIN_RESPONSE')||log.includes('TX_CONFIRM')||log.includes('BC_CONFIRM')||log.includes('confirmation')){entry.className+=' success';entry.style.backgroundColor='#d4edda';entry.style.borderLeft='4px solid #28a745';entry.style.color='#000000';}entry.textContent=log;container.appendChild(entry);});container.scrollTop=container.scrollHeight;}}).catch(e=>{console.error('Error fetching logs:',e);});}function clearLogs(){if(confirm('Clear all logs? This will remove all log entries from memory.')){document.getElementById('logsContainer').innerHTML='<div class=\"log-entry\">Logs cleared</div>';}}function toggleAutoRefresh(){var btn=document.getElementById('autoRefreshBtn');if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;btn.textContent='AUTO REFRESH: OFF';}else{autoRefreshInterval=setInterval(refreshLogs,2000);btn.textContent='AUTO REFRESH: ON';}}";
   html += "function sendLogs(){var address=document.getElementById('logAddress').value;var type=document.getElementById('logType').value;var statusDiv=document.getElementById('logSendStatus');if(!address){statusDiv.innerHTML='<div class=\"error\">Please enter a target address</div>';statusDiv.style.display='block';return;}fetch('/api/logs/send',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'address='+encodeURIComponent(address)+'&type='+encodeURIComponent(type)+'&logs='+encodeURIComponent(document.getElementById('logsContainer').innerText)}).then(r=>r.json()).then(d=>{statusDiv.innerHTML='<div class=\"success\">Logs sent successfully to '+address+'</div>';statusDiv.style.display='block';setTimeout(()=>{statusDiv.style.display='none';},3000);}).catch(e=>{statusDiv.innerHTML='<div class=\"error\">Error sending logs: '+e.message+'</div>';statusDiv.style.display='block';});}";
   html += "window.onload=function(){loadStoredGatewayCredentials();refreshLogs();toggleAutoRefresh();};";
   html += "</script></div></body></html>";
@@ -2745,7 +3649,17 @@ void handleApiTransaction() {
       int node = address.substring(dots[1] + 1).toInt();
       
       nodeAddress txDest = {region, community, node};
-      SendTransaction(txDest, transaction, type);
+      
+      // Check if transaction is too large for single packet
+      String txData = type + ":" + transaction;
+      if (txData.length() > 255) {
+        // Use multipart for large transactions
+        SendMultipartTransaction(txDest, transaction, type);
+        addLog("[API] Using multipart for large transaction - " + String(txData.length()) + " bytes");
+      } else {
+        // Use regular single packet for small transactions
+        SendTransaction(txDest, transaction, type);
+      }
       
       // Forward to gateway if configured
       String internetResponse = "";
@@ -2776,10 +3690,19 @@ void handleApiTransaction() {
         gateway_forwarded = true;
       }
       
-      response += "\"action\":\"transaction\",";
-      response += "\"target\":\"" + address + "\",";
-      response += "\"type\":\"" + type + "\",";
-      response += "\"message\":\"Transaction sent to " + address + "\"";
+      // Check if multipart was used
+      if (txData.length() > 255) {
+        response += "\"action\":\"multipart_transaction\",";
+        response += "\"target\":\"" + address + "\",";
+        response += "\"type\":\"" + type + "\",";
+        response += "\"message\":\"Large transaction sent via multipart to " + address + "\",";
+        response += "\"parts\":\"" + String((txData.length() + MULTIPART_CHUNK_SIZE - 1) / MULTIPART_CHUNK_SIZE) + "\"";
+      } else {
+        response += "\"action\":\"transaction\",";
+        response += "\"target\":\"" + address + "\",";
+        response += "\"type\":\"" + type + "\",";
+        response += "\"message\":\"Transaction sent to " + address + "\"";
+      }
       if (gateway_forwarded) {
         response += ",\"internet_forwarded\":true,";
         response += "\"internet_response\":\"" + escapeJsonString(internetResponse) + "\"";
@@ -2799,6 +3722,7 @@ void handleApiTransaction() {
 
 void handleApiBroadcast() {
   addLog("[API] Broadcast endpoint called - IP: " + server.client().remoteIP().toString());
+  addLog("[API] LoRa state - isLoRaIdle: " + String(isLoRaIdle ? "true" : "false"));
   String response = "{";
   response += "\"success\":true,";
   response += "\"timestamp\":" + String(millis()) + ",";
@@ -2809,7 +3733,16 @@ void handleApiBroadcast() {
     String priority = server.hasArg("priority") ? server.arg("priority") : "normal";
     addLog("[API] Sending broadcast via LoRa - Type: " + type + ", Priority: " + priority + ", Length: " + String(message.length()));
     
-    SendBroadcast(message, type, priority);
+    // Check if broadcast is too large for single packet
+    String broadcastData = type + ":" + priority + ":" + message;
+    if (broadcastData.length() > 255) {
+      // Use multipart for large broadcasts
+      SendMultipartBroadcast(message, type, priority);
+      addLog("[API] Using multipart for large broadcast - " + String(broadcastData.length()) + " bytes");
+    } else {
+      // Use regular single packet for small broadcasts
+      SendBroadcast(message, type, priority);
+    }
     
     response += "\"action\":\"broadcast\",";
     response += "\"type\":\"" + type + "\",";
@@ -3401,6 +4334,25 @@ void handleApiLogs() {
   
   response += "]}";
   server.send(200, "application/json", response);
+}
+
+// Plain text logs API handler
+void handleApiLogsText() {
+  String response = "";
+  
+  if (logCount > 0) {
+    int startIndex = (logCount < MAX_LOG_ENTRIES) ? 0 : logIndex;
+    int entriesToShow = min(logCount, MAX_LOG_ENTRIES);
+    
+    for (int i = 0; i < entriesToShow; i++) {
+      int actualIndex = (startIndex + i) % MAX_LOG_ENTRIES;
+      response += logBuffer[actualIndex] + "\n";
+    }
+  } else {
+    response = "No logs available\n";
+  }
+  
+  server.send(200, "text/plain", response);
 }
 
 // Logs Send API Handler - Send logs to other devices via LoRa

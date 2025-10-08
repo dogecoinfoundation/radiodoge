@@ -2,17 +2,32 @@
 
 A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secure Dogecoin transaction transmission via LoRa radio with dual WiFi connectivity, persistent configuration, and web-based management interface.
 
+## 🌐 Blockchain-Like LoRa Network
+
+**RadioDoge creates a decentralized mesh network that works like a blockchain for Dogecoin transactions!**
+
+### How It Works:
+1. **📡 Broadcast Transaction**: Send your Dogecoin transaction to all RadioDoge devices in range
+2. **🔄 Mesh Propagation**: Each device rebroadcasts to extend the network reach
+3. **🌍 Gateway Discovery**: The transaction travels until it finds a device with internet connectivity
+4. **⛓️ Blockchain Integration**: The gateway device forwards your transaction to the Dogecoin network
+5. **📨 Response Relay**: The detailed response travels back through the mesh to you
+
+**This creates a truly decentralized way to send Dogecoin transactions without requiring internet on your device!**
+
 ## 🚀 Features
 
 ### Core Functionality
-- **LoRa Mesh Network**: P2P communication between RadioDoge devices
-- **Dogecoin Transaction Support**: Send/receive signed Dogecoin transactions
+- **🌐 Blockchain-Like Mesh Network**: Decentralized transaction propagation without internet
+- **📡 Smart Broadcasting**: Automatic multipart packet support for large transactions
+- **🔄 Mesh Rebroadcasting**: Transactions automatically propagate through the network
+- **⛓️ Gateway Discovery**: Automatic detection of devices with Dogecoin network access
+- **📨 Response Relay**: Detailed blockchain responses sent back to original sender
 - **Dual WiFi Mode**: Access Point + Station mode for internet connectivity
 - **Web Interface**: Modern, responsive web UI for device management
 - **REST API**: Complete API for programmatic control
 - **Persistent Configuration**: All settings stored in NVS flash memory
 - **Real-Time Logging**: Monitor all system activity with live log viewer
-- **Internet Gateway Support**: Direct transaction broadcasting to Dogecoin network
 
 ### Security Features
 - **Custom AP Password**: Secure, configurable WiFi access point password
@@ -42,6 +57,11 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Auto-Configuration**: Automatic restoration of last known settings on boot
 
 ### New Features (v3.2)
+- **🌐 Blockchain-Like Broadcasting**: Decentralized mesh network for Dogecoin transactions without internet
+- **📡 Smart Multipart Packets**: Automatic splitting of large transactions for reliable transmission
+- **🔄 Mesh Rebroadcasting**: Transactions automatically propagate through the RadioDoge network
+- **⛓️ Gateway Discovery**: Automatic detection and forwarding to devices with internet connectivity
+- **📨 Response Relay**: Detailed blockchain responses sent back to original sender via mesh network
 - **Enhanced Real-Time Logging**: Comprehensive logging of all LoRa, WiFi, and API activities with detailed transmission/reception information
 - **Log Forwarding**: Send system logs to other RadioDoge devices via LoRa for remote monitoring
 - **Fixed Gateway Forwarding**: Transactions now properly forward to local gateways without requiring internet connection
@@ -121,14 +141,36 @@ https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
 3. Connect using password: `radiodoge`
 4. Open browser to: `http://192.168.4.1`
 
-## 📱 Web Interface Usage
+## 🌐 Using the Blockchain-Like Broadcast Network
+
+### 🎯 **RECOMMENDED: Use Broadcast for Dogecoin Transactions**
+
+**For the best experience, always use the Broadcast feature instead of direct transactions!**
+
+#### Why Use Broadcast?
+- **🌍 No Internet Required**: Your device doesn't need internet connectivity
+- **🔄 Automatic Propagation**: Transaction spreads through the entire RadioDoge network
+- **⛓️ Gateway Discovery**: Automatically finds devices with Dogecoin network access
+- **📨 Full Response**: Get detailed blockchain responses back to your device
+- **🛡️ Decentralized**: No single point of failure - works like a blockchain
+
+#### How to Use Broadcast:
+1. **Connect to RadioDoge WiFi** (password: `radiodoge`)
+2. **Open Web Interface**: `http://192.168.4.1`
+3. **Go to "Broadcast" section**
+4. **Select "Transaction" type**
+5. **Paste your signed Dogecoin transaction**
+6. **Click "SEND BROADCAST"**
+7. **Watch the magic happen!** ✨
+
+### 📱 Web Interface Usage
 
 ### Initial Setup
 1. **Connect to RadioDoge WiFi** (password: `radiodoge`)
 2. **Open Web Interface**: `http://192.168.4.1`
 3. **Configure Device**:
    - Set LoRa address in "Device Configuration"
-   - Set internet WiFi in "WiFi Configuration"
+   - Set internet WiFi in "WiFi Configuration" (for gateway devices)
    - Change AP password in "Access Point Password"
 
 ### Main Features
@@ -138,14 +180,20 @@ https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
 - Displays WiFi and internet connection status
 - Shows password security status
 
-#### 📡 LoRa Communication
+#### 🌐 Blockchain-Like Broadcasting (RECOMMENDED)
+- **📡 Transaction Broadcast**: Send Dogecoin transactions to entire network
+- **🔄 Automatic Propagation**: Transactions spread through mesh network
+- **⛓️ Gateway Discovery**: Finds devices with internet connectivity
+- **📨 Response Relay**: Detailed blockchain responses sent back to sender
+- **🛡️ Decentralized**: No single point of failure
+
+#### 📡 Direct LoRa Communication
 - **Send Messages**: Text messages to specific devices
-- **Send Transactions**: Dogecoin transactions via LoRa
-- **Broadcast**: Messages to all devices in range
+- **Send Transactions**: Direct Dogecoin transactions (requires internet on sender)
 - **Ping Test**: Test connectivity between devices
 - **ACK**: Acknowledgment messages
 
-#### 🌐 Internet Gateway
+#### 🌐 Internet Gateway (For Gateway Devices)
 - **Transaction Forwarding**: Send transactions to Dogecoin network
 - **Custom Gateways**: Use your own transaction endpoints
 - **Auto-Forwarding**: Transactions automatically forwarded to internet
@@ -298,7 +346,31 @@ Send transaction to internet gateway.
 
 ### JavaScript Examples
 
-#### Send a Message
+#### 🌐 **RECOMMENDED: Broadcast Dogecoin Transaction (Blockchain-Like)**
+```javascript
+async function broadcastDogecoinTransaction() {
+  const transactionData = "0100000001..."; // Your signed transaction hex
+  
+  const response = await fetch('http://192.168.4.1/api/broadcast', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `type=transaction&priority=normal&message=${transactionData}`
+  });
+  
+  const result = await response.json();
+  console.log('Transaction broadcasted to entire RadioDoge network!', result);
+  
+  // The transaction will automatically:
+  // 1. Spread through the mesh network
+  // 2. Find a device with internet connectivity
+  // 3. Forward to the Dogecoin blockchain
+  // 4. Send the response back to you
+}
+```
+
+#### 📡 Send Direct Message
 ```javascript
 async function sendMessage() {
   const response = await fetch('http://192.168.4.1/api/message', {
@@ -314,9 +386,9 @@ async function sendMessage() {
 }
 ```
 
-#### Send Dogecoin Transaction
+#### 📡 Send Direct Dogecoin Transaction (Requires Internet)
 ```javascript
-async function sendTransaction() {
+async function sendDirectTransaction() {
   const transactionData = "0100000001..."; // Your signed transaction hex
   
   const response = await fetch('http://192.168.4.1/api/transaction', {
@@ -332,7 +404,7 @@ async function sendTransaction() {
 }
 ```
 
-#### Broadcast Message
+#### 🌐 Broadcast General Message
 ```javascript
 async function broadcastMessage() {
   const response = await fetch('http://192.168.4.1/api/broadcast', {
@@ -375,21 +447,36 @@ async function getStatus() {
 
 ### cURL Examples
 
-#### Send a Message
+#### 🌐 **RECOMMENDED: Broadcast Dogecoin Transaction (Blockchain-Like)**
+```bash
+# Broadcast your Dogecoin transaction to the entire RadioDoge network
+curl -X POST "http://192.168.4.1/api/broadcast" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "type=transaction&priority=normal&message=0100000001..."
+
+# This will:
+# 1. Send to all RadioDoge devices in range
+# 2. Automatically propagate through the mesh network
+# 3. Find a device with internet connectivity
+# 4. Forward to the Dogecoin blockchain
+# 5. Send the response back to you
+```
+
+#### 📡 Send Direct Message
 ```bash
 curl -X POST "http://192.168.4.1/api/message" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "address=10.1.2&type=text&text=Hello from cURL!"
 ```
 
-#### Send Dogecoin Transaction
+#### 📡 Send Direct Dogecoin Transaction (Requires Internet)
 ```bash
 curl -X POST "http://192.168.4.1/api/transaction" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "address=10.1.2&type=signed&data=0100000001..."
 ```
 
-#### Broadcast Message
+#### 🌐 Broadcast General Message
 ```bash
 curl -X POST "http://192.168.4.1/api/broadcast" \
   -H "Content-Type: application/x-www-form-urlencoded" \
@@ -456,6 +543,31 @@ curl -X GET "http://192.168.4.1/api/status"
 - **Clear Options**: Individual or complete configuration reset available
 
 ## 🆕 New Functionalities & Usage
+
+### 🌐 Blockchain-Like Broadcasting System
+
+**The most powerful feature of RadioDoge v3.2 is the blockchain-like broadcasting system!**
+
+#### How the Mesh Network Works:
+1. **📡 Broadcast Your Transaction**: Send your Dogecoin transaction using the broadcast feature
+2. **🔄 Automatic Propagation**: Every RadioDoge device in range receives and rebroadcasts your transaction
+3. **🌍 Network Expansion**: Your transaction spreads through the entire RadioDoge mesh network
+4. **⛓️ Gateway Discovery**: When a device with internet connectivity receives your transaction, it forwards it to the Dogecoin blockchain
+5. **📨 Response Relay**: The detailed blockchain response travels back through the mesh to your device
+
+#### Key Benefits:
+- **🌍 No Internet Required**: Your device doesn't need internet - the network finds it for you
+- **🛡️ Decentralized**: No single point of failure - works like a blockchain
+- **📡 Long Range**: LoRa extends your reach far beyond WiFi range
+- **🔄 Automatic**: No configuration needed - just broadcast and go
+- **📨 Full Responses**: Get detailed blockchain responses back to your device
+
+#### Multipart Packet Support:
+- **📦 Large Transactions**: Automatically splits transactions larger than 255 bytes
+- **🔄 Reliable Delivery**: Each part is sent separately for maximum reliability
+- **⏱️ Smart Timing**: 500ms delay between parts to ensure proper reception
+- **🔧 Automatic Reassembly**: Receiving devices automatically reassemble the full transaction
+- **📊 Progress Tracking**: See transmission progress on the display
 
 ### WiFi Internet Connectivity
 The device can now connect to your local WiFi internet while maintaining its access point functionality:
