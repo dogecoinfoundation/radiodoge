@@ -47,6 +47,9 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Dual Mode**: Simultaneous AP and internet connectivity
 - **WiFi Credential Storage**: Persistent storage of internet WiFi credentials
 - **Connection Status**: Real-time internet connectivity monitoring
+- **Internet Bridge**: Share internet connection with devices connected to RadioDoge WiFi network
+- **HTTP Proxy**: Reliable internet access via proxy for connected devices
+- **DNS Server**: Custom DNS handling for connected clients
 
 ### Device Management
 - **Address Management**: Configurable LoRa network address (Region.Community.Node)
@@ -62,6 +65,12 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **🔄 Mesh Rebroadcasting**: Transactions automatically propagate through the RadioDoge network
 - **⛓️ Gateway Discovery**: Automatic detection and forwarding to devices with internet connectivity
 - **📨 Response Relay**: Detailed blockchain responses sent back to original sender via mesh network
+- **🔄 Request Queuing System**: Intelligent request queuing ensures reliable communication by processing requests sequentially and waiting for confirmations
+- **⏱️ Timeout Management**: Automatic timeout handling for confirmations (15s) and queued requests (30s)
+- **📊 Queue Monitoring**: Real-time queue status with pending request tracking via `/api/queue/status`
+- **🌐 Internet Bridge**: Share your internet connection with devices connected to the RadioDoge WiFi network
+- **🔗 HTTP Proxy**: Reliable internet access for connected devices via HTTP proxy
+- **🌍 DNS Server**: Custom DNS handling for transparent internet access
 - **Enhanced Real-Time Logging**: Comprehensive logging of all LoRa, WiFi, and API activities with detailed transmission/reception information
 - **Log Forwarding**: Send system logs to other RadioDoge devices via LoRa for remote monitoring
 - **Fixed Gateway Forwarding**: Transactions now properly forward to local gateways without requiring internet connection
@@ -203,6 +212,81 @@ https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
 - **WiFi Settings**: Configure internet connection
 - **Password Management**: Change AP password securely
 
+#### 🌐 Internet Bridge
+- **Share Internet**: Enable internet access for devices connected to RadioDoge WiFi
+- **HTTP Proxy**: Access websites through RadioDoge device
+- **Transparent Operation**: Works like normal WiFi connection
+- **Client Monitoring**: Track connected devices
+
+## 🌐 Internet Bridge Feature
+
+### What is Internet Bridge?
+The Internet Bridge allows devices connected to the RadioDoge WiFi network to access the internet through the RadioDoge device's internet WiFi connection. It's like creating a WiFi hotspot that shares your internet connection.
+
+### How to Use Internet Bridge
+
+#### 1. Setup (One-time)
+1. Connect to RadioDoge WiFi (`radiodoge` password)
+2. Open `http://192.168.4.1`
+3. Go to **"WiFi Configuration"** section
+4. Enter your internet WiFi credentials
+5. Click **"CONNECT TO INTERNET"**
+
+#### 2. Enable Internet Bridge
+1. Go to **"Internet Bridge"** section
+2. Click **"ENABLE BRIDGE"**
+3. Wait for confirmation
+
+#### 3. Access Internet
+**Method 1: HTTP Proxy (Recommended)**
+```
+http://192.168.4.1/proxy?url=google.com
+http://192.168.4.1/proxy?url=https://github.com
+http://192.168.4.1/proxy?url=example.com
+```
+
+**Method 2: Web Interface**
+- Use the **"TEST PROXY"** and **"OPEN GOOGLE"** buttons
+
+### Internet Bridge API
+
+#### Enable Bridge
+```http
+POST /api/bridge/enable
+```
+
+#### Disable Bridge
+```http
+POST /api/bridge/disable
+```
+
+#### Get Bridge Status
+```http
+GET /api/bridge/status
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "timestamp": 1234567890,
+  "bridge": {
+    "enabled": true,
+    "internet_connected": true,
+    "ap_gateway": "192.168.4.1",
+    "ap_subnet": "255.255.255.0",
+    "internet_ip": "192.168.1.100",
+    "internet_ssid": "YourWiFi"
+  }
+}
+```
+
+### Use Cases
+- **Mobile Internet Sharing**: Share your home WiFi with mobile devices
+- **Guest Access**: Provide internet access to guests via RadioDoge
+- **Remote Locations**: Use RadioDoge as a WiFi extender with internet access
+- **IoT Devices**: Connect IoT devices to internet through RadioDoge
+
 ## 🔌 API Reference
 
 ### Base URL
@@ -332,6 +416,34 @@ Manage access point password.
 **Change Parameters:**
 - `password`: New password (8-32 chars, letters + numbers)
 
+#### Gateway Management
+```http
+GET /api/gateway/status
+POST /api/gateway/save
+POST /api/gateway/clear
+POST /api/gateway/test
+GET /api/gateway/debug
+GET /api/gateway/load
+```
+Manage internet gateway configuration.
+
+**Save Parameters:**
+- `type`: Gateway type ("core", "dogebox", "wallet", "custom")
+- `ip`: Gateway IP address
+- `port`: Gateway port
+- `username`: RPC username (for Core)
+- `password`: RPC password (for Core)
+- `endpoint`: Custom endpoint (for custom gateways)
+
+#### RPC Support
+```http
+POST /api/rpc
+```
+Send RPC request to configured gateway.
+
+**Parameters:**
+- `rpc_body`: JSON-RPC request body
+
 #### Gateway Operations
 ```http
 POST /api/gateway
@@ -445,6 +557,31 @@ async function getStatus() {
 }
 ```
 
+#### Internet Bridge Examples
+```javascript
+// Enable internet bridge
+async function enableBridge() {
+  const response = await fetch('http://192.168.4.1/api/bridge/enable', {
+    method: 'POST'
+  });
+  const result = await response.json();
+  console.log('Bridge Status:', result);
+}
+
+// Get bridge status
+async function getBridgeStatus() {
+  const response = await fetch('http://192.168.4.1/api/bridge/status');
+  const status = await response.json();
+  console.log('Bridge Status:', status);
+}
+
+// Access website via proxy
+async function accessWebsite(url) {
+  const proxyUrl = `http://192.168.4.1/proxy?url=${encodeURIComponent(url)}`;
+  window.open(proxyUrl, '_blank');
+}
+```
+
 ### cURL Examples
 
 #### 🌐 **RECOMMENDED: Broadcast Dogecoin Transaction (Blockchain-Like)**
@@ -505,6 +642,32 @@ curl -X POST "http://192.168.4.1/api/password/change" \
 #### Get Device Status
 ```bash
 curl -X GET "http://192.168.4.1/api/status"
+```
+
+#### Get Queue Status
+```bash
+curl -X GET "http://192.168.4.1/api/queue/status"
+```
+
+#### Get Multipart Status
+```bash
+curl -X GET "http://192.168.4.1/api/multipart/status"
+```
+
+#### Internet Bridge Examples
+```bash
+# Enable internet bridge
+curl -X POST "http://192.168.4.1/api/bridge/enable"
+
+# Disable internet bridge
+curl -X POST "http://192.168.4.1/api/bridge/disable"
+
+# Get bridge status
+curl -X GET "http://192.168.4.1/api/bridge/status"
+
+# Access website via proxy
+curl "http://192.168.4.1/proxy?url=google.com"
+curl "http://192.168.4.1/proxy?url=https://github.com"
 ```
 
 ## 🔧 Configuration
@@ -746,10 +909,19 @@ http://192.168.4.1/api/
 
 #### System Monitoring
 - **`GET /api/logs`** - Get real-time system logs
+- **`GET /api/logs/text`** - Get logs as plain text
 - **`POST /api/logs/send`** - Send logs to other RadioDoge devices via LoRa
   - Body: `address=10.1.2&type=logs&logs=log_content`
 - **`GET /api/status`** - Get device status
 - **`GET /api/wifi`** - Get WiFi connection status
+- **`GET /api/queue/status`** - Get request queue status and pending requests
+- **`GET /api/multipart/status`** - Get active multipart sessions
+
+#### Internet Bridge
+- **`POST /api/bridge/enable`** - Enable internet bridge
+- **`POST /api/bridge/disable`** - Disable internet bridge
+- **`GET /api/bridge/status`** - Get bridge status and configuration
+- **`GET /proxy?url=WEBSITE`** - HTTP proxy for internet access
 
 #### Communication
 - **`POST /api/message`** - Send text message

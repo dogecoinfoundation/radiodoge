@@ -6,6 +6,8 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
+#include <WiFiUdp.h>
 #include "radioDogeTypes.h"
 #include "Images/logoImage.h"
 #include "Images/coin.h"
@@ -33,6 +35,28 @@ String internet_ssid = "";
 String internet_password = "";
 bool internet_connected = false;
 bool dual_wifi_mode = false;
+
+// Internet Bridging Configuration
+bool internet_bridge_enabled = false;
+DNSServer dnsServer;
+WiFiUDP udp;
+IPAddress ap_gateway(192, 168, 4, 1);
+IPAddress ap_subnet(255, 255, 255, 0);
+IPAddress ap_dns(192, 168, 4, 1);
+IPAddress ap_ip_start(192, 168, 4, 2);
+IPAddress ap_ip_end(192, 168, 4, 10);
+
+// NAT Router Configuration
+struct ClientInfo {
+  IPAddress ip;
+  IPAddress gateway;
+  unsigned long lastSeen;
+  bool active;
+};
+
+ClientInfo connectedClients[8];
+int clientCount = 0;
+unsigned long lastClientCheck = 0;
 
 // Gateway Configuration (persistent storage for all types)
 String gateway_type = "none";
@@ -97,6 +121,40 @@ Adafruit_SSD1306 radioDogeDisplay(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET
 #define ENABLE_MESH_REBROADCAST true
 #define MAX_REBROADCAST_HOPS 3
 #define HOST_ACK_NACK_SIZE 3
+
+// Request queuing and confirmation system
+#define MAX_PENDING_REQUESTS 10
+#define CONFIRMATION_TIMEOUT_MS 15000  // 15 seconds timeout for confirmations
+#define REQUEST_TIMEOUT_MS 30000       // 30 seconds timeout for entire request processing
+
+// Request types
+enum RequestType {
+  REQUEST_BROADCAST,
+  REQUEST_TRANSACTION,
+  REQUEST_MESSAGE,
+  REQUEST_PING
+};
+
+// Request states
+enum RequestState {
+  REQUEST_IDLE,
+  REQUEST_WAITING_FOR_CONFIRMATION,
+  REQUEST_PROCESSING_QUEUE,
+  REQUEST_TIMEOUT
+};
+
+// Pending request structure
+struct PendingRequest {
+  RequestType type;
+  String message;
+  String typeStr;        // For broadcasts: "transaction", "announcement", etc.
+  String priority;       // For broadcasts: "normal", "high", etc.
+  nodeAddress destination; // For direct messages/transactions
+  unsigned long timestamp;
+  bool isMultipart;
+  bool requiresConfirmation;
+  String requestId;      // Unique identifier for tracking
+};
 #define FIRMWARE_VERSION 1
 
 #ifdef WIFI_LoRa_32_V2
@@ -147,6 +205,14 @@ uint8_t serialHeader[SERIAL_HEADER_SIZE];
 uint8_t hostCommandReply[BUFFER_SIZE];
 uint8_t hostACK[3] = {RESULT_CODE, 1, COMMAND_ACK_CODE};
 uint8_t hostNACK[3] = {RESULT_CODE, 1, COMMAND_NACK_CODE};
+
+// Request queuing and confirmation system globals
+RequestState currentRequestState = REQUEST_IDLE;
+PendingRequest pendingRequests[MAX_PENDING_REQUESTS];
+int pendingRequestCount = 0;
+unsigned long confirmationStartTime = 0;
+String currentRequestId = "";
+int requestIdCounter = 0;
 
 static RadioEvents_t RadioEvents;
 void OnTxDone(void);
@@ -250,8 +316,14 @@ void loop() {
   // Handle web server requests
   server.handleClient();
   
+  // Handle internet bridge (DNS requests)
+  handleInternetBridge();
+  
   // Cleanup expired multipart sessions
   CleanupExpiredMultipartSessions();
+  
+  // Check request timeouts
+  CheckRequestTimeouts();
   
   //RawSerialMessageSendAndReceive()
   CommandAndControlLoop();
@@ -986,6 +1058,11 @@ void setupDualWiFi() {
     connectToInternetWiFi();
   }
   
+  // Setup internet bridging if both AP and internet are available
+  if (internet_connected) {
+    setupInternetBridge();
+  }
+  
   // Display WiFi status
   DisplayWiFiStatus();
 }
@@ -1059,6 +1136,102 @@ void DisplayWiFiStatus() {
     radioDogeDisplay.println("Internet: Not Configured");
   }
   radioDogeDisplay.display();
+}
+
+// Internet Bridging Functions
+void setupInternetBridge() {
+  if (!internet_connected) {
+    Serial.println("Cannot setup internet bridge - no internet connection");
+    return;
+  }
+  
+  Serial.println("Setting up internet bridge...");
+  addLog("[WiFi] Setting up internet bridge between AP and internet WiFi");
+  
+  // Configure AP with proper gateway and subnet
+  WiFi.softAPConfig(ap_gateway, ap_gateway, ap_subnet);
+  
+  // Start DNS server to handle all DNS requests
+  dnsServer.start(53, "*", ap_gateway);
+  
+  // Initialize client tracking
+  clientCount = 0;
+  for (int i = 0; i < 8; i++) {
+    connectedClients[i].active = false;
+    connectedClients[i].lastSeen = 0;
+  }
+  
+  // Enable internet bridging
+  internet_bridge_enabled = true;
+  
+  Serial.println("Internet bridge enabled");
+  Serial.println("AP Gateway: " + ap_gateway.toString());
+  Serial.println("AP Subnet: " + ap_subnet.toString());
+  Serial.println("Internet IP: " + WiFi.localIP().toString());
+  Serial.println("DNS Server: Running on port 53");
+  addLog("[WiFi] Internet bridge enabled - AP clients can now access internet");
+  addLog("[WiFi] DNS Server running on 192.168.4.1:53");
+}
+
+void handleInternetBridge() {
+  if (internet_bridge_enabled) {
+    // Handle DNS requests
+    dnsServer.processNextRequest();
+    
+    // Check for connected clients periodically
+    if (millis() - lastClientCheck > 5000) { // Every 5 seconds
+      checkConnectedClients();
+      lastClientCheck = millis();
+    }
+    
+    // Note: ESP32 has limited NAT capabilities
+    // For full internet bridging, you may need to:
+    // 1. Use a different approach like HTTP proxy
+    // 2. Configure your router to allow the ESP32 to act as a bridge
+    // 3. Use a more powerful device for true NAT functionality
+  }
+}
+
+void checkConnectedClients() {
+  // Get list of connected stations
+  int stationCount = WiFi.softAPgetStationNum();
+  
+  if (stationCount != clientCount) {
+    clientCount = stationCount;
+    addLog("[WiFi] Connected clients: " + String(clientCount));
+    
+    // Note: ESP32 WiFi library doesn't provide direct access to client IPs
+    // We can only track the count of connected stations
+    // For actual IP tracking, we would need to implement DHCP server logging
+    // or use a different approach like monitoring ARP requests
+    
+    if (stationCount > 0) {
+      addLog("[WiFi] " + String(stationCount) + " client(s) connected to RadioDoge AP");
+    } else {
+      addLog("[WiFi] No clients connected to RadioDoge AP");
+    }
+  }
+}
+
+void enableInternetBridge() {
+  if (internet_connected && !internet_bridge_enabled) {
+    setupInternetBridge();
+    addLog("[WiFi] Internet bridge enabled via API");
+  } else if (!internet_connected) {
+    addLog("[WiFi] Cannot enable internet bridge - no internet connection");
+  } else {
+    addLog("[WiFi] Internet bridge already enabled");
+  }
+}
+
+void disableInternetBridge() {
+  if (internet_bridge_enabled) {
+    dnsServer.stop();
+    internet_bridge_enabled = false;
+    addLog("[WiFi] Internet bridge disabled");
+  } else {
+    addLog("[WiFi] Internet bridge was not enabled");
+  }
 }
 
 // Internet Gateway Functions
@@ -1922,6 +2095,9 @@ void ProcessReassembledMessage(String messageData, uint8_t srcRegion, uint8_t sr
     addLog("[LoRa] Received Dogecoin node response from " + String(srcRegion) + "." + String(srcCommunity) + "." + String(srcNode));
     addLog("[LoRa] Dogecoin response: " + messageData);
     addLog("[LoRa] Full Dogecoin node message received and displayed on screen");
+    
+    // Handle confirmation for queued requests
+    HandleConfirmationReceived(messageData);
   }
   
   // Display on screen
@@ -2118,6 +2294,179 @@ void CleanupExpiredMultipartSessions() {
       addLog("[LoRa] Multipart session expired for " + String(multipartBuffer[i].srcRegion) + "." + String(multipartBuffer[i].srcCommunity) + "." + String(multipartBuffer[i].srcNode) + " - Received " + String(multipartBuffer[i].receivedParts) + "/" + String(multipartBuffer[i].totalParts) + " parts");
       RemoveMultipartSession(i);
     }
+  }
+}
+
+// Request queuing and confirmation system functions
+String GenerateRequestId() {
+  requestIdCounter++;
+  return "req_" + String(millis()) + "_" + String(requestIdCounter);
+}
+
+bool QueueRequest(RequestType type, String message, String typeStr, String priority, nodeAddress destination = {0, 0, 0}, bool requiresConfirmation = true) {
+  if (pendingRequestCount >= MAX_PENDING_REQUESTS) {
+    addLog("[ERROR] Request queue is full - cannot queue new request");
+    return false;
+  }
+  
+  PendingRequest& req = pendingRequests[pendingRequestCount];
+  req.type = type;
+  req.message = message;
+  req.typeStr = typeStr;
+  req.priority = priority;
+  req.destination = destination;
+  req.timestamp = millis();
+  req.requiresConfirmation = requiresConfirmation;
+  req.requestId = GenerateRequestId();
+  
+  // Determine if multipart is needed
+  String testData = typeStr + ":" + priority + ":" + message;
+  req.isMultipart = (testData.length() > 255);
+  
+  pendingRequestCount++;
+  
+  addLog("[QUEUE] Request queued - ID: " + req.requestId + ", Type: " + String(type) + ", Queue size: " + String(pendingRequestCount));
+  return true;
+}
+
+void ProcessNextQueuedRequest() {
+  if (pendingRequestCount == 0) {
+    currentRequestState = REQUEST_IDLE;
+    addLog("[QUEUE] No more requests in queue - returning to idle state");
+    return;
+  }
+  
+  if (currentRequestState != REQUEST_IDLE) {
+    addLog("[ERROR] Cannot process next request - system not idle");
+    return;
+  }
+  
+  PendingRequest& req = pendingRequests[0];
+  currentRequestId = req.requestId;
+  
+  addLog("[QUEUE] Processing request - ID: " + req.requestId + ", Type: " + String(req.type));
+  
+  // Process the request based on type
+  switch (req.type) {
+    case REQUEST_BROADCAST:
+      ProcessBroadcastRequest(req);
+      break;
+    case REQUEST_TRANSACTION:
+      ProcessTransactionRequest(req);
+      break;
+    case REQUEST_MESSAGE:
+      ProcessMessageRequest(req);
+      break;
+    case REQUEST_PING:
+      ProcessPingRequest(req);
+      break;
+  }
+  
+  // Remove the processed request from queue
+  for (int i = 0; i < pendingRequestCount - 1; i++) {
+    pendingRequests[i] = pendingRequests[i + 1];
+  }
+  pendingRequestCount--;
+}
+
+void ProcessBroadcastRequest(PendingRequest& req) {
+  if (req.isMultipart) {
+    SendMultipartBroadcast(req.message, req.typeStr, req.priority);
+    addLog("[QUEUE] Sent multipart broadcast - ID: " + req.requestId);
+  } else {
+    SendBroadcast(req.message, req.typeStr, req.priority);
+    addLog("[QUEUE] Sent regular broadcast - ID: " + req.requestId);
+  }
+  
+  if (req.requiresConfirmation) {
+    currentRequestState = REQUEST_WAITING_FOR_CONFIRMATION;
+    confirmationStartTime = millis();
+    addLog("[QUEUE] Waiting for confirmation - ID: " + req.requestId);
+  } else {
+    // No confirmation needed, process next request immediately
+    ProcessNextQueuedRequest();
+  }
+}
+
+void ProcessTransactionRequest(PendingRequest& req) {
+  if (req.isMultipart) {
+    SendMultipartTransaction(req.destination, req.message, req.typeStr);
+    addLog("[QUEUE] Sent multipart transaction - ID: " + req.requestId);
+  } else {
+    SendTransaction(req.destination, req.message, req.typeStr);
+    addLog("[QUEUE] Sent regular transaction - ID: " + req.requestId);
+  }
+  
+  if (req.requiresConfirmation) {
+    currentRequestState = REQUEST_WAITING_FOR_CONFIRMATION;
+    confirmationStartTime = millis();
+    addLog("[QUEUE] Waiting for confirmation - ID: " + req.requestId);
+  } else {
+    ProcessNextQueuedRequest();
+  }
+}
+
+void ProcessMessageRequest(PendingRequest& req) {
+  if (req.isMultipart) {
+    SendMultipartMessage(req.destination, req.message, req.typeStr);
+    addLog("[QUEUE] Sent multipart message - ID: " + req.requestId);
+  } else {
+    SendMessage(req.destination, req.message, req.typeStr);
+    addLog("[QUEUE] Sent regular message - ID: " + req.requestId);
+  }
+  
+  if (req.requiresConfirmation) {
+    currentRequestState = REQUEST_WAITING_FOR_CONFIRMATION;
+    confirmationStartTime = millis();
+    addLog("[QUEUE] Waiting for confirmation - ID: " + req.requestId);
+  } else {
+    ProcessNextQueuedRequest();
+  }
+}
+
+void ProcessPingRequest(PendingRequest& req) {
+  SendPing(req.destination);
+  addLog("[QUEUE] Sent ping - ID: " + req.requestId);
+  
+  if (req.requiresConfirmation) {
+    currentRequestState = REQUEST_WAITING_FOR_CONFIRMATION;
+    confirmationStartTime = millis();
+    addLog("[QUEUE] Waiting for ACK - ID: " + req.requestId);
+  } else {
+    ProcessNextQueuedRequest();
+  }
+}
+
+void CheckRequestTimeouts() {
+  unsigned long currentTime = millis();
+  
+  // Check confirmation timeout
+  if (currentRequestState == REQUEST_WAITING_FOR_CONFIRMATION) {
+    if (currentTime - confirmationStartTime > CONFIRMATION_TIMEOUT_MS) {
+      addLog("[QUEUE] Confirmation timeout for request - ID: " + currentRequestId);
+      currentRequestState = REQUEST_IDLE;
+      ProcessNextQueuedRequest();
+    }
+  }
+  
+  // Check for expired requests in queue
+  for (int i = pendingRequestCount - 1; i >= 0; i--) {
+    if (currentTime - pendingRequests[i].timestamp > REQUEST_TIMEOUT_MS) {
+      addLog("[QUEUE] Request expired and removed - ID: " + pendingRequests[i].requestId);
+      // Remove expired request
+      for (int j = i; j < pendingRequestCount - 1; j++) {
+        pendingRequests[j] = pendingRequests[j + 1];
+      }
+      pendingRequestCount--;
+    }
+  }
+}
+
+void HandleConfirmationReceived(String confirmationData) {
+  if (currentRequestState == REQUEST_WAITING_FOR_CONFIRMATION) {
+    addLog("[QUEUE] Confirmation received for request - ID: " + currentRequestId + ", Data: " + confirmationData.substring(0, min(50, (int)confirmationData.length())));
+    currentRequestState = REQUEST_IDLE;
+    ProcessNextQueuedRequest();
   }
 }
 
@@ -2391,6 +2740,9 @@ void ParseReceivedMessage() {
             addLog("[LoRa] Received Dogecoin node response from " + String(senderAddress.region) + "." + String(senderAddress.community) + "." + String(senderAddress.node));
             addLog("[LoRa] Dogecoin response: " + messageString);
             addLog("[LoRa] Full Dogecoin node message received and displayed on screen");
+            
+            // Handle confirmation for queued requests
+            HandleConfirmationReceived(messageString);
           }
           
           DisplayRXMessage(messageString, senderAddress);
@@ -2548,6 +2900,12 @@ void setupWebServer() {
   server.on("/api/wifi/connect", HTTP_POST, handleApiWifiConnect);
   server.on("/api/wifi/disconnect", HTTP_POST, handleApiWifiDisconnect);
   server.on("/api/wifi/clear", HTTP_POST, handleApiWifiClear);
+  
+  // Internet Bridge endpoints
+  server.on("/api/bridge/enable", HTTP_POST, handleApiBridgeEnable);
+  server.on("/api/bridge/disable", HTTP_POST, handleApiBridgeDisable);
+  server.on("/api/bridge/status", HTTP_GET, handleApiBridgeStatus);
+  server.on("/proxy", HTTP_GET, handleHttpProxy);
   server.on("/api/lora/clear", HTTP_POST, handleApiLoRaClear);
   server.on("/api/password/change", HTTP_POST, handleApiPasswordChange);
   server.on("/api/password/reset", HTTP_POST, handleApiPasswordReset);
@@ -2568,6 +2926,7 @@ void setupWebServer() {
   server.on("/api/rpc", HTTP_POST, handleApiRpc);
   server.on("/api/jsonrpc", HTTP_POST, handleApiJsonRpc);
   server.on("/api/multipart/status", HTTP_GET, handleApiMultipartStatus);
+  server.on("/api/queue/status", HTTP_GET, handleApiQueueStatus);
   
   server.begin();
   Serial.println("Web server started");
@@ -2887,6 +3246,52 @@ void handleRoot() {
   html += "</div>";
   html += "</div>";
   
+  // Internet Bridge Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"bridge\")'>";
+  html += "<span>INTERNET BRIDGE</span>";
+  html += "<svg class='accordion-icon' id='bridge-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='bridge-content'>";
+  html += "<p><strong>Share Internet Connection:</strong> Enable internet access for devices connected to the RadioDoge WiFi network</p>";
+  html += "<div class='status'>";
+  html += "<h3>Bridge Status</h3>";
+  html += "<p><strong>Internet Connection:</strong> <span id='bridgeInternetStatus'>" + String(internet_connected ? "Connected" : "Not Connected") + "</span></p>";
+  html += "<p><strong>Bridge Status:</strong> <span id='bridgeStatus'>" + String(internet_bridge_enabled ? "Enabled" : "Disabled") + "</span></p>";
+  html += "<p><strong>AP Gateway:</strong> " + ap_gateway.toString() + "</p>";
+  html += "<p><strong>Internet IP:</strong> <span id='bridgeInternetIP'>" + (internet_connected ? WiFi.localIP().toString() : "None") + "</span></p>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button success' onclick='enableBridge()' id='enableBridgeBtn'>ENABLE BRIDGE</button>";
+  html += "<button class='button danger' onclick='disableBridge()' id='disableBridgeBtn'>DISABLE BRIDGE</button>";
+  html += "<button class='button' onclick='getBridgeStatus()'>REFRESH STATUS</button>";
+  html += "</div>";
+  html += "<div id='bridgeStatus' class='response' style='display:none;'></div>";
+  html += "<div class='section'>";
+  html += "<h3>Internet Bridge Status</h3>";
+  html += "<p><strong>Note:</strong> ESP32 has limited NAT capabilities. For full internet access, use the HTTP proxy below.</p>";
+  html += "<div class='button-group'>";
+  html += "<button class='button' onclick='testProxy()'>TEST PROXY</button>";
+  html += "<button class='button' onclick='openGoogle()'>OPEN GOOGLE</button>";
+  html += "</div>";
+  html += "<div id='proxyStatus' class='response' style='display:none;'></div>";
+  html += "</div>";
+  html += "<div class='section'>";
+  html += "<h3>How to Access Internet</h3>";
+  html += "<p><strong>Method 1: HTTP Proxy (Recommended)</strong></p>";
+  html += "<p>Use the RadioDoge device as an HTTP proxy to access websites:</p>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>Format:</strong> <code>http://192.168.4.1/proxy?url=WEBSITE_URL</code></li>";
+  html += "<li><strong>Example:</strong> <code>http://192.168.4.1/proxy?url=google.com</code></li>";
+  html += "<li><strong>Example:</strong> <code>http://192.168.4.1/proxy?url=https://github.com</code></li>";
+  html += "</ul>";
+  html += "<p><strong>Method 2: Direct API Access</strong></p>";
+  html += "<p>Use the RadioDoge API to access internet services programmatically.</p>";
+  html += "<p><strong>Requirements:</strong> The RadioDoge device must be connected to an internet WiFi network</p>";
+  html += "</div>";
+  html += "</div>";
+  html += "</div>";
+  
   // AP Password Management Section
   html += "<div class='accordion'>";
   html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"password\")'>";
@@ -3054,7 +3459,7 @@ void handleRoot() {
   html += "<h3>Blockchain-Like LoRa Network</h3>";
   html += "<p><strong>RadioDoge creates a decentralized mesh network that works like a blockchain for Dogecoin transactions!</strong></p>";
   html += "<p><strong>RECOMMENDED:</strong> Use the <strong>BROADCAST</strong> feature for Dogecoin transactions - it automatically finds devices with internet connectivity and forwards your transaction to the Dogecoin network!</p>";
-  html += "<p><strong>How it works:</strong> Broadcast → Mesh Propagation → Gateway Discovery → Blockchain Integration → Response Relay</p>";
+  html += "<p><strong>How it works:</strong> Broadcast -> Mesh Propagation -> Gateway Discovery -> Blockchain Integration -> Response Relay</p>";
   
   html += "<h3>Web Interface</h3>";
   html += "<p><strong>Access:</strong> Connect to WiFi 'RadioDoge' (password: radiodoge) and open <code>http://192.168.4.1</code></p>";
@@ -3092,7 +3497,14 @@ void handleRoot() {
   html += "<p><strong>Gateway Config:</strong><br><code>GET /api/gateway/config</code> - Get stored gateway settings</p>";
   html += "<p><strong>Gateway Config Set:</strong><br><code>POST /api/gateway/config</code><br>Body: <code>type=core&ip=192.168.1.100&port=22555&username=user&password=pass</code></p>";
   html += "<p><strong>JSON-RPC:</strong><br><code>POST /api/jsonrpc</code><br>Body: <code>transaction=0100000001...&url=http://192.168.1.100:22555&rpcuser=user&rpcpass=pass</code><br>Returns: <code>{\"success\":true,\"transaction_id\":\"abc123...\"}</code> or <code>{\"success\":false,\"error\":\"error message\"}</code></p>";
-  html += "<p><strong>Real-Time Logs:</strong><br><code>GET /api/logs</code> - Get system logs<br><code>POST /api/logs/send</code> - Send logs to other devices via LoRa</p>";
+  html += "<p><strong>Real-Time Logs:</strong><br><code>GET /api/logs</code> - Get system logs<br><code>GET /api/logs/text</code> - Get logs as plain text<br><code>POST /api/logs/send</code> - Send logs to other devices via LoRa</p>";
+  html += "<p><strong>Queue Status:</strong><br><code>GET /api/queue/status</code> - View request queue status and pending requests</p>";
+  html += "<p><strong>Multipart Status:</strong><br><code>GET /api/multipart/status</code> - View active multipart sessions</p>";
+  html += "<p><strong>WiFi Status:</strong><br><code>GET /api/wifi</code> - Get WiFi connection status</p>";
+  html += "<p><strong>Password Management:</strong><br><code>POST /api/password/change</code> - Change AP password<br><code>POST /api/password/reset</code> - Reset to default password<br><code>GET /api/password/status</code> - Get password status</p>";
+  html += "<p><strong>Gateway Management:</strong><br><code>GET /api/gateway/status</code> - Get gateway status<br><code>POST /api/gateway/save</code> - Save gateway credentials<br><code>POST /api/gateway/clear</code> - Clear gateway credentials<br><code>POST /api/gateway/test</code> - Test gateway connection<br><code>GET /api/gateway/debug</code> - Gateway debug info<br><code>GET /api/gateway/load</code> - Load gateway config</p>";
+  html += "<p><strong>RPC Support:</strong><br><code>POST /api/rpc</code> - Send RPC request</p>";
+  html += "<p><strong>Internet Bridge:</strong><br><code>POST /api/bridge/enable</code> - Enable internet bridge<br><code>POST /api/bridge/disable</code> - Disable internet bridge<br><code>GET /api/bridge/status</code> - Get bridge status</p>";
   html += "</div>";
   
   html += "<h3>New Features</h3>";
@@ -3102,6 +3514,8 @@ void handleRoot() {
   html += "<p><strong>Persistent Gateway Configuration:</strong> Save gateway credentials that persist across device reboots.</p>";
   html += "<p><strong>JSON-RPC Support:</strong> Direct communication with Dogecoin Core nodes using JSON-RPC protocol.</p>";
   html += "<p><strong>Enhanced API:</strong> Complete REST API for programmatic control of all device functions.</p>";
+  html += "<p><strong>Request Queuing System:</strong> Intelligent request queuing ensures reliable communication by processing requests sequentially and waiting for confirmations. Supports up to 10 pending requests with automatic timeout handling.</p>";
+  html += "<p><strong>Internet Bridge:</strong> Share your internet connection with devices connected to the RadioDoge WiFi network. Enables transparent internet access for all connected devices.</p>";
   
   html += "<h3>Sending Dogecoin Transactions (Blockchain-Like)</h3>";
   html += "<p><strong>RECOMMENDED METHOD:</strong> Use <strong>BROADCAST</strong> for the best experience!</p>";
@@ -3327,6 +3741,11 @@ void handleRoot() {
   html += "function disconnectWiFi(){fetch('/api/wifi/disconnect',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}";
   html += "function getWiFiStatus(){fetch('/api/wifi').then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);});}";
   html += "function clearWiFiCredentials(){if(confirm('Are you sure you want to clear stored WiFi credentials? This will prevent automatic reconnection on boot.')){fetch('/api/wifi/clear',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('wifiStatus').style.display='block';document.getElementById('wifiStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}}";
+  html += "function enableBridge(){fetch('/api/bridge/enable',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('bridgeStatus').style.display='block';document.getElementById('bridgeStatus').innerHTML=JSON.stringify(d,null,2);if(d.success){setTimeout(()=>location.reload(),2000);}});}";
+  html += "function disableBridge(){fetch('/api/bridge/disable',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('bridgeStatus').style.display='block';document.getElementById('bridgeStatus').innerHTML=JSON.stringify(d,null,2);setTimeout(()=>location.reload(),2000);});}";
+  html += "function getBridgeStatus(){fetch('/api/bridge/status').then(r=>r.json()).then(d=>{document.getElementById('bridgeStatus').style.display='block';document.getElementById('bridgeStatus').innerHTML=JSON.stringify(d,null,2);});}";
+  html += "function testProxy(){var url=prompt('Enter website URL to test (e.g., google.com):','google.com');if(url){window.open('/proxy?url='+encodeURIComponent(url),'_blank');}}";
+  html += "function openGoogle(){window.open('/proxy?url=google.com','_blank');}";
   html += "function updateGatewayFields(){var type=document.getElementById('gatewayType').value;var customFields=document.getElementById('customFields');var rpcFields=document.getElementById('rpcFields');var ipField=document.getElementById('ipField');var gatewayInfo=document.getElementById('gatewayInfo');var description=document.getElementById('gatewayDescription');var endpoint=document.getElementById('gatewayEndpoint');var requirements=document.getElementById('gatewayRequirements');var endpointField=document.getElementById('endpointField');if(type==='none'){ipField.style.display='none';customFields.style.display='none';rpcFields.style.display='none';gatewayInfo.style.display='none';}else if(type==='core'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='block';gatewayInfo.style.display='block';endpointField.style.display='none';description.innerHTML='Connect to your local Dogecoin Core node using RPC for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT] (RPC)';requirements.innerHTML='Requirements: Enable RPC in dogecoin.conf (server=1, rpcuser, rpcpassword, rpcport)';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='22555';document.getElementById('gatewayEndpoint').value='';}else if(type==='dogebox'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to DogeBox API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: DogeBox running on specified port';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='420';document.getElementById('gatewayEndpoint').value='/dogebox-api/tx/send';}else if(type==='wallet'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to Dogecoin Wallet API for transaction broadcasting.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Dogecoin Wallet with API enabled';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').value='80';document.getElementById('gatewayEndpoint').value='/tx/send';}else if(type==='custom'){ipField.style.display='block';customFields.style.display='block';rpcFields.style.display='none';gatewayInfo.style.display='block';endpointField.style.display='block';description.innerHTML='Connect to a custom gateway endpoint.';endpoint.innerHTML='Endpoint: http://[IP]:[PORT][ENDPOINT]';requirements.innerHTML='Requirements: Custom gateway accepting POST requests with transaction data';document.getElementById('gatewayIp').placeholder='192.168.1.100';document.getElementById('gatewayPort').placeholder='8080';document.getElementById('gatewayEndpoint').placeholder='/api/push/tx';}}";
   html += "function sendToGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;var tx=document.getElementById('gatewayTransaction').value;if(!tx){showResponse('Please enter transaction data');return;}if(!ip){showResponse('Please enter IP address');return;}var url='';var body='';var endpoint='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;endpoint='/api/jsonrpc';body='transaction='+encodeURIComponent(tx)+'&url='+encodeURIComponent(url)+'&rpcuser='+encodeURIComponent(rpcUser)+'&rpcpass='+encodeURIComponent(rpcPass);}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;endpoint='/api/gateway';body='transaction='+encodeURIComponent(tx);}fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
   html += "function testGateway(){var type=document.getElementById('gatewayType').value;if(type==='none'){showResponse('Please select a gateway type');return;}var ip=document.getElementById('gatewayIp').value;if(!ip){showResponse('Please enter IP address');return;}var url='';if(type==='core'){var rpcUser=document.getElementById('rpcUsername').value;var rpcPass=document.getElementById('rpcPassword').value;var port=document.getElementById('gatewayPort').value||'22555';if(!rpcUser||!rpcPass){showResponse('Please enter RPC username and password');return;}if(!port){showResponse('Please enter port for CORE gateway');return;}url='http://'+ip+':'+port;}else if(type==='dogebox'){var port=document.getElementById('gatewayPort').value||'420';var endpoint=document.getElementById('gatewayEndpoint').value||'/dogebox-api/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for DogeBox gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='wallet'){var port=document.getElementById('gatewayPort').value||'80';var endpoint=document.getElementById('gatewayEndpoint').value||'/tx/send';if(!port||!endpoint){showResponse('Please enter port and endpoint for Wallet gateway');return;}url='http://'+ip+':'+port+endpoint;}else if(type==='custom'){var port=document.getElementById('gatewayPort').value;var endpoint=document.getElementById('gatewayEndpoint').value;if(!port||!endpoint){showResponse('Please enter port and endpoint for custom gateway');return;}url='http://'+ip+':'+port+endpoint;}fetch('/api/gateway/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)}).then(r=>r.json()).then(d=>{document.getElementById('gatewayStatus').style.display='block';document.getElementById('gatewayStatus').innerHTML=JSON.stringify(d,null,2);});}";
@@ -3723,6 +4142,8 @@ void handleApiTransaction() {
 void handleApiBroadcast() {
   addLog("[API] Broadcast endpoint called - IP: " + server.client().remoteIP().toString());
   addLog("[API] LoRa state - isLoRaIdle: " + String(isLoRaIdle ? "true" : "false"));
+  addLog("[API] Request state - " + String(currentRequestState));
+  
   String response = "{";
   response += "\"success\":true,";
   response += "\"timestamp\":" + String(millis()) + ",";
@@ -3731,23 +4152,35 @@ void handleApiBroadcast() {
     String message = server.arg("message");
     String type = server.hasArg("type") ? server.arg("type") : "announcement";
     String priority = server.hasArg("priority") ? server.arg("priority") : "normal";
-    addLog("[API] Sending broadcast via LoRa - Type: " + type + ", Priority: " + priority + ", Length: " + String(message.length()));
     
-    // Check if broadcast is too large for single packet
-    String broadcastData = type + ":" + priority + ":" + message;
-    if (broadcastData.length() > 255) {
-      // Use multipart for large broadcasts
-      SendMultipartBroadcast(message, type, priority);
-      addLog("[API] Using multipart for large broadcast - " + String(broadcastData.length()) + " bytes");
+    // Check if system is busy
+    if (currentRequestState != REQUEST_IDLE) {
+      // Queue the request
+      if (QueueRequest(REQUEST_BROADCAST, message, type, priority)) {
+        response += "\"action\":\"broadcast_queued\",";
+        response += "\"type\":\"" + type + "\",";
+        response += "\"priority\":\"" + priority + "\",";
+        response += "\"message\":\"Broadcast queued - will be sent when system is available\",";
+        response += "\"queue_size\":" + String(pendingRequestCount);
+        addLog("[API] Broadcast request queued - Queue size: " + String(pendingRequestCount));
+      } else {
+        response += "\"success\":false,";
+        response += "\"error\":\"Request queue is full - please try again later\"";
+      }
     } else {
-      // Use regular single packet for small broadcasts
-      SendBroadcast(message, type, priority);
+      // Process immediately
+      if (QueueRequest(REQUEST_BROADCAST, message, type, priority)) {
+        ProcessNextQueuedRequest();
+        response += "\"action\":\"broadcast\",";
+        response += "\"type\":\"" + type + "\",";
+        response += "\"priority\":\"" + priority + "\",";
+        response += "\"message\":\"Broadcast sent to all devices\"";
+        addLog("[API] Broadcast request processed immediately");
+      } else {
+        response += "\"success\":false,";
+        response += "\"error\":\"Failed to queue broadcast request\"";
+      }
     }
-    
-    response += "\"action\":\"broadcast\",";
-    response += "\"type\":\"" + type + "\",";
-    response += "\"priority\":\"" + priority + "\",";
-    response += "\"message\":\"Broadcast sent to all devices\"";
   } else {
     response += "\"success\":false,";
     response += "\"error\":\"No broadcast message provided\"";
@@ -3769,6 +4202,45 @@ void handleApiStatus() {
   response += "\"wifi\":\"" + String(ap_ssid) + "\",";
   response += "\"uptime\":" + String(millis() / 1000) + ",";
   response += "\"free_memory\":" + String(ESP.getFreeHeap());
+  response += "},";
+  response += "\"request_queue\":{";
+  response += "\"state\":\"" + String(currentRequestState) + "\",";
+  response += "\"pending_count\":" + String(pendingRequestCount) + ",";
+  response += "\"max_requests\":" + String(MAX_PENDING_REQUESTS) + ",";
+  response += "\"current_request_id\":\"" + currentRequestId + "\"";
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiQueueStatus() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"queue\":{";
+  response += "\"state\":\"" + String(currentRequestState) + "\",";
+  response += "\"pending_count\":" + String(pendingRequestCount) + ",";
+  response += "\"max_requests\":" + String(MAX_PENDING_REQUESTS) + ",";
+  response += "\"current_request_id\":\"" + currentRequestId + "\",";
+  response += "\"confirmation_timeout_ms\":" + String(CONFIRMATION_TIMEOUT_MS) + ",";
+  response += "\"request_timeout_ms\":" + String(REQUEST_TIMEOUT_MS) + ",";
+  response += "\"requests\":[";
+  
+  for (int i = 0; i < pendingRequestCount; i++) {
+    if (i > 0) response += ",";
+    response += "{";
+    response += "\"id\":\"" + pendingRequests[i].requestId + "\",";
+    response += "\"type\":" + String(pendingRequests[i].type) + ",";
+    response += "\"type_str\":\"" + pendingRequests[i].typeStr + "\",";
+    response += "\"priority\":\"" + pendingRequests[i].priority + "\",";
+    response += "\"timestamp\":" + String(pendingRequests[i].timestamp) + ",";
+    response += "\"is_multipart\":" + String(pendingRequests[i].isMultipart ? "true" : "false") + ",";
+    response += "\"requires_confirmation\":" + String(pendingRequests[i].requiresConfirmation ? "true" : "false") + ",";
+    response += "\"message_length\":" + String(pendingRequests[i].message.length());
+    response += "}";
+  }
+  
+  response += "]";
   response += "}";
   response += "}";
   server.send(200, "application/json", response);
@@ -3880,6 +4352,87 @@ void handleApiWifiClear() {
   response += "\"message\":\"WiFi credentials cleared from storage\"";
   response += "}";
   server.send(200, "application/json", response);
+}
+
+// Internet Bridge API Handlers
+void handleApiBridgeEnable() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  enableInternetBridge();
+  
+  response += "\"action\":\"bridge_enable\",";
+  response += "\"bridge_enabled\":" + String(internet_bridge_enabled ? "true" : "false") + ",";
+  response += "\"internet_connected\":" + String(internet_connected ? "true" : "false") + ",";
+  response += "\"message\":\"Internet bridge " + String(internet_bridge_enabled ? "enabled" : "failed to enable") + "\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiBridgeDisable() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  
+  disableInternetBridge();
+  
+  response += "\"action\":\"bridge_disable\",";
+  response += "\"bridge_enabled\":" + String(internet_bridge_enabled ? "true" : "false") + ",";
+  response += "\"message\":\"Internet bridge disabled\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleApiBridgeStatus() {
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"timestamp\":" + String(millis()) + ",";
+  response += "\"bridge\":{";
+  response += "\"enabled\":" + String(internet_bridge_enabled ? "true" : "false") + ",";
+  response += "\"internet_connected\":" + String(internet_connected ? "true" : "false") + ",";
+  response += "\"ap_gateway\":\"" + ap_gateway.toString() + "\",";
+  response += "\"ap_subnet\":\"" + ap_subnet.toString() + "\",";
+  response += "\"internet_ip\":\"" + (internet_connected ? WiFi.localIP().toString() : "none") + "\",";
+  response += "\"internet_ssid\":\"" + internet_ssid + "\"";
+  response += "}";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// HTTP Proxy for Internet Bridge
+void handleHttpProxy() {
+  if (!internet_connected) {
+    server.send(503, "text/plain", "Internet not connected");
+    return;
+  }
+  
+  if (!server.hasArg("url")) {
+    server.send(400, "text/plain", "Missing 'url' parameter. Usage: /proxy?url=http://example.com");
+    return;
+  }
+  
+  String url = server.arg("url");
+  HTTPClient http;
+  
+  // Add http:// if not present
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = "http://" + url;
+  }
+  
+  http.begin(url);
+  http.setTimeout(10000); // 10 second timeout
+  
+  int httpCode = http.GET();
+  String response = http.getString();
+  
+  if (httpCode > 0) {
+    server.send(httpCode, "text/html", response);
+  } else {
+    server.send(500, "text/plain", "Error: " + String(httpCode));
+  }
+  
+  http.end();
 }
 
 void handleApiLoRaClear() {
