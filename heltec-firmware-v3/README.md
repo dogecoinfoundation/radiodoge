@@ -36,6 +36,10 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Secure API**: Protected web interface access
 - **Password Management**: Change/reset AP password via web interface
 - **Credential Storage**: Secure storage of WiFi credentials in NVS
+- **Dogecoin Cold Storage**: Quantum-resistant (against current quantum computers) encrypted wallet storage with PIN protection
+- **AES-256 Encryption**: Industry-standard encryption for wallet private keys
+- **Offline Key Generation**: Generate wallets completely offline using libdogecoin
+- **Hardware Security**: Keys stored in ESP32's secure NVS (Non-Volatile Storage)
 
 ### Network Features
 - **Internet Gateway**: Forward transactions to Dogecoin network
@@ -55,9 +59,20 @@ A comprehensive firmware for the Heltec WiFi LoRa 32 V3 module that enables secu
 - **Address Management**: Configurable LoRa network address (Region.Community.Node)
 - **Status Monitoring**: Real-time device status and connection info
 - **Configuration Reset**: Easy reset to default settings
-- **Display Support**: OLED display with status information
+- **Display Support**: OLED display with status information and menu navigation
 - **LoRa Configuration Storage**: Persistent storage of LoRa network settings
 - **Auto-Configuration**: Automatic restoration of last known settings on boot
+
+### Dogecoin Cold Storage Features
+- **Secure Wallet Generation**: Generate Dogecoin wallets completely offline using libdogecoin
+- **PIN-Protected Storage**: AES-256 encrypted wallet storage with user-defined PIN
+- **Manual Wallet Import**: Import existing wallets using WIF (Wallet Import Format) private keys
+- **Wallet Management**: View, store, and delete encrypted wallets
+- **Quantum-Resistant**: Uses ECC (Elliptic Curve Cryptography) - secure against current quantum computers (NOT post-quantum secure)
+- **OLED Menu System**: Complete menu navigation using device buttons
+- **Public/Private Key Display**: Toggle between viewing public addresses and private keys
+- **Secure Deletion**: PIN-protected wallet deletion with confirmation
+- **PIN Management**: Change PIN code while maintaining encrypted wallets
 
 ### New Features (v3.2)
 - **🌐 Blockchain-Like Broadcasting**: Decentralized mesh network for Dogecoin transactions without internet
@@ -149,6 +164,103 @@ https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
 2. Look for "RadioDoge" WiFi network
 3. Connect using password: `radiodoge`
 4. Open browser to: `http://192.168.4.1`
+
+## Dogecoin Cold Storage
+
+RadioDoge includes a **secure, quantum-resistant cold storage system** for Dogecoin wallets. Your private keys are encrypted with AES-256 and protected by a PIN code, stored securely in the device's NVS memory.
+
+**Important**: The system is **quantum-resistant** against **current quantum computers**, but it is **NOT post-quantum secure** (secure against future powerful quantum computers).
+
+### Key Features
+
+- **AES-256 Encryption**: Industry-standard encryption protects your wallets
+- **PIN Protection**: Your PIN is required to unlock and decrypt wallets
+- **Offline Storage**: Private keys never leave the device unencrypted
+- **Quantum Resistant**: Uses ECC cryptography that resists current quantum computer attacks (NOT post-quantum secure)
+- **Hardware Security**: Keys stored in ESP32's secure NVS (Non-Volatile Storage)
+- **OLED Menu Navigation**: Complete wallet management via device buttons
+
+### Quick Start Guide
+
+#### 1. Setting Up PIN & Locking Storage
+1. From **Main Menu**, select **Dogecoin Wallet**
+2. If storage is unlocked, select **Lock Storage**
+3. Enter your PIN (4-20 characters) - Use numbers and letters
+4. Confirm your PIN by entering it again
+5. Storage is now locked and encrypted
+
+#### 2. Generating a New Wallet
+1. **Prerequisites**: Storage must be unlocked and PIN must be set
+2. From **Dogecoin Wallet** menu, select **Generate Address**
+3. Wait for generation (uses libdogecoin for secure key generation)
+4. View your wallet keys (Public Address and Private Key WIF)
+5. **Important**: Write down your WIF private key before storing!
+6. Select **Store Wallet** to save to encrypted storage
+
+#### 3. Viewing Stored Wallets
+1. From **Dogecoin Wallet** menu, select **View Wallets**
+2. Select a wallet from the list
+3. Enter your PIN to decrypt
+4. View wallet details and options (View PrivKey, Delete Wallet, View Wallets)
+
+#### 4. Manually Adding a Wallet (Import WIF)
+1. **Prerequisites**: Storage must be unlocked and PIN must be set
+2. From **Dogecoin Wallet** menu, select **Add Manual Wallet**
+3. Enter your WIF private key character by character
+4. Confirm the entry by entering it again
+5. Wallet is validated and stored if entries match
+
+### OLED Menu Navigation
+
+**Button Actions:**
+- **Button 1 (Single Click)**: Select/Confirm - Choose menu option or confirm action
+- **Button 1 (Double Click)**: Change/Cycle - Move selector or cycle through options
+- **Button 2**: Go Back - Return to previous menu
+- **Button 3**: Exit/Back - Exit current operation or go back
+- **Long Press**: Exit to main menu (in some contexts)
+
+**Menu Structure:**
+```
+MAIN MENU
+├─ Dogecoin Wallet
+│  ├─ Generate Address (if unlocked + PIN set)
+│  ├─ Add Manual Wallet (if unlocked + PIN set)
+│  ├─ Lock Storage (if unlocked)
+│  ├─ Unlock Storage (if locked)
+│  ├─ View Wallets (if unlocked)
+│  └─ Change PIN (if unlocked)
+├─ Moon Phase
+└─ Status
+```
+
+### Security Best Practices
+
+- **Use a Strong PIN**: Minimum 8 characters, mix of numbers and letters
+- **Never Share Your PIN**: Your PIN is the only thing protecting your wallets
+- **Backup Your WIF Keys**: Write down your private keys in a secure location
+- **Lock Storage When Not in Use**: Always lock storage after viewing wallets
+- **Test with Small Amounts**: Generate a test wallet first to learn the system
+- **Keep Device Secure**: Treat your RadioDoge device like a hardware wallet
+- **Verify Addresses**: Always verify the address matches before sending funds
+
+### Quantum Resistance
+
+RadioDoge uses **Elliptic Curve Cryptography (ECC)** with secp256k1 and **AES-256 encryption**, which are **quantum-resistant against current quantum computers**:
+
+- **Current Security**: ECC provides 128-bit security against classical computers
+- **Quantum-Resistant (Current)**: Secure against existing quantum computers (2024)
+  - AES-256: Grover's algorithm reduces security to 128 bits, still secure
+  - ECC secp256k1: Current quantum computers lack sufficient qubits to break it
+- **NOT Post-Quantum Secure**: Future powerful quantum computers could break these algorithms
+  - Shor's algorithm could break ECC when quantum computers are powerful enough
+  - Grover's algorithm could break AES-256 when quantum computers are powerful enough
+- **Best Practice**: Always use strong PINs (8+ characters) for maximum security
+
+**Important**: This system is **quantum-resistant** (secure against current quantum computers) but **NOT post-quantum secure** (secure against future powerful quantum computers). For post-quantum security, algorithms like CRYSTALS-Kyber or SPHINCS+ would be needed.
+
+### Complete Documentation
+
+For detailed documentation including step-by-step guides, menu navigation, button actions, and security information, visit the web interface at `http://192.168.4.1` and check the **USER GUIDE** section.
 
 ## 🌐 Using the Blockchain-Like Broadcast Network
 
@@ -871,6 +983,32 @@ Transactions can now be automatically forwarded to the internet:
 - **Logs not auto-refreshing**: Click "Toggle Auto-Refresh" button
 - **Missing log entries**: Check if logging is enabled in firmware
 - **Log forwarding fails**: Verify target device address is correct
+
+#### License Error ("Please provide a correct license!")
+If you see the message "Please provide a correct license!" in the serial monitor:
+
+1. **Get Your Chip ID**: 
+   - The serial monitor will display: `ESP32ChipID=XXXXXXXXXXXX`
+   - Copy this Chip ID (e.g., `D0CBA19E139C`)
+
+2. **Request License from Heltec**:
+   - Visit: http://www.heltec.cn/search/
+   - Enter your Chip ID to generate a license key
+   - You'll receive a license key in the format: `{0xXXXXXXXX, 0xXXXXXXXX, 0xXXXXXXXX, 0xXXXXXXXX}`
+
+3. **Configure License in Code**:
+   - Open `heltec-firmware.ino`
+   - Find the "HELTEC LICENSE CONFIGURATION" section near the top
+   - Uncomment the license array line
+   - Replace the placeholder values with your actual license key
+   - Example: `uint32_t license[4] = {0xC2XXXXCC, 0x1BXXXX8F, 0x52XXXXD5, 0x0FXXXXAD};`
+
+4. **Recompile and Upload**:
+   - Save the file
+   - Recompile and upload to your device
+   - The license error should no longer appear
+
+**Note**: The device may still function without a license, but you'll see the warning message. Some features may be limited without a valid license.
 
 ### Reset to Defaults
 1. **LoRa Config**: Use "Clear Stored Config" button
