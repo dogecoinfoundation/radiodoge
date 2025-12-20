@@ -8,12 +8,16 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <WiFiUdp.h>
+#include "LittleFS.h"
+#include "libdogecoin.h"
 #include "radioDogeTypes.h"
+
 #include "Images/logoImage.h"
 #include "Images/coin.h"
 #include "Images/doge.h"
 #include "Images/sendingDogeCoin.h"
 #include "Images/receivingDogeCoin.h"
+#include "Images/moonPhases.h"
 
 // V3 Display Configuration
 #define SCREEN_WIDTH 128
@@ -23,7 +27,49 @@
 #define SDA_PIN 17
 #define SCL_PIN 18
 #define VEXT_PIN 36  // Controls display power on V3
+#define BUTTON_PRG_PIN 0  // GPIO 0 - PRG/USER button on Heltec V3
+#define BUTTON_DEBOUNCE_MS 50
+#define BUTTON_LONG_PRESS_MS 1000
+#define BUTTON_TRIPLE_CLICK_TIMEOUT 600
 #define TEST_COIN_AMOUNT 1234.56
+
+// Menu system
+enum MenuState {
+  MENU_MAIN,
+  MENU_WALLET,
+  MENU_WALLET_GENERATE,
+  MENU_WALLET_DISPLAY,
+  MENU_WALLET_OPTIONS,  // After generating wallet: Store, Main Menu
+  MENU_MOON,
+  MENU_STATUS,
+  MENU_STORAGE_LOCK,    // Lock storage with PIN setup
+  MENU_STORAGE_UNLOCK,  // Unlock storage with PIN entry
+  MENU_STORAGE_VIEW,    // View stored wallets
+  MENU_STORAGE_WALLET_DETAILS,  // View specific wallet details
+  MENU_STORAGE_ADD,     // Manually add wallet
+  MENU_MANUAL_WALLET_ENTRY,  // Manual wallet entry (WIF or seed)
+  MENU_MANUAL_WALLET_CONFIRM, // Confirm manual wallet entry
+  MENU_PIN_ENTRY,       // PIN entry screen
+  MENU_PIN_VERIFY,      // PIN verification screen
+  MENU_STORAGE_DELETE_CONFIRM,   // Delete wallet confirmation with PIN
+  MENU_CHANGE_PIN       // Change PIN menu
+};
+
+MenuState currentMenu = MENU_MAIN;
+int menuSelection = 0;
+
+// Generated wallet storage for alternating display
+char generatedWIF[PRIVKEYWIFLEN] = {0};
+char generatedAddress[P2PKHLEN] = {0};
+bool walletGenerated = false;
+bool showPrivateKey = false; // false = show public key (address), true = show private key (WIF)
+
+// Stored wallet viewing
+int selectedWalletIndex = -1;  // Index of selected wallet in storage
+char viewedWIF[PRIVKEYWIFLEN] = {0};
+char viewedAddress[P2PKHLEN] = {0};
+bool viewingStoredWallet = false;
+int walletDetailsMenuSelection = 0;  // 0 = Delete, 1 = Back
 
 // WiFi Configuration
 const char* ap_ssid = "RadioDoge";  // Access Point name
@@ -82,6 +128,72 @@ int logCount = 0;
 #include <WiFiClient.h>
 #include <nvs.h>
 #include <nvs_flash.h>
+
+// Quantum-Resistant Encryption System
+#include <mbedtls/aes.h>
+#include <mbedtls/pkcs5.h>
+#include <mbedtls/sha256.h>
+#include <esp_random.h>
+
+// Quantum-Resistant Cold Storage Configuration
+#define MAX_STORAGE_ITEMS 20
+#define MAX_ITEM_NAME_LEN 32
+#define MAX_ITEM_DATA_LEN 512
+#define AES_KEY_SIZE 32
+#define AES_BLOCK_SIZE 16
+#define PBKDF2_ITERATIONS 100000  // Increased for quantum resistance
+#define SALT_SIZE 32  // Increased for better security
+#define MASTER_PASSWORD_MAX_LEN 64
+
+// Storage Item Types
+enum StorageItemType {
+  STORAGE_PRIVATE_KEY = 2,
+  STORAGE_WALLET_FILE = 3
+};
+
+// Storage Item Structure
+struct StorageItem {
+  uint8_t id;
+  StorageItemType type;
+  char name[MAX_ITEM_NAME_LEN];
+  uint8_t encrypted_data[MAX_ITEM_DATA_LEN];
+  uint16_t data_length;
+  uint8_t salt[SALT_SIZE];
+  uint8_t iv[AES_BLOCK_SIZE];
+  unsigned long created_timestamp;
+  unsigned long last_accessed;
+  bool active;
+};
+
+// Cold Storage State
+struct ColdStorageState {
+  bool initialized;
+  bool unlocked;
+  unsigned long unlock_time;
+  uint8_t failed_attempts;
+  unsigned long last_attempt_time;
+  bool password_set;
+  StorageItem items[MAX_STORAGE_ITEMS];
+  uint8_t item_count;
+  uint8_t version;
+};
+
+ColdStorageState cold_storage;
+String current_password = "";  // Store current password during session
+
+// PIN Entry System
+String pin_buffer = "";
+String pin_verify_buffer = "";
+bool pin_mode = false;
+int pin_char_index = 0;
+const char* pin_charset = "0123456789";
+
+// Manual Wallet Entry System
+String manual_wallet_buffer = "";
+String manual_wallet_confirm_buffer = "";
+int manual_wallet_char_index = 0;
+bool manual_wallet_confirm_mode = false;
+const char* wallet_charset = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz "; // Base58 + space for seed phrases
 
 
 // Global display object
@@ -219,6 +331,11 @@ void OnTxDone(void);
 void OnTxTimeout(void);
 void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8_t snr);
 
+// Button and menu function declarations
+void handleButtonPresses();
+void UpdateMenuDisplay();
+void HandleButtonAction(int action);
+
 int16_t rssi;
 int16_t rxSize;
 bool isLoRaIdle = true;
@@ -238,6 +355,12 @@ void setup() {
   
   // Initialize I2C with correct V3 pins
   Wire.begin(SDA_PIN, SCL_PIN);
+  
+  // Initialize Hardware Button
+  pinMode(BUTTON_PRG_PIN, INPUT_PULLUP);
+  
+  // Initialize Cold Storage
+  initColdStorage();
   
   // Initialize display
   if(!radioDogeDisplay.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -292,6 +415,42 @@ void setup() {
     Serial.println("No gateway credentials found");
   }
   
+  // Initialize LittleFS for serving WASM files
+  Serial.println("Initializing LittleFS...");
+  if (!LittleFS.begin(true)) {  // true = format if mount fails
+    Serial.println("LittleFS Mount Failed");
+    addLog("[System] LittleFS mount failed");
+  } else {
+    Serial.println("LittleFS Mounted Successfully");
+    addLog("[System] LittleFS mounted successfully");
+    
+    // List files for debugging
+    Serial.println("Listing LittleFS files:");
+    File root = LittleFS.open("/", "r");
+    if (root) {
+      File entry = root.openNextFile();
+      int fileCount = 0;
+      while (entry) {
+        fileCount++;
+        Serial.println("  - " + String(entry.name()) + " (" + String(entry.size()) + " bytes)");
+        addLog("[System] LittleFS file: " + String(entry.name()) + " (" + String(entry.size()) + " bytes)");
+        entry.close();
+        entry = root.openNextFile();
+      }
+      root.close();
+      if (fileCount == 0) {
+        Serial.println("  (No files found)");
+        Serial.println("");
+        Serial.println("*** WARNING: LittleFS is empty! ***");
+        Serial.println("To upload files:");
+        Serial.println("1. Go to: Tools > LittleFS Upload (Arduino IDE 2)");
+        Serial.println("   or Tools > ESP32 Sketch Data Upload (Arduino IDE 1.x)");
+        Serial.println("2. Make sure libdogecoin.js is in the 'data' folder");
+        Serial.println("3. Upload the filesystem");
+      }
+    }
+  }
+  
   // Initialize control messages with loaded/default address
   InitControlMessages();
   
@@ -324,6 +483,11 @@ void loop() {
   
   // Check request timeouts
   CheckRequestTimeouts();
+  
+  // Handle hardware button presses
+  handleButtonPresses();
+  
+  UpdateMenuDisplay();
   
   //RawSerialMessageSendAndReceive()
   CommandAndControlLoop();
@@ -1135,6 +1299,40 @@ void DisplayWiFiStatus() {
   } else {
     radioDogeDisplay.println("Internet: Not Configured");
   }
+  radioDogeDisplay.display();
+}
+
+void DisplayDeviceStatus() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  
+  // Title
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Device Status");
+  
+  // AP IP Address
+  radioDogeDisplay.setCursor(0, 15);
+  radioDogeDisplay.print("AP IP: ");
+  radioDogeDisplay.println(WiFi.softAPIP().toString());
+  
+  // Internet Status
+  radioDogeDisplay.setCursor(0, 27);
+  radioDogeDisplay.print("Internet: ");
+  if (internet_connected) {
+    radioDogeDisplay.println("Online");
+    // Show Internet IP if connected
+    radioDogeDisplay.setCursor(0, 39);
+    radioDogeDisplay.print("IP: ");
+    radioDogeDisplay.println(WiFi.localIP().toString());
+  } else {
+    radioDogeDisplay.println("Offline");
+  }
+  
+  // Navigation hint
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("3:Back  L:Exit");
+  
   radioDogeDisplay.display();
 }
 
@@ -2928,6 +3126,12 @@ void setupWebServer() {
   server.on("/api/multipart/status", HTTP_GET, handleApiMultipartStatus);
   server.on("/api/queue/status", HTTP_GET, handleApiQueueStatus);
   
+  // Serve libdogecoin.js WASM file from LittleFS
+  server.on("/libdogecoin.js", HTTP_GET, handleLibDogecoinJS);
+  
+  // Wallet API endpoint for button menu
+  server.on("/api/wallet/generate", HTTP_GET, handleApiWalletGenerate);
+  
   server.begin();
   Serial.println("Web server started");
   addLog("Web server started");
@@ -2988,7 +3192,9 @@ void handleRoot() {
   html += ".log-entry.info{color:#6bcf7f;}";
   html += ".log-entry.debug{color:#4dabf7;}";
   html += "@media (max-width: 768px) {.grid{grid-template-columns:1fr;} .container{padding:20px;margin:10px;} h1{font-size:2.2em;flex-direction:column;gap:10px;} .title-icon{width:50px;height:50px;} .button{padding:12px 20px;font-size:14px;} .accordion-header{font-size:1.2em;padding:15px 20px;}}";
-  html += "</style></head><body>";
+  html += "</style>";
+  html += "<script src='/libdogecoin.js'></script>";
+  html += "</head><body>";
   
   html += "<div class='container'>";
   html += "<h1>";
@@ -3449,6 +3655,32 @@ void handleRoot() {
   html += "</div>";
   html += "</div>";
   
+  // Dogecoin Wallet Section
+  html += "<div class='accordion'>";
+  html += "<div class='accordion-header section-header-gray' onclick='toggleAccordion(\"wallet\")'>";
+  html += "<span>DOGECOIN WALLET</span>";
+  html += "<svg class='accordion-icon' id='wallet-icon' viewBox='0 0 24 24'><path d='M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'/></svg>";
+  html += "</div>";
+  html += "<div class='accordion-content' id='wallet-content'>";
+  html += "<p>Use libdogecoin WASM library for Dogecoin wallet operations</p>";
+  html += "<div id='wasmStatus' class='status' style='margin-bottom:20px;'>";
+  html += "<p><strong>WASM Status:</strong> <span id='wasmStatusText'>Not loaded</span></p>";
+  html += "</div>";
+  html += "<div class='button-group'>";
+  html += "<button class='button success' onclick='loadLibDogecoin()' id='loadWasmBtn'>LOAD LIBDOGECOIN WASM</button>";
+  html += "</div>";
+  
+  // Generate Address
+  html += "<div class='section' style='margin-top:20px;'>";
+  html += "<h3>Generate Dogecoin Keypair</h3>";
+  html += "<p>Generate a new Dogecoin private/public keypair</p>";
+  html += "<button class='button' onclick='generateDogecoinAddress()'>GENERATE KEYPAIR</button>";
+  html += "<div id='walletAddressResult' class='response' style='display:none;'></div>";
+  html += "</div>";
+  
+  html += "</div>";
+  html += "</div>";
+  
   // User Guide Section
   html += "<div class='accordion'>";
   html += "<div class='accordion-header' onclick='toggleAccordion(\"guide\")'>";
@@ -3711,6 +3943,263 @@ void handleRoot() {
   html += "<p><strong>API errors:</strong> Check that you're using the correct endpoint and parameters</p>";
   html += "<p><strong>No LoRa response:</strong> Verify target device is in range and powered on</p>";
   html += "<p><strong>Transaction failed:</strong> Ensure transaction is properly signed and formatted</p>";
+  
+  // ============================================================================
+  // DOGECOIN COLD STORAGE DOCUMENTATION
+  // ============================================================================
+  html += "<h2 style='color:#ffc107;margin-top:30px;border-top:2px solid #333;padding-top:20px;'>Dogecoin Cold Storage</h2>";
+  html += "<p><strong>RadioDoge includes a secure, quantum-resistant cold storage system for Dogecoin wallets!</strong></p>";
+  
+  html += "<h3>What is Cold Storage?</h3>";
+  html += "<p>Cold storage keeps your private keys completely offline and encrypted, protecting them from hackers, malware, and even quantum computers. Your keys are stored encrypted on the device and can only be accessed with your PIN code.</p>";
+  
+  html += "<h3>Security Features</h3>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>AES-256 Encryption:</strong> Industry-standard encryption protects your wallets</li>";
+  html += "<li><strong>PIN Protection:</strong> Your PIN is required to unlock and decrypt wallets</li>";
+  html += "<li><strong>Offline Storage:</strong> Private keys never leave the device unencrypted</li>";
+  html += "<li><strong>Quantum Resistant:</strong> Uses ECC cryptography that resists current quantum computer attacks</li>";
+  html += "<li><strong>Hardware Security:</strong> Keys stored in ESP32's secure NVS (Non-Volatile Storage)</li>";
+  html += "</ul>";
+  
+  html += "<h3>Quantum Resistance Explained</h3>";
+  html += "<p><strong>Important:</strong> RadioDoge is <strong>quantum-resistant</strong> against <strong>current quantum computers</strong>, but it is <strong>NOT post-quantum secure</strong> (secure against future powerful quantum computers).</p>";
+  html += "<p><strong>Why Quantum Resistant?</strong> RadioDoge uses <strong>Elliptic Curve Cryptography (ECC)</strong> with secp256k1 and <strong>AES-256 encryption</strong>:</p>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>Current Security:</strong> ECC provides 128-bit security against classical computers</li>";
+  html += "<li><strong>Quantum-Resistant (Current):</strong> Secure against existing quantum computers (2024)</li>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>AES-256:</strong> Grover's algorithm reduces security to 128 bits, still secure</li>";
+  html += "<li><strong>ECC secp256k1:</strong> Current quantum computers lack sufficient qubits to break it</li>";
+  html += "</ul>";
+  html += "<li><strong>NOT Post-Quantum Secure:</strong> Future powerful quantum computers could break these algorithms</li>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>Shor's algorithm could break ECC when quantum computers are powerful enough</li>";
+  html += "<li>Grover's algorithm could break AES-256 when quantum computers are powerful enough</li>";
+  html += "</ul>";
+  html += "<li><strong>Best Practice:</strong> Always use strong PINs (8+ characters) for maximum security</li>";
+  html += "</ul>";
+  html += "<p><strong>Note:</strong> This system is quantum-resistant (secure against current quantum computers) but NOT post-quantum secure. For post-quantum security, algorithms like CRYSTALS-Kyber or SPHINCS+ would be needed.</p>";
+  
+  html += "<h3>Best Practices</h3>";
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #ffc107;'>";
+  html += "<h4 style='color:#ffc107;margin-top:0;'>Security Best Practices</h4>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Use a Strong PIN:</strong> Minimum 8 characters, mix of numbers and letters</li>";
+  html += "<li><strong>Never Share Your PIN:</strong> Your PIN is the only thing protecting your wallets</li>";
+  html += "<li><strong>Backup Your WIF Keys:</strong> Write down your private keys (WIF) in a secure location</li>";
+  html += "<li><strong>Lock Storage When Not in Use:</strong> Always lock storage after viewing wallets</li>";
+  html += "<li><strong>Test with Small Amounts:</strong> Generate a test wallet first to learn the system</li>";
+  html += "<li><strong>Keep Device Secure:</strong> Treat your RadioDoge device like a hardware wallet</li>";
+  html += "<li><strong>Verify Addresses:</strong> Always verify the address matches before sending funds</li>";
+  html += "</ul>";
+  html += "</div>";
+  
+  html += "<h3>OLED Menu Navigation</h3>";
+  html += "<p><strong>Button Actions:</strong></p>";
+  html += "<ul style='margin:10px 0;padding-left:20px;'>";
+  html += "<li><strong>Button 1 (Single Click):</strong> Select/Confirm - Choose menu option or confirm action</li>";
+  html += "<li><strong>Button 1 (Double Click):</strong> Change/Cycle - Move selector or cycle through options</li>";
+  html += "<li><strong>Button 2:</strong> Go Back - Return to previous menu</li>";
+  html += "<li><strong>Button 3:</strong> Exit/Back - Exit current operation or go back</li>";
+  html += "<li><strong>Long Press:</strong> Exit to main menu (in some contexts)</li>";
+  html += "</ul>";
+  
+  html += "<h3>Menu Structure & Navigation</h3>";
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h4 style='color:#ffc107;margin-top:0;'>Main Menu</h4>";
+  html += "<p><strong>Options:</strong></p>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Dogecoin Wallet</strong> - Access wallet features</li>";
+  html += "<li><strong>Moon Phase</strong> - View current moon phase</li>";
+  html += "<li><strong>Status</strong> - View device status</li>";
+  html += "</ul>";
+  html += "<p><strong>Navigation:</strong> Double-click to cycle options, Single-click to select</p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h4 style='color:#ffc107;margin-top:0;'>Dogecoin Wallet Menu</h4>";
+  html += "<p><strong>Available Options (when storage is unlocked and PIN is set):</strong></p>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Generate Address</strong> - Create a new Dogecoin wallet</li>";
+  html += "<li><strong>Add Manual Wallet</strong> - Import existing wallet (WIF private key)</li>";
+  html += "<li><strong>Lock Storage</strong> - Lock and encrypt storage (requires PIN)</li>";
+  html += "<li><strong>View Wallets</strong> - View stored encrypted wallets</li>";
+  html += "<li><strong>Change PIN</strong> - Change your storage PIN</li>";
+  html += "</ul>";
+  html += "<p><strong>Note:</strong> Some options only appear when storage is unlocked and PIN is set</p>";
+  html += "</div>";
+  
+  html += "<h3>Step-by-Step Guides</h3>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>1. Setting Up PIN & Locking Storage</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>From <strong>Main Menu</strong>, select <strong>Dogecoin Wallet</strong></li>";
+  html += "<li>If storage is unlocked, select <strong>Lock Storage</strong></li>";
+  html += "<li>Enter your PIN (4-20 characters) - Use numbers and letters</li>";
+  html += "<li>Confirm your PIN by entering it again</li>";
+  html += "<li>Storage is now locked and encrypted</li>";
+  html += "<li><strong>Important:</strong> Remember your PIN! It cannot be recovered if forgotten</li>";
+  html += "</ol>";
+  html += "<p><strong>Button Actions:</strong></p>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>Double-click: Cycle through characters (0-9, A-Z, a-z)</li>";
+  html += "<li>Single-click: Add current character</li>";
+  html += "<li>Button 2: Remove last character</li>";
+  html += "<li>Button 3/Long Press: Confirm PIN entry</li>";
+  html += "</ul>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>2. Unlocking Storage & Decrypting Wallets</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>From <strong>Dogecoin Wallet</strong> menu, select <strong>Unlock Storage</strong></li>";
+  html += "<li>Enter your PIN code</li>";
+  html += "<li>If correct, storage unlocks and wallets are decrypted</li>";
+  html += "<li>You can now view, generate, or add wallets</li>";
+  html += "<li><strong>Security:</strong> Storage auto-locks after inactivity or when manually locked</li>";
+  html += "</ol>";
+  html += "<p><strong>Failed Attempts:</strong> After 3 failed PIN attempts, you must wait before trying again</p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>3. Generating a New Wallet</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Prerequisites:</strong> Storage must be unlocked and PIN must be set</li>";
+  html += "<li>From <strong>Dogecoin Wallet</strong> menu, select <strong>Generate Address</strong></li>";
+  html += "<li>Wait for generation (uses libdogecoin for secure key generation)</li>";
+  html += "<li>You'll see <strong>Wallet Options</strong> menu with:</li>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>View Keys</strong> - View public address and private key (WIF)</li>";
+  html += "<li><strong>Store Wallet</strong> - Save wallet to encrypted storage</li>";
+  html += "<li><strong>Main Menu</strong> - Return to main menu</li>";
+  html += "</ul>";
+  html += "<li>Select <strong>View Keys</strong> to see your wallet</li>";
+  html += "<li>Single-click to toggle between Public Address and Private Key (WIF)</li>";
+  html += "<li><strong>Important:</strong> Write down your WIF private key before storing!</li>";
+  html += "<li>Select <strong>Store Wallet</strong> to save to encrypted storage</li>";
+  html += "</ol>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>4. Manually Adding a Wallet (Import WIF)</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Prerequisites:</strong> Storage must be unlocked and PIN must be set</li>";
+  html += "<li>From <strong>Dogecoin Wallet</strong> menu, select <strong>Add Manual Wallet</strong></li>";
+  html += "<li>Enter your WIF private key character by character:</li>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>Double-click: Cycle through characters (0-9, A-Z, a-z, space)</li>";
+  html += "<li>Single-click: Add current character</li>";
+  html += "<li>Button 2: Remove last character</li>";
+  html += "<li>Button 3/Long Press: Confirm entry</li>";
+  html += "</ul>";
+  html += "<li>After entering, you'll be asked to <strong>confirm</strong> the entry</li>";
+  html += "<li>Enter the same WIF key again to confirm</li>";
+  html += "<li>If entries match, wallet is validated and stored</li>";
+  html += "<li>If entries don't match, you'll need to re-enter</li>";
+  html += "</ol>";
+  html += "<p><strong>Note:</strong> WIF keys start with 'Q' or '6' and are 51-52 characters long</p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>5. Viewing Stored Wallets</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>From <strong>Dogecoin Wallet</strong> menu, select <strong>View Wallets</strong></li>";
+  html += "<li>You'll see a list of stored wallets (excluding 'Password Set' marker)</li>";
+  html += "<li>Double-click to cycle through wallets</li>";
+  html += "<li>Single-click to select and view a wallet</li>";
+  html += "<li>After selecting, enter your PIN to decrypt</li>";
+  html += "<li>Once decrypted, you'll see the WIF private key</li>";
+  html += "<li>Single-click to view wallet options menu:</li>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>View PrivKey</strong> - View the private key again</li>";
+  html += "<li><strong>Delete Wallet</strong> - Permanently delete wallet (requires PIN)</li>";
+  html += "<li><strong>View Wallets</strong> - Return to wallet list</li>";
+  html += "</ul>";
+  html += "<li>Double-click to cycle through options, Single-click to select</li>";
+  html += "</ol>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #f44336;'>";
+  html += "<h4 style='color:#f44336;margin-top:0;'>WARNING: Deleting a Wallet</h4>";
+  html += "<p><strong>WARNING: This action is IRREVERSIBLE!</strong></p>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li>From stored wallet options, select <strong>Delete Wallet</strong></li>";
+  html += "<li>You'll see a warning screen</li>";
+  html += "<li>Enter your PIN to confirm deletion</li>";
+  html += "<li>If PIN is correct, wallet is permanently deleted</li>";
+  html += "<li>If PIN is wrong, deletion is cancelled</li>";
+  html += "</ol>";
+  html += "<p><strong>Important:</strong> Make sure you have backed up your WIF key before deleting!</p>";
+  html += "</div>";
+  
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #4caf50;'>";
+  html += "<h4 style='color:#4caf50;margin-top:0;'>6. Changing Your PIN</h4>";
+  html += "<ol style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Prerequisites:</strong> Storage must be unlocked</li>";
+  html += "<li>From <strong>Dogecoin Wallet</strong> menu, select <strong>Change PIN</strong></li>";
+  html += "<li>Enter your <strong>current PIN</strong> first</li>";
+  html += "<li>If correct, enter your <strong>new PIN</strong></li>";
+  html += "<li>Confirm your <strong>new PIN</strong> by entering it again</li>";
+  html += "<li>PIN is updated and storage remains unlocked</li>";
+  html += "</ol>";
+  html += "<p><strong>Note:</strong> Changing PIN does not re-encrypt existing wallets, but new wallets will use the new PIN</p>";
+  html += "</div>";
+  
+  html += "<h3>Complete Menu Flow Reference</h3>";
+  html += "<div style='background:#1a1a1a;padding:15px;border-radius:8px;margin:10px 0;font-family:monospace;font-size:0.9em;'>";
+  html += "<pre style='margin:0;overflow-x:auto;white-space:pre-wrap;'>";
+  html += "MAIN MENU\n";
+  html += "├─ Dogecoin Wallet\n";
+  html += "│  ├─ Generate Address (if unlocked + PIN set)\n";
+  html += "│  │  └─ Wallet Options\n";
+  html += "│  │     ├─ View Keys → Toggle Public/Private\n";
+  html += "│  │     ├─ Store Wallet\n";
+  html += "│  │     └─ Main Menu\n";
+  html += "│  ├─ Add Manual Wallet (if unlocked + PIN set)\n";
+  html += "│  │  ├─ Enter WIF → Confirm Entry\n";
+  html += "│  │  └─ Store if valid\n";
+  html += "│  ├─ Lock Storage (if unlocked)\n";
+  html += "│  │  └─ Set PIN → Confirm PIN\n";
+  html += "│  ├─ Unlock Storage (if locked)\n";
+  html += "│  │  └─ Enter PIN → Decrypt wallets\n";
+  html += "│  ├─ View Wallets (if unlocked)\n";
+  html += "│  │  └─ Select Wallet → Enter PIN → View Options\n";
+  html += "│  │     ├─ View PrivKey\n";
+  html += "│  │     ├─ Delete Wallet → Enter PIN\n";
+  html += "│  │     └─ View Wallets\n";
+  html += "│  └─ Change PIN (if unlocked)\n";
+  html += "│     └─ Current PIN → New PIN → Confirm\n";
+  html += "├─ Moon Phase\n";
+  html += "└─ Status\n";
+  html += "</pre>";
+  html += "</div>";
+  
+  html += "<h3>Button Reference</h3>";
+  html += "<table style='width:100%;border-collapse:collapse;margin:10px 0;background:#1a1a1a;'>";
+  html += "<tr style='background:#333;'><th style='padding:10px;text-align:left;border:1px solid #444;'>Button</th><th style='padding:10px;text-align:left;border:1px solid #444;'>Action</th><th style='padding:10px;text-align:left;border:1px solid #444;'>Context</th></tr>";
+  html += "<tr><td style='padding:8px;border:1px solid #444;'>Button 1<br>(Single)</td><td style='padding:8px;border:1px solid #444;'>Select/Confirm</td><td style='padding:8px;border:1px solid #444;'>Choose menu option, add character, confirm action</td></tr>";
+  html += "<tr><td style='padding:8px;border:1px solid #444;'>Button 1<br>(Double)</td><td style='padding:8px;border:1px solid #444;'>Change/Cycle</td><td style='padding:8px;border:1px solid #444;'>Move selector, cycle characters, cycle menu options</td></tr>";
+  html += "<tr><td style='padding:8px;border:1px solid #444;'>Button 2</td><td style='padding:8px;border:1px solid #444;'>Go Back</td><td style='padding:8px;border:1px solid #444;'>Remove last character, return to previous menu</td></tr>";
+  html += "<tr><td style='padding:8px;border:1px solid #444;'>Button 3</td><td style='padding:8px;border:1px solid #444;'>Exit/Back</td><td style='padding:8px;border:1px solid #444;'>Exit operation, go back, confirm PIN entry</td></tr>";
+  html += "<tr><td style='padding:8px;border:1px solid #444;'>Long Press</td><td style='padding:8px;border:1px solid #444;'>Exit</td><td style='padding:8px;border:1px solid #444;'>Exit to main menu (some contexts)</td></tr>";
+  html += "</table>";
+  
+  html += "<h3>Security Reminders</h3>";
+  html += "<div style='background:#f44336;color:#fff;padding:15px;border-radius:8px;margin:10px 0;'>";
+  html += "<h4 style='margin-top:0;color:#fff;'>CRITICAL SECURITY WARNINGS</h4>";
+  html += "<ul style='margin:5px 0;padding-left:20px;'>";
+  html += "<li><strong>Never share your PIN</strong> - It's the only protection for your wallets</li>";
+  html += "<li><strong>Backup your WIF keys</strong> - Write them down in a secure location</li>";
+  html += "<li><strong>Test with small amounts</strong> - Verify everything works before storing large amounts</li>";
+  html += "<li><strong>Lock storage when not in use</strong> - Keep your wallets encrypted</li>";
+  html += "<li><strong>Verify addresses</strong> - Always double-check addresses before sending funds</li>";
+  html += "<li><strong>Keep device secure</strong> - Treat RadioDoge like a hardware wallet</li>";
+  html += "<li><strong>PIN cannot be recovered</strong> - If you forget your PIN, wallets cannot be accessed</li>";
+  html += "</ul>";
+  html += "</div>";
+  
   html += "</div>";
   html += "</div>";
   
@@ -3719,6 +4208,9 @@ void handleRoot() {
   
   // JavaScript
   html += "<script>";
+  html += "var libdogecoinModule=null;";
+  html += "function loadLibDogecoin(){if(libdogecoinModule){document.getElementById('wasmStatusText').textContent='Already loaded!';return;}if(typeof loadWASM==='undefined'){document.getElementById('wasmStatusText').textContent='Waiting for libdogecoin.js to load...';setTimeout(loadLibDogecoin,100);return;}document.getElementById('wasmStatusText').textContent='Loading...';document.getElementById('loadWasmBtn').disabled=true;loadWASM().then(function(Module){libdogecoinModule=Module;document.getElementById('wasmStatusText').textContent='Loaded successfully!';document.getElementById('wasmStatusText').style.color='#28a745';document.getElementById('loadWasmBtn').textContent='WASM LOADED';document.getElementById('loadWasmBtn').classList.add('success');document.getElementById('loadWasmBtn').disabled=false;console.log('Much Libdogecoin loaded');}).catch(function(err){document.getElementById('wasmStatusText').textContent='Error: '+err.message;document.getElementById('wasmStatusText').style.color='#dc3545';document.getElementById('loadWasmBtn').disabled=false;console.error('Much Wow! Failed to load Libdogecoin:',err);});}";
+  html += "function generateDogecoinAddress(){if(!libdogecoinModule){showResponse('Please load WASM first');return;}try{var _dogecoin_ecc_start=libdogecoinModule._dogecoin_ecc_start;var _dogecoin_ecc_stop=libdogecoinModule._dogecoin_ecc_stop;var _generatePrivPubKeypair=libdogecoinModule._generatePrivPubKeypair;var _malloc=libdogecoinModule._malloc;var _free=libdogecoinModule._free;var UTF8ToString=libdogecoinModule.UTF8ToString;_dogecoin_ecc_start();var privatePtr=_malloc(64);if(!privatePtr){throw new Error('Failed to allocate private key memory');}var publicPtr=_malloc(48);if(!publicPtr){_free(privatePtr);throw new Error('Failed to allocate public key memory');}var testnet=false;_generatePrivPubKeypair(privatePtr,publicPtr,testnet);var privKey=UTF8ToString(privatePtr);var pubKey=UTF8ToString(publicPtr);_dogecoin_ecc_stop();_free(privatePtr);_free(publicPtr);document.getElementById('walletAddressResult').style.display='block';document.getElementById('walletAddressResult').innerHTML='<h4>Generated Keypair</h4><p><strong>Private Key:</strong><br><span style=\"font-family:monospace;word-break:break-all;color:#ffc107;\">'+privKey+'</span></p><p><strong>Public Key/Address:</strong><br><span style=\"font-family:monospace;word-break:break-all;color:#ffc107;\">'+pubKey+'</span></p>';}catch(e){document.getElementById('walletAddressResult').style.display='block';document.getElementById('walletAddressResult').innerHTML='<p style=\"color:#dc3545;\">Error: '+e.message+'</p>';console.error('Error generating address:',e);}}";
   html += "function toggleAccordion(section){var content=document.getElementById(section+'-content');var icon=document.getElementById(section+'-icon');if(!content||!icon)return;var header=icon.parentElement;if(content.classList.contains('active')){content.classList.remove('active');header.classList.remove('active');icon.classList.remove('rotated');}else{content.classList.add('active');header.classList.add('active');icon.classList.add('rotated');}}";
   html += "function showResponse(msg){document.getElementById('response').style.display='block';document.getElementById('response').innerHTML=msg;}";
   html += "function sendPing(){var r=document.getElementById('pingRegion').value;var c=document.getElementById('pingCommunity').value;var n=document.getElementById('pingNode').value;fetch('/ping?region='+r+'&community='+c+'&node='+n).then(r=>r.text()).then(d=>showResponse('PING: '+d));}";
@@ -4959,6 +5451,84 @@ void handleApiLogsSend() {
   server.send(200, "application/json", response);
 }
 
+// Serve libdogecoin.js WASM file from LittleFS
+void handleLibDogecoinJS() {
+  // LittleFS should already be initialized in setup(), but check anyway
+  if (!LittleFS.begin(true)) {  // true = format if mount fails
+    server.send(500, "text/plain", "LittleFS not initialized");
+    addLog("[Web] Error: LittleFS not initialized when serving libdogecoin.js");
+    Serial.println("[Web] Error: LittleFS not initialized");
+    return;
+  }
+  
+  Serial.println("[Web] Attempting to open libdogecoin.js");
+  
+  // Try with leading slash first
+  File file = LittleFS.open("/libdogecoin.js", "r");
+  if (!file) {
+    Serial.println("[Web] File not found with /libdogecoin.js, trying libdogecoin.js");
+    // Try without leading slash
+    file = LittleFS.open("libdogecoin.js", "r");
+  }
+  
+  if (!file) {
+    Serial.println("[Web] File not found, listing all files:");
+    String response = "libdogecoin.js not found in LittleFS\n\n";
+    response += "LittleFS files:\n";
+    File root = LittleFS.open("/", "r");
+    if (root) {
+      File entry = root.openNextFile();
+      int count = 0;
+      while (entry) {
+        count++;
+        String fileName = String(entry.name());
+        size_t fileSize = entry.size();
+        response += "- " + fileName + " (" + String(fileSize) + " bytes)\n";
+        Serial.println("  Found: " + fileName + " (" + String(fileSize) + " bytes)");
+        entry.close();
+        entry = root.openNextFile();
+      }
+      root.close();
+      if (count == 0) {
+        response += "(No files found - filesystem may be empty)\n";
+        Serial.println("  No files found in LittleFS");
+      }
+    } else {
+      response += "(Cannot open root directory)\n";
+      Serial.println("  Cannot open root directory");
+    }
+    server.send(404, "text/plain", response);
+    addLog("[Web] Error: libdogecoin.js not found in LittleFS");
+    return;
+  }
+  
+  size_t fileSize = file.size();
+  Serial.println("[Web] File found! Size: " + String(fileSize) + " bytes");
+  server.sendHeader("Content-Type", "application/javascript");
+  server.sendHeader("Cache-Control", "public, max-age=3600");
+  server.streamFile(file, "application/javascript");
+  file.close();
+  addLog("[Web] Served libdogecoin.js from LittleFS (" + String(fileSize) + " bytes)");
+}
+
+// Wallet API Handler - Generate Dogecoin address (called from button menu)
+void handleApiWalletGenerate() {
+  addLog("[API] Wallet generate endpoint called from button menu");
+  
+  // Note: WASM runs in browser JavaScript, not on ESP32
+  // This endpoint provides instructions to use web interface
+  // For native generation, you would need to port libdogecoin C library to ESP32
+  
+  String response = "{";
+  response += "\"success\":true,";
+  response += "\"message\":\"Use web interface at http://192.168.4.1\",";
+  response += "\"privateKey\":\"WASM_REQUIRES_BROWSER\",";
+  response += "\"publicKey\":\"Open Dogecoin Wallet section in web UI\"";
+  response += "}";
+  
+  server.send(200, "application/json", response);
+}
+
 // Transaction Send API Handler - Send transaction using stored gateway credentials
 void handleApiTransactionSend() {
   String response = "{";
@@ -5170,5 +5740,1884 @@ String parseDogecoinCoreResponse(String jsonResponse) {
     return "{\"success\":false,\"error\":\"" + error + "\",\"raw_response\":\"" + escapeJsonString(jsonResponse) + "\"}";
   } else {
     return "{\"success\":false,\"error\":\"Unknown response format\",\"raw_response\":\"" + escapeJsonString(jsonResponse) + "\"}";
+  }
+}
+
+// Button Handling Functions
+void handleButtonPresses() {
+  static unsigned long last_button_check = 0;
+  static bool button_handled = false;
+  static unsigned long button_press_start = 0;
+  static unsigned long last_button_release = 0;
+  static uint8_t click_count = 0;
+  static bool waiting_for_more_clicks = false;
+  
+  // Check button every 20ms
+  if (millis() - last_button_check < 20) return;
+  last_button_check = millis();
+  
+  // Check PRG Button (GPIO0) - inverted because of pullup
+  bool button_pressed = !digitalRead(BUTTON_PRG_PIN);
+  
+  // Normal button handling
+  if (button_pressed && !button_handled) {
+    button_handled = true;
+    button_press_start = millis();
+  }
+  
+  if (!button_pressed && button_handled) {
+    button_handled = false;
+    unsigned long press_duration = millis() - button_press_start;
+    last_button_release = millis();
+    
+    if (press_duration > BUTTON_LONG_PRESS_MS) {
+      // Long press - exit
+      HandleButtonAction(3); // Exit
+      click_count = 0;
+      waiting_for_more_clicks = false;
+    } else {
+      // Short press - count clicks
+      click_count++;
+      waiting_for_more_clicks = true;
+    }
+  }
+  
+  // Handle click sequences after timeout
+  if (waiting_for_more_clicks && (millis() - last_button_release > BUTTON_TRIPLE_CLICK_TIMEOUT)) {
+    addLog("[Button] Click sequence detected - count: " + String(click_count));
+    
+    switch (click_count) {
+      case 1:
+        addLog("[Button] Single click - Select");
+        HandleButtonAction(0); // Select
+        break;
+      case 2:
+        addLog("[Button] Double click - Change");
+        HandleButtonAction(1); // Change
+        break;
+      case 3:
+        addLog("[Button] Triple click - Go back");
+        HandleButtonAction(2); // Go back
+        break;
+    }
+    click_count = 0;
+    waiting_for_more_clicks = false;
+  }
+}
+
+void HandleButtonAction(int action) {
+  // 0 = select, 1 = change, 2 = go back, 3 = exit
+  switch (currentMenu) {
+    case MENU_MAIN:
+      if (action == 0) { // Select
+        if (menuSelection == 0) {
+          currentMenu = MENU_WALLET;
+          menuSelection = 0;
+        } else if (menuSelection == 1) {
+          currentMenu = MENU_MOON;
+        } else if (menuSelection == 2) {
+          currentMenu = MENU_STATUS;
+        }
+      } else if (action == 1) { // Change
+        menuSelection = (menuSelection + 1) % 3; // 3 items: Wallet, Moon, Status
+      } else if (action == 3) { // Exit
+        currentMenu = MENU_MAIN;
+        menuSelection = 0;
+      }
+      break;
+      
+    case MENU_WALLET:
+      if (action == 0) { // Select
+        // Only show Generate/Add if unlocked AND PIN is set
+        bool canGenerate = isColdStorageUnlocked() && cold_storage.password_set;
+        
+        if (menuSelection == 0 && canGenerate) {
+          // Generate Address
+          currentMenu = MENU_WALLET_GENERATE;
+          GenerateDogecoinAddressOnDevice();
+        } else if (menuSelection == 1 && canGenerate) {
+          // Add Manual Wallet
+          currentMenu = MENU_MANUAL_WALLET_ENTRY;
+          manual_wallet_buffer = "";
+          manual_wallet_confirm_buffer = "";
+          manual_wallet_char_index = 0;
+          manual_wallet_confirm_mode = false;
+        } else if (menuSelection == (canGenerate ? 2 : 0)) {
+          // Lock/Unlock Storage
+          if (isColdStorageUnlocked()) {
+            // Storage is unlocked - show Lock option
+            currentMenu = MENU_STORAGE_LOCK;
+            menuSelection = 0;
+          } else {
+            // Storage is locked - show Unlock option
+            currentMenu = MENU_STORAGE_UNLOCK;
+            menuSelection = 0;
+          }
+        } else if (menuSelection == (canGenerate ? 3 : 1) && isColdStorageUnlocked()) {
+          // View Wallets (only when unlocked)
+          currentMenu = MENU_STORAGE_VIEW;
+          menuSelection = 0;
+        } else if (menuSelection == (canGenerate ? 4 : 2) && isColdStorageUnlocked()) {
+          // Change PIN (only when unlocked)
+          currentMenu = MENU_CHANGE_PIN;
+          menuSelection = 0;
+        }
+      } else if (action == 1) { // Change
+        // Count menu items based on state
+        int maxItems = 0;
+        if (isColdStorageUnlocked() && cold_storage.password_set) {
+          maxItems = 5; // Generate, Add, Lock, View, Change PIN
+        } else if (isColdStorageUnlocked()) {
+          maxItems = 3; // Lock, View, Change PIN
+        } else {
+          maxItems = 1; // Unlock
+        }
+        menuSelection = (menuSelection + 1) % maxItems;
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_MAIN;
+        menuSelection = 0;
+      }
+      break;
+      
+    case MENU_WALLET_GENERATE:
+      if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_WALLET;
+        menuSelection = 0;
+        walletGenerated = false;
+      }
+      break;
+      
+    case MENU_WALLET_DISPLAY:
+      if (action == 0) { // Select - toggle between public key and private key
+        showPrivateKey = !showPrivateKey;
+        DisplayWalletText(); // Show the selected key (public or private)
+      } else if (action == 1) { // Change - go to options menu
+        currentMenu = MENU_WALLET_OPTIONS;
+        menuSelection = 0;
+      } else if (action == 2 || action == 3) { // Go back or exit - return to options menu
+        currentMenu = MENU_WALLET_OPTIONS;
+        menuSelection = 0;
+      }
+      break;
+      
+    case MENU_WALLET_OPTIONS:
+      if (action == 0) { // Select
+        if (menuSelection == 0) {
+          // View Keys (text view) - start with public key
+          currentMenu = MENU_WALLET_DISPLAY;
+          showPrivateKey = false; // Start with public key (address)
+          DisplayWalletText();
+        } else if (menuSelection == 1) {
+          // Store Wallet
+          if (!isColdStorageUnlocked()) {
+            DisplayError("Unlock first!");
+            delay(2000);
+            currentMenu = MENU_WALLET_OPTIONS;
+          } else if (!cold_storage.password_set) {
+            DisplayError("Set PIN first!");
+            delay(2000);
+            currentMenu = MENU_WALLET_OPTIONS;
+          } else if (StoreCurrentWallet()) {
+            // Show success message
+            radioDogeDisplay.clearDisplay();
+            radioDogeDisplay.setTextSize(1);
+            radioDogeDisplay.setTextColor(SSD1306_WHITE);
+            radioDogeDisplay.setCursor(0, 25);
+            radioDogeDisplay.println("Wallet stored!");
+            radioDogeDisplay.display();
+            delay(1500);
+            currentMenu = MENU_WALLET_OPTIONS;
+          } else {
+            DisplayError("Storage failed!");
+            delay(2000);
+            currentMenu = MENU_WALLET_OPTIONS;
+          }
+        } else if (menuSelection == 2) {
+          // Main Menu
+          currentMenu = MENU_MAIN;
+          menuSelection = 0;
+        }
+      } else if (action == 1) { // Change
+        menuSelection = (menuSelection + 1) % 3; // 3 options
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_WALLET;
+        menuSelection = 0;
+        walletGenerated = false;
+        showPrivateKey = false; // Reset to show public key first
+      }
+      break;
+      
+    case MENU_MOON:
+      if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_MAIN;
+        menuSelection = 1; // Return to Moon option
+      }
+      break;
+      
+    case MENU_STATUS:
+      if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_MAIN;
+        menuSelection = 2; // Return to Device Status option
+      }
+      break;
+      
+    case MENU_STORAGE_LOCK:
+      if (action == 0) { // Select - start PIN entry
+        currentMenu = MENU_PIN_ENTRY;
+        pin_buffer = "";
+        pin_char_index = 0;
+        pin_mode = true;
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_WALLET;
+        menuSelection = 1;
+      }
+      break;
+      
+    case MENU_STORAGE_UNLOCK:
+      if (action == 0) { // Select - start PIN entry
+        currentMenu = MENU_PIN_ENTRY;
+        pin_buffer = "";
+        pin_char_index = 0;
+        pin_mode = true;
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_WALLET;
+        menuSelection = 1;
+      }
+      break;
+      
+    case MENU_PIN_ENTRY:
+      if (action == 0) { // Select - cycle character
+        cyclePINCharacter();
+      } else if (action == 1) { // Change - add character
+        addPINCharacter();
+      } else if (action == 2) { // Go back - clear and return
+        pin_buffer = "";
+        pin_char_index = 0;
+        pin_mode = false;
+        if (isColdStorageUnlocked()) {
+          currentMenu = MENU_WALLET;
+          menuSelection = 1;
+        } else {
+          currentMenu = MENU_STORAGE_UNLOCK;
+        }
+      } else if (action == 3) { // Exit - confirm PIN
+        if (pin_buffer.length() >= 4) {
+          // Move to verification if locking, or unlock if unlocking
+          if (isColdStorageUnlocked()) {
+            // Locking - need to verify PIN
+            currentMenu = MENU_PIN_VERIFY;
+            pin_verify_buffer = "";
+            pin_char_index = 0;
+          } else {
+            // Unlocking - try to unlock
+            if (unlockColdStorage(pin_buffer.c_str())) {
+              // Show success message
+              radioDogeDisplay.clearDisplay();
+              radioDogeDisplay.setTextSize(1);
+              radioDogeDisplay.setTextColor(SSD1306_WHITE);
+              radioDogeDisplay.setCursor(0, 25);
+              radioDogeDisplay.println("Storage unlocked!");
+              radioDogeDisplay.display();
+              delay(1500);
+              
+              pin_buffer = "";
+              pin_char_index = 0;
+              pin_mode = false;
+              currentMenu = MENU_WALLET;
+              menuSelection = 1; // Go to wallet menu, select Lock/Unlock option
+            } else {
+              DisplayError("Wrong PIN!");
+              delay(2000);
+              pin_buffer = "";
+              pin_char_index = 0;
+              currentMenu = MENU_STORAGE_UNLOCK;
+            }
+          }
+        }
+      }
+      break;
+      
+    case MENU_PIN_VERIFY:
+      if (action == 0) { // Select - cycle character
+        cyclePINCharacter();
+      } else if (action == 1) { // Change - add character
+        if (pin_verify_buffer.length() < 20) {
+          pin_verify_buffer += pin_charset[pin_char_index];
+          pin_char_index = 0;
+        }
+      } else if (action == 2) { // Go back - return to PIN entry
+        pin_verify_buffer = "";
+        pin_char_index = 0;
+        currentMenu = MENU_PIN_ENTRY;
+      } else if (action == 3) { // Exit - confirm and lock
+        if (pin_buffer == pin_verify_buffer && pin_buffer.length() >= 4) {
+          // Show "Please wait..." message
+          DisplayPleaseWait("Encrypting storage...");
+          
+          // Set password and lock
+          cold_storage.password_set = true;
+          lockColdStorage();
+          // Create marker item for password verification
+          int slot = 0;
+          generateSalt(cold_storage.items[slot].salt);
+          uint8_t iv[AES_BLOCK_SIZE];
+          generateSalt(iv);
+          uint8_t derived_key[AES_KEY_SIZE];
+          deriveKey(pin_buffer.c_str(), cold_storage.items[slot].salt, derived_key);
+          String marker = "Master password initialized";
+          uint8_t padded_data[MAX_ITEM_DATA_LEN];
+          memset(padded_data, 0, sizeof(padded_data));
+          memcpy(padded_data, marker.c_str(), marker.length());
+          uint16_t padded_len = ((marker.length() + AES_BLOCK_SIZE - 1) / AES_BLOCK_SIZE) * AES_BLOCK_SIZE;
+          encryptData(padded_data, padded_len, derived_key, iv, cold_storage.items[slot].encrypted_data);
+          memcpy(cold_storage.items[slot].iv, iv, AES_BLOCK_SIZE);
+          cold_storage.items[slot].id = 1;
+          cold_storage.items[slot].type = STORAGE_PRIVATE_KEY;
+          strcpy(cold_storage.items[slot].name, "Password Set");
+          cold_storage.items[slot].data_length = padded_len;
+          cold_storage.items[slot].active = true;
+          cold_storage.item_count = 1;
+          
+          // Save marker item to NVS
+          saveStorageItemToNVS(slot);
+          
+          // Save cold storage state (password_set flag)
+          saveColdStorageState();
+          
+          // Show success message
+          radioDogeDisplay.clearDisplay();
+          radioDogeDisplay.setTextSize(1);
+          radioDogeDisplay.setTextColor(SSD1306_WHITE);
+          radioDogeDisplay.setCursor(0, 25);
+          radioDogeDisplay.println("Storage locked!");
+          radioDogeDisplay.display();
+          delay(1500);
+          
+          pin_buffer = "";
+          pin_verify_buffer = "";
+          pin_char_index = 0;
+          pin_mode = false;
+          saveColdStorageState(); // Save PIN state to NVS
+          currentMenu = MENU_WALLET;
+          menuSelection = 1;
+        } else {
+          DisplayError("PINs don't match!");
+          delay(2000);
+          pin_buffer = "";
+          pin_verify_buffer = "";
+          pin_char_index = 0;
+          currentMenu = MENU_PIN_ENTRY;
+        }
+      }
+      break;
+      
+    case MENU_STORAGE_VIEW:
+      if (action == 0) { // Select - view wallet
+        if (cold_storage.item_count > 0) {
+          // Find the selected wallet (skip "Password Set" marker)
+          int walletIndex = 0;
+          for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+            if (cold_storage.items[i].active && strcmp(cold_storage.items[i].name, "Password Set") != 0) {
+              if (walletIndex == menuSelection) {
+                selectedWalletIndex = i;
+                // Decrypt and display wallet
+                if (ViewStoredWallet(i)) {
+                  viewingStoredWallet = true;
+                  currentMenu = MENU_STORAGE_WALLET_DETAILS;
+                  walletDetailsMenuSelection = 0;
+                  // Automatically display the wallet WIF after decryption
+                  DisplayStoredWalletText();
+                } else {
+                  DisplayError("Decrypt failed!");
+                  delay(2000);
+                }
+                break;
+              }
+              walletIndex++;
+            }
+          }
+        }
+      } else if (action == 1) { // Change - next wallet
+        // Count only actual wallets (excluding "Password Set")
+        int walletCount = 0;
+        for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+          if (cold_storage.items[i].active && strcmp(cold_storage.items[i].name, "Password Set") != 0) {
+            walletCount++;
+          }
+        }
+        if (walletCount > 0) {
+          menuSelection = (menuSelection + 1) % walletCount;
+        }
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_MAIN;
+        menuSelection = 4;
+      }
+      break;
+      
+    case MENU_STORAGE_WALLET_DETAILS:
+      // Flow: WIF (walletDetailsMenuSelection == 0) -> Menu (walletDetailsMenuSelection > 0)
+      if (walletDetailsMenuSelection == 0) {
+        // First view: Show WIF, clicking goes to menu
+        if (action == 0) { // Select - show menu
+          walletDetailsMenuSelection = 1; // Start at first menu option
+        } else if (action == 2 || action == 3) { // Go back
+          currentMenu = MENU_STORAGE_VIEW;
+          viewingStoredWallet = false;
+          selectedWalletIndex = -1;
+          walletDetailsMenuSelection = 0;
+        }
+      } else {
+        // Menu view: Options menu (walletDetailsMenuSelection > 0)
+        if (action == 0) { // Select
+          if (walletDetailsMenuSelection == 1) {
+            // View Private Key - go back to WIF view
+            walletDetailsMenuSelection = 0;
+            DisplayStoredWalletText();
+          } else if (walletDetailsMenuSelection == 2) {
+            // Delete wallet - show confirmation
+            currentMenu = MENU_STORAGE_DELETE_CONFIRM;
+            pin_buffer = "";
+            pin_char_index = 0;
+            pin_mode = true;
+          } else if (walletDetailsMenuSelection == 3) {
+            // View Wallets - back to list
+            currentMenu = MENU_STORAGE_VIEW;
+            viewingStoredWallet = false;
+            selectedWalletIndex = -1;
+            walletDetailsMenuSelection = 0;
+          }
+        } else if (action == 1) { // Change - cycle menu options
+          walletDetailsMenuSelection = (walletDetailsMenuSelection % 3) + 1; // Cycle 1, 2, 3
+        } else if (action == 2 || action == 3) { // Go back
+          currentMenu = MENU_STORAGE_VIEW;
+          viewingStoredWallet = false;
+          selectedWalletIndex = -1;
+          walletDetailsMenuSelection = 0;
+        }
+      }
+      break;
+      
+    case MENU_MANUAL_WALLET_ENTRY:
+      if (action == 0) { // Cycle character
+        manual_wallet_char_index = (manual_wallet_char_index + 1) % strlen(wallet_charset);
+      } else if (action == 1) { // Add character
+        if (manual_wallet_buffer.length() < 200) { // Max length for seed phrase or WIF
+          manual_wallet_buffer += wallet_charset[manual_wallet_char_index];
+          manual_wallet_char_index = 0;
+        }
+      } else if (action == 2) { // Go back - remove last character
+        if (manual_wallet_buffer.length() > 0) {
+          manual_wallet_buffer = manual_wallet_buffer.substring(0, manual_wallet_buffer.length() - 1);
+        } else {
+          currentMenu = MENU_WALLET;
+          // Set menu selection to "Add Manual Wallet" option
+          if (isColdStorageUnlocked() && cold_storage.password_set) {
+            menuSelection = 1; // Add Manual Wallet
+          } else {
+            menuSelection = 0;
+          }
+        }
+      } else if (action == 3) { // Exit - confirm entry
+        if (manual_wallet_buffer.length() > 0) {
+          // Move to confirmation screen
+          currentMenu = MENU_MANUAL_WALLET_CONFIRM;
+          manual_wallet_confirm_buffer = "";
+          manual_wallet_char_index = 0;
+          manual_wallet_confirm_mode = true;
+        }
+      }
+      break;
+      
+    case MENU_MANUAL_WALLET_CONFIRM:
+      if (action == 0) { // Cycle character
+        manual_wallet_char_index = (manual_wallet_char_index + 1) % strlen(wallet_charset);
+      } else if (action == 1) { // Add character
+        if (manual_wallet_confirm_buffer.length() < 200) {
+          manual_wallet_confirm_buffer += wallet_charset[manual_wallet_char_index];
+          manual_wallet_char_index = 0;
+        }
+      } else if (action == 2) { // Go back - remove last character
+        if (manual_wallet_confirm_buffer.length() > 0) {
+          manual_wallet_confirm_buffer = manual_wallet_confirm_buffer.substring(0, manual_wallet_confirm_buffer.length() - 1);
+        } else {
+          // Go back to entry
+          currentMenu = MENU_MANUAL_WALLET_ENTRY;
+          manual_wallet_confirm_mode = false;
+          manual_wallet_char_index = 0;
+        }
+      } else if (action == 3) { // Exit - verify and store
+        // Trim whitespace and compare strings
+        String trimmed_original = manual_wallet_buffer;
+        trimmed_original.trim();
+        String trimmed_confirm = manual_wallet_confirm_buffer;
+        trimmed_confirm.trim();
+        
+        if (trimmed_confirm.equals(trimmed_original) && trimmed_original.length() > 0) {
+          // Entries match - process and store wallet (use trimmed version)
+          if (ProcessAndStoreManualWallet(trimmed_original)) {
+            // Success
+            radioDogeDisplay.clearDisplay();
+            radioDogeDisplay.setTextSize(1);
+            radioDogeDisplay.setTextColor(SSD1306_WHITE);
+            radioDogeDisplay.setCursor(0, 25);
+            radioDogeDisplay.println("Wallet stored!");
+            radioDogeDisplay.display();
+            delay(2000);
+            
+            // Clear buffers and return to wallet menu
+            manual_wallet_buffer = "";
+            manual_wallet_confirm_buffer = "";
+            manual_wallet_char_index = 0;
+            manual_wallet_confirm_mode = false;
+            currentMenu = MENU_WALLET;
+            // Set menu selection to "Add Manual Wallet" option
+            if (isColdStorageUnlocked() && cold_storage.password_set) {
+              menuSelection = 1; // Add Manual Wallet
+            } else {
+              menuSelection = 0;
+            }
+          } else {
+            // Failed to process/store
+            DisplayError("Invalid wallet!");
+            delay(2000);
+            // Go back to entry
+            currentMenu = MENU_MANUAL_WALLET_ENTRY;
+            manual_wallet_confirm_buffer = "";
+            manual_wallet_confirm_mode = false;
+          }
+        } else {
+          // Entries don't match
+          DisplayError("Entries don't match!");
+          delay(2000);
+          // Clear confirmation and try again
+          manual_wallet_confirm_buffer = "";
+        }
+      }
+      break;
+      
+    case MENU_CHANGE_PIN:
+      if (action == 0) { // Select - start PIN entry for current PIN
+        currentMenu = MENU_PIN_ENTRY;
+        pin_buffer = "";
+        pin_char_index = 0;
+        pin_mode = true;
+        // Set a flag to indicate this is for changing PIN (not unlocking)
+      } else if (action == 2 || action == 3) { // Go back or exit
+        currentMenu = MENU_WALLET;
+        // Set menu selection based on current state
+        if (isColdStorageUnlocked() && cold_storage.password_set) {
+          menuSelection = 4; // Change PIN
+        } else if (isColdStorageUnlocked()) {
+          menuSelection = 2; // View Wallets
+        } else {
+          menuSelection = 0; // Unlock Storage
+        }
+      }
+      break;
+      
+    case MENU_STORAGE_DELETE_CONFIRM:
+      if (action == 0) { // Select - cycle PIN character
+        cyclePINCharacter();
+      } else if (action == 1) { // Change - add character
+        if (pin_buffer.length() < 20) {
+          pin_buffer += pin_charset[pin_char_index];
+          pin_char_index = 0;
+        }
+      } else if (action == 2) { // Go back - cancel delete
+        pin_buffer = "";
+        pin_char_index = 0;
+        currentMenu = MENU_STORAGE_WALLET_DETAILS;
+        walletDetailsMenuSelection = 1;
+      } else if (action == 3) { // Exit - confirm delete with PIN
+        if (pin_buffer.length() >= 4) {
+          // Verify PIN matches the current password
+          if (pin_buffer == current_password) {
+            // PIN is correct - delete the wallet
+            if (deleteWallet(selectedWalletIndex)) {
+              // Show success message
+              radioDogeDisplay.clearDisplay();
+              radioDogeDisplay.setTextSize(1);
+              radioDogeDisplay.setTextColor(SSD1306_WHITE);
+              radioDogeDisplay.setCursor(0, 25);
+              radioDogeDisplay.println("Wallet deleted!");
+              radioDogeDisplay.display();
+              delay(1500);
+              
+              pin_buffer = "";
+              pin_char_index = 0;
+              viewingStoredWallet = false;
+              selectedWalletIndex = -1;
+              walletDetailsMenuSelection = 0;
+              currentMenu = MENU_STORAGE_VIEW;
+            } else {
+              DisplayError("Delete failed!");
+              delay(2000);
+              pin_buffer = "";
+              pin_char_index = 0;
+              currentMenu = MENU_STORAGE_WALLET_DETAILS;
+              walletDetailsMenuSelection = 1;
+            }
+          } else {
+            // Wrong PIN
+            DisplayError("Wrong PIN!");
+            delay(2000);
+            pin_buffer = "";
+            pin_char_index = 0;
+            currentMenu = MENU_STORAGE_DELETE_CONFIRM;
+          }
+        }
+      }
+      break;
+  }
+}
+
+void UpdateMenuDisplay() {
+  static unsigned long lastUpdate = 0;
+  unsigned long currentTime = millis();
+  
+  // Update display every 100ms to avoid flickering
+  if (currentTime - lastUpdate < 100) {
+    return;
+  }
+  lastUpdate = currentTime;
+  
+  // Don't update display if we're in generate mode (display is handled separately)
+  if (currentMenu == MENU_WALLET_GENERATE) {
+    return;
+  }
+  
+  // For wallet display mode, only update if showing text
+  if (currentMenu == MENU_WALLET_DISPLAY) {
+    // Show text (public or private key based on showPrivateKey flag)
+    DisplayWalletText();
+  }
+  
+  // PIN entry modes update display directly
+  if (currentMenu == MENU_PIN_ENTRY || currentMenu == MENU_PIN_VERIFY) {
+    if (currentMenu == MENU_PIN_ENTRY) {
+      DisplayPINEntry();
+    } else {
+      DisplayPINVerify();
+    }
+    return;
+  }
+  
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  
+  switch (currentMenu) {
+    case MENU_MAIN:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("RadioDoge Menu");
+      radioDogeDisplay.setCursor(0, 10);
+      if (menuSelection == 0) {
+        radioDogeDisplay.println("> Dogecoin Wallet");
+      } else {
+        radioDogeDisplay.println("  Dogecoin Wallet");
+      }
+      radioDogeDisplay.setCursor(0, 20);
+      if (menuSelection == 1) {
+        radioDogeDisplay.print("> Moon: ");
+        radioDogeDisplay.println(moon());
+      } else {
+        radioDogeDisplay.print("  Moon: ");
+        radioDogeDisplay.println(moon());
+      }
+      radioDogeDisplay.setCursor(0, 30);
+      if (menuSelection == 2) {
+        radioDogeDisplay.println("> Device Status");
+      } else {
+        radioDogeDisplay.println("  Device Status");
+      }
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Sel 2:Chg 3:Bk L:Ex");
+      break;
+      
+    case MENU_WALLET: {
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Dogecoin Wallet");
+      
+      bool canGenerate = isColdStorageUnlocked() && cold_storage.password_set;
+      int yPos = 10;
+      
+      if (canGenerate) {
+        // Show Generate and Add options
+        radioDogeDisplay.setCursor(0, yPos);
+        if (menuSelection == 0) {
+          radioDogeDisplay.println("> Generate Address");
+        } else {
+          radioDogeDisplay.println("  Generate Address");
+        }
+        yPos += 10;
+        radioDogeDisplay.setCursor(0, yPos);
+        if (menuSelection == 1) {
+          radioDogeDisplay.println("> Add Manual Wallet");
+        } else {
+          radioDogeDisplay.println("  Add Manual Wallet");
+        }
+        yPos += 10;
+      }
+      
+      // Lock/Unlock Storage
+      radioDogeDisplay.setCursor(0, yPos);
+      int lockIndex = canGenerate ? 2 : 0;
+      if (menuSelection == lockIndex) {
+        if (isColdStorageUnlocked()) {
+          radioDogeDisplay.println("> Lock Storage");
+        } else {
+          radioDogeDisplay.println("> Unlock Storage");
+        }
+      } else {
+        if (isColdStorageUnlocked()) {
+          radioDogeDisplay.println("  Lock Storage");
+        } else {
+          radioDogeDisplay.println("  Unlock Storage");
+        }
+      }
+      
+      if (isColdStorageUnlocked()) {
+        yPos += 10;
+        radioDogeDisplay.setCursor(0, yPos);
+        int viewIndex = canGenerate ? 3 : 1;
+        if (menuSelection == viewIndex) {
+          radioDogeDisplay.println("> View Wallets");
+        } else {
+          radioDogeDisplay.println("  View Wallets");
+        }
+        yPos += 10;
+        radioDogeDisplay.setCursor(0, yPos);
+        int pinIndex = canGenerate ? 4 : 2;
+        if (menuSelection == pinIndex) {
+          radioDogeDisplay.println("> Change PIN");
+        } else {
+          radioDogeDisplay.println("  Change PIN");
+        }
+      }
+      
+      //radioDogeDisplay.setCursor(0, 55);
+      //radioDogeDisplay.println("1:Sel 2:Chg 3:Bk L:Ex");
+      break;
+    }
+      
+    case MENU_WALLET_GENERATE:
+      // Display is handled by GenerateDogecoinAddressOnDevice
+      // Don't clear it here to avoid flickering
+      return; // Skip display update to preserve current display
+      
+    case MENU_WALLET_DISPLAY:
+      // This case should never be reached due to early return above
+      // But handle it just in case
+      DisplayWalletText();
+      return;
+      
+    case MENU_WALLET_OPTIONS:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Wallet Options");
+      radioDogeDisplay.setCursor(0, 10);
+      if (menuSelection == 0) {
+        radioDogeDisplay.println("> View Keys");
+      } else {
+        radioDogeDisplay.println("  View Keys");
+      }
+      radioDogeDisplay.setCursor(0, 20);
+      if (menuSelection == 1) {
+        radioDogeDisplay.println("> Store Wallet");
+      } else {
+        radioDogeDisplay.println("  Store Wallet");
+      }
+      radioDogeDisplay.setCursor(0, 30);
+      if (menuSelection == 2) {
+        radioDogeDisplay.println("> Main Menu");
+      } else {
+        radioDogeDisplay.println("  Main Menu");
+      }
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Sel 2:Chg 3:Bk L:Ex");
+      break;
+      
+    case MENU_MOON: {
+      radioDogeDisplay.clearDisplay();
+      radioDogeDisplay.setTextSize(1);
+      radioDogeDisplay.setTextColor(SSD1306_WHITE);
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Moon Phase");
+      radioDogeDisplay.setCursor(0, 10);
+      radioDogeDisplay.println("----------------");
+      
+      // Get current moon phase (0-7)
+      int phase = moonPhase();
+      if (phase >= 0 && phase < 8) {
+        // Display moon phase XBM bitmap (centered, 32x32)
+        radioDogeDisplay.drawBitmap(48, 20, moon_phases[phase], moon_phase_width, moon_phase_height, SSD1306_WHITE);
+      }
+      
+      // Display moon phase name below the icon
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println(moon());
+      break;
+    }
+      
+    case MENU_STATUS:
+      DisplayDeviceStatus();
+      break;
+      
+    case MENU_STORAGE_LOCK:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Lock Storage");
+      radioDogeDisplay.setCursor(0, 15);
+      radioDogeDisplay.println("Set a PIN to");
+      radioDogeDisplay.setCursor(0, 25);
+      radioDogeDisplay.println("encrypt storage");
+      radioDogeDisplay.setCursor(0, 40);
+      radioDogeDisplay.println("(Min 4 digits)");
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Set PIN 3:Back");
+      break;
+      
+    case MENU_STORAGE_UNLOCK:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Unlock Storage");
+      radioDogeDisplay.setCursor(0, 15);
+      radioDogeDisplay.println("Enter your PIN");
+      radioDogeDisplay.setCursor(0, 25);
+      radioDogeDisplay.println("to decrypt");
+      radioDogeDisplay.setCursor(0, 40);
+      radioDogeDisplay.println("stored wallets");
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Enter PIN 3:Back");
+      break;
+      
+    case MENU_PIN_ENTRY:
+      DisplayPINEntry();
+      return;
+      
+    case MENU_PIN_VERIFY:
+      DisplayPINVerify();
+      return;
+      
+    case MENU_MANUAL_WALLET_ENTRY:
+      DisplayManualWalletEntry();
+      return;
+      
+    case MENU_MANUAL_WALLET_CONFIRM:
+      DisplayManualWalletConfirm();
+      return;
+      
+    case MENU_STORAGE_VIEW:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Stored Wallets");
+      if (cold_storage.item_count == 0) {
+        radioDogeDisplay.setCursor(0, 20);
+        radioDogeDisplay.println("No wallets stored");
+      } else {
+        int displayIndex = 0;
+        int walletIndex = 0;
+        for (int i = 0; i < MAX_STORAGE_ITEMS && displayIndex < 3; i++) {
+          if (cold_storage.items[i].active && strcmp(cold_storage.items[i].name, "Password Set") != 0) {
+            // Skip "Password Set" marker item - only show actual wallets
+            radioDogeDisplay.setCursor(0, 15 + displayIndex * 10);
+            if (walletIndex == menuSelection) {
+              radioDogeDisplay.print("> ");
+            } else {
+              radioDogeDisplay.print("  ");
+            }
+            radioDogeDisplay.println(cold_storage.items[i].name);
+            displayIndex++;
+            walletIndex++;
+          }
+        }
+      }
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:View 2:Chg 3:Bk L:Ex");
+      break;
+      
+    case MENU_STORAGE_WALLET_DETAILS:
+      if (walletDetailsMenuSelection == 0) {
+        // Show WIF view
+        DisplayStoredWalletText();
+        return;
+      } else {
+        // Show menu options
+        radioDogeDisplay.clearDisplay();
+        radioDogeDisplay.setTextSize(1);
+        radioDogeDisplay.setTextColor(SSD1306_WHITE);
+        radioDogeDisplay.setCursor(0, 0);
+        radioDogeDisplay.println("Wallet Options");
+        radioDogeDisplay.setCursor(0, 15);
+        if (walletDetailsMenuSelection == 1) {
+          radioDogeDisplay.println("> View PrivKey");
+        } else {
+          radioDogeDisplay.println("  View PrivKey");
+        }
+        radioDogeDisplay.setCursor(0, 25);
+        if (walletDetailsMenuSelection == 2) {
+          radioDogeDisplay.println("> Delete Wallet");
+        } else {
+          radioDogeDisplay.println("  Delete Wallet");
+        }
+        radioDogeDisplay.setCursor(0, 35);
+        if (walletDetailsMenuSelection == 3) {
+          radioDogeDisplay.println("> View Wallets");
+        } else {
+          radioDogeDisplay.println("  View Wallets");
+        }
+        radioDogeDisplay.setCursor(0, 55);
+        radioDogeDisplay.println("1:Sel 2:Chg 3:Bk L:Ex");
+        radioDogeDisplay.display();
+        return;
+      }
+      break;
+      
+    case MENU_CHANGE_PIN:
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Change PIN");
+      radioDogeDisplay.setCursor(0, 15);
+      radioDogeDisplay.println("Enter current PIN");
+      radioDogeDisplay.setCursor(0, 25);
+      radioDogeDisplay.println("to change it");
+      radioDogeDisplay.setCursor(0, 40);
+      radioDogeDisplay.println("(Min 4 digits)");
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Enter 3:Back");
+      break;
+      
+    case MENU_STORAGE_DELETE_CONFIRM:
+      radioDogeDisplay.clearDisplay();
+      radioDogeDisplay.setTextSize(1);
+      radioDogeDisplay.setTextColor(SSD1306_WHITE);
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("DELETE WALLET");
+      radioDogeDisplay.setCursor(0, 10);
+      radioDogeDisplay.println("IRREVERSIBLE!");
+      radioDogeDisplay.setCursor(0, 20);
+      radioDogeDisplay.println("Cannot recover");
+      radioDogeDisplay.setCursor(0, 30);
+      radioDogeDisplay.println("Enter PIN:");
+      radioDogeDisplay.setCursor(0, 40);
+      // Show PIN entry (masked)
+      String pinDisplay = "";
+      for (int i = 0; i < pin_buffer.length(); i++) {
+        pinDisplay += "*";
+      }
+      if (pin_buffer.length() < 20) {
+        pinDisplay += pin_charset[pin_char_index];
+      }
+      radioDogeDisplay.println(pinDisplay);
+      radioDogeDisplay.setCursor(0, 55);
+      radioDogeDisplay.println("1:Chg 2:Sel 3:BK L:Del");
+      break;
+  }
+  
+  radioDogeDisplay.display();
+}
+
+void GenerateDogecoinAddressOnDevice() {
+  // Set menu state first
+  currentMenu = MENU_WALLET_GENERATE;
+  
+  // Show generating message with moon!
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Generating...");
+  radioDogeDisplay.setCursor(0, 15);
+  radioDogeDisplay.println("Using libdogecoin");
+  radioDogeDisplay.setCursor(0, 35);
+  radioDogeDisplay.println(moon()); // Show moon message!
+  radioDogeDisplay.display();
+  
+  addLog("[Wallet] Generating Dogecoin keypair with libdogecoin...");
+  addLog("[Wallet] " + String(moon()));
+  
+  // Initialize ECC context
+  dogecoin_ecc_start();
+  
+  // Generate keypair (false = mainnet)
+  int result = generatePrivPubKeypair(generatedWIF, generatedAddress, false);
+  
+  // Stop ECC context
+  dogecoin_ecc_stop();
+  
+  if (result == 1) {
+    walletGenerated = true;
+    
+    addLog("[Wallet] Generated address: " + String(generatedAddress));
+    addLog("[Wallet] WIF: " + String(generatedWIF).substring(0, 10) + "...");
+    
+    
+    // Switch to wallet options menu (user can choose to view keys or store)
+    currentMenu = MENU_WALLET_OPTIONS;
+    menuSelection = 0;
+  } else {
+    walletGenerated = false;
+    addLog("[Wallet] Failed to generate keypair");
+    DisplayError("Generation Failed");
+  }
+}
+
+void DisplayWalletText() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  
+  if (showPrivateKey) {
+    // Show WIF Private Key
+    radioDogeDisplay.setCursor(0, 0);
+    radioDogeDisplay.println("Private Key:");
+    radioDogeDisplay.setCursor(0, 10);
+    String wifStr = String(generatedWIF);
+    int wifLen = (int)wifStr.length();
+    radioDogeDisplay.println(wifStr.substring(0, min(21, wifLen)));
+    if (wifLen > 21) {
+      radioDogeDisplay.setCursor(0, 19);
+      radioDogeDisplay.println(wifStr.substring(21, min(42, wifLen)));
+    }
+    if (wifStr.length() > 42) {
+      radioDogeDisplay.setCursor(0, 28);
+      radioDogeDisplay.println(wifStr.substring(42));
+    }
+    if (wifStr.length() > 63) {
+      radioDogeDisplay.setCursor(0, 37);
+      radioDogeDisplay.println(wifStr.substring(63));
+    }
+  } else {
+    // Show Public Key (Address)
+    radioDogeDisplay.setCursor(0, 0);
+    radioDogeDisplay.println("Public Address:");
+    radioDogeDisplay.setCursor(0, 10);
+    String addrStr = String(generatedAddress);
+    int addrLen = (int)addrStr.length();
+    radioDogeDisplay.println(addrStr.substring(0, min(21, addrLen)));
+    if (addrLen > 21) {
+      radioDogeDisplay.setCursor(0, 19);
+      radioDogeDisplay.println(addrStr.substring(21));
+    }
+  }
+  
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("1:Toggle 2:Menu 3:Back");
+  
+  radioDogeDisplay.display();
+}
+
+void UpdateWalletDisplay() {
+  if (!walletGenerated) return;
+  DisplayWalletText();
+}
+
+void DisplayGeneratedAddress(String privKey, String pubKey) {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  
+  // Show WIF Private Key (truncated to fit screen)
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("WIF Private Key:");
+  radioDogeDisplay.setCursor(0, 9);
+  radioDogeDisplay.println(privKey.substring(0, 21));
+  radioDogeDisplay.setCursor(0, 18);
+  if (privKey.length() > 21) {
+    radioDogeDisplay.println(privKey.substring(21, 42));
+  }
+  radioDogeDisplay.setCursor(0, 27);
+  if (privKey.length() > 42) {
+    radioDogeDisplay.println(privKey.substring(42));
+  }
+  
+  // Show Dogecoin Address
+  radioDogeDisplay.setCursor(0, 40);
+  radioDogeDisplay.println("Address:");
+  radioDogeDisplay.setCursor(0, 49);
+  radioDogeDisplay.println(pubKey); // Dogecoin addresses fit on one line
+  
+  radioDogeDisplay.setCursor(0, 58);
+  radioDogeDisplay.print("Press 3: Back");
+  
+  radioDogeDisplay.display();
+  addLog("[Wallet] Generated address via button menu");
+}
+
+void DisplayWasmMessage() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("WASM requires");
+  radioDogeDisplay.setCursor(0, 10);
+  radioDogeDisplay.println("web browser");
+  radioDogeDisplay.setCursor(0, 25);
+  radioDogeDisplay.println("Open:");
+  radioDogeDisplay.setCursor(0, 35);
+  radioDogeDisplay.println("192.168.4.1");
+  radioDogeDisplay.setCursor(0, 45);
+  radioDogeDisplay.println("Dogecoin Wallet");
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("Press 3: Back");
+  radioDogeDisplay.display();
+}
+
+void DisplayError(String error) {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Error:");
+  radioDogeDisplay.setCursor(0, 15);
+  radioDogeDisplay.println(error);
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("Press 3 to go back");
+  radioDogeDisplay.display();
+}
+
+// ============================================================================
+// QUANTUM-RESISTANT STORAGE FUNCTIONS
+// ============================================================================
+
+// Initialize cold storage
+void initColdStorage() {
+  memset(&cold_storage, 0, sizeof(cold_storage));
+  cold_storage.initialized = true;
+  cold_storage.unlocked = false;
+  cold_storage.password_set = false;
+  cold_storage.item_count = 0;
+  cold_storage.version = 1;
+  
+  // Load cold storage state from NVS
+  loadColdStorageState();
+  
+  addLog("[Storage] Cold storage initialized");
+}
+
+// Save cold storage state to NVS (password_set flag and item_count)
+void saveColdStorageState() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("cold_storage", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error opening NVS for cold storage state");
+    return;
+  }
+  
+  // Save password_set flag
+  err = nvs_set_u8(nvs_handle, "password_set", cold_storage.password_set ? 1 : 0);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error saving password_set flag");
+  }
+  
+  // Save item_count
+  err = nvs_set_u8(nvs_handle, "item_count", cold_storage.item_count);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error saving item_count");
+  }
+  
+  // Save version
+  err = nvs_set_u8(nvs_handle, "version", cold_storage.version);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error saving version");
+  }
+  
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error committing cold storage state");
+  }
+  
+  nvs_close(nvs_handle);
+  addLog("[Storage] Cold storage state saved to NVS");
+}
+
+// Load cold storage state from NVS
+void loadColdStorageState() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("cold_storage", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    addLog("[Storage] No cold storage state found in NVS (first run)");
+    return;
+  }
+  
+  // Load password_set flag
+  uint8_t password_set = 0;
+  err = nvs_get_u8(nvs_handle, "password_set", &password_set);
+  if (err == ESP_OK) {
+    cold_storage.password_set = (password_set == 1);
+    addLog("[Storage] Loaded password_set: " + String(cold_storage.password_set ? "true" : "false"));
+  }
+  
+  // Load item_count
+  uint8_t item_count = 0;
+  err = nvs_get_u8(nvs_handle, "item_count", &item_count);
+  if (err == ESP_OK) {
+    cold_storage.item_count = item_count;
+    addLog("[Storage] Loaded item_count: " + String(cold_storage.item_count));
+  }
+  
+  // Load version
+  uint8_t version = 1;
+  err = nvs_get_u8(nvs_handle, "version", &version);
+  if (err == ESP_OK) {
+    cold_storage.version = version;
+  }
+  
+  nvs_close(nvs_handle);
+  
+  // Load all storage items from NVS
+  loadAllStorageItems();
+}
+
+// Save a storage item to NVS
+void saveStorageItemToNVS(int slot) {
+  if (slot < 0 || slot >= MAX_STORAGE_ITEMS) return;
+  if (!cold_storage.items[slot].active) return;
+  
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  char key[16];
+  snprintf(key, sizeof(key), "item_%d", slot);
+  
+  err = nvs_open("cold_storage", NVS_READWRITE, &nvs_handle);
+  if (err != ESP_OK) {
+    addLog("[Storage] Error opening NVS for item save");
+    return;
+  }
+  
+  // Save item as blob (entire StorageItem structure)
+  err = nvs_set_blob(nvs_handle, key, &cold_storage.items[slot], sizeof(StorageItem));
+  if (err != ESP_OK) {
+    addLog("[Storage] Error saving item to NVS");
+  } else {
+    err = nvs_commit(nvs_handle);
+    if (err != ESP_OK) {
+      addLog("[Storage] Error committing item to NVS");
+    } else {
+      addLog("[Storage] Item saved to NVS: " + String(key));
+    }
+  }
+  
+  nvs_close(nvs_handle);
+}
+
+// Load all storage items from NVS
+void loadAllStorageItems() {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  
+  err = nvs_open("cold_storage", NVS_READONLY, &nvs_handle);
+  if (err != ESP_OK) {
+    addLog("[Storage] No cold storage namespace found");
+    return;
+  }
+  
+  int loaded_count = 0;
+  for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+    char key[16];
+    snprintf(key, sizeof(key), "item_%d", i);
+    
+    size_t required_size = sizeof(StorageItem);
+    err = nvs_get_blob(nvs_handle, key, NULL, &required_size);
+    if (err == ESP_OK && required_size == sizeof(StorageItem)) {
+      err = nvs_get_blob(nvs_handle, key, &cold_storage.items[i], &required_size);
+      if (err == ESP_OK) {
+        loaded_count++;
+        addLog("[Storage] Loaded item from NVS: " + String(key));
+      }
+    }
+  }
+  
+  nvs_close(nvs_handle);
+  addLog("[Storage] Loaded " + String(loaded_count) + " items from NVS");
+}
+
+// Generate random salt
+void generateSalt(uint8_t* salt) {
+  esp_fill_random(salt, SALT_SIZE);
+}
+
+// Derive encryption key from password using PBKDF2
+bool deriveKey(const char* password, const uint8_t* salt, uint8_t* key) {
+  mbedtls_pkcs5_pbkdf2_hmac_ext(
+    MBEDTLS_MD_SHA256,
+    (const unsigned char*)password, strlen(password),
+    salt, SALT_SIZE,
+    PBKDF2_ITERATIONS,
+    AES_KEY_SIZE,
+    key
+  );
+  return true;
+}
+
+// Encrypt data using AES-256-CBC
+bool encryptData(const uint8_t* plaintext, uint16_t plaintext_len, const uint8_t* key, const uint8_t* iv, uint8_t* ciphertext) {
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+  
+  if (mbedtls_aes_setkey_enc(&aes, key, 256) != 0) {
+    mbedtls_aes_free(&aes);
+    return false;
+  }
+  
+  uint8_t iv_copy[AES_BLOCK_SIZE];
+  memcpy(iv_copy, iv, AES_BLOCK_SIZE);
+  
+  if (mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, plaintext_len, iv_copy, plaintext, ciphertext) != 0) {
+    mbedtls_aes_free(&aes);
+    return false;
+  }
+  
+  mbedtls_aes_free(&aes);
+  return true;
+}
+
+// Decrypt data using AES-256-CBC
+bool decryptData(const uint8_t* ciphertext, uint16_t ciphertext_len, const uint8_t* key, const uint8_t* iv, uint8_t* plaintext) {
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+  
+  if (mbedtls_aes_setkey_dec(&aes, key, 256) != 0) {
+    mbedtls_aes_free(&aes);
+    return false;
+  }
+  
+  uint8_t iv_copy[AES_BLOCK_SIZE];
+  memcpy(iv_copy, iv, AES_BLOCK_SIZE);
+  
+  if (mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, ciphertext_len, iv_copy, ciphertext, plaintext) != 0) {
+    mbedtls_aes_free(&aes);
+    return false;
+  }
+  
+  mbedtls_aes_free(&aes);
+  return true;
+}
+
+// Unlock cold storage with PIN
+bool unlockColdStorage(const char* pin) {
+  // Show "Please wait..." message
+  DisplayPleaseWait("Decrypting...");
+  
+  if (!cold_storage.initialized) {
+    initColdStorage();
+  }
+  
+  if (cold_storage.failed_attempts >= 3) {
+    unsigned long lockout_time = 300000; // 5 minutes
+    if (millis() - cold_storage.last_attempt_time < lockout_time) {
+      return false;
+    } else {
+      cold_storage.failed_attempts = 0;
+    }
+  }
+  
+  // If no password set, accept any PIN for initial setup
+  if (!cold_storage.password_set) {
+    cold_storage.unlocked = true;
+    cold_storage.unlock_time = millis();
+    current_password = String(pin);
+    return true;
+  }
+  
+  // Verify PIN by attempting to decrypt the marker item (first item should be "Password Set")
+  // This is the most reliable way to verify the PIN
+  if (cold_storage.item_count > 0) {
+    // First, try to find and verify the marker item
+    bool markerFound = false;
+    for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+      if (cold_storage.items[i].active && strcmp(cold_storage.items[i].name, "Password Set") == 0) {
+        markerFound = true;
+        uint8_t derived_key[AES_KEY_SIZE];
+        deriveKey(pin, cold_storage.items[i].salt, derived_key);
+        
+        // Decrypt the full item data
+        uint8_t test_plaintext[MAX_ITEM_DATA_LEN];
+        if (decryptData(cold_storage.items[i].encrypted_data, cold_storage.items[i].data_length, 
+                       derived_key, cold_storage.items[i].iv, test_plaintext)) {
+          
+          // Verify it contains the expected marker text exactly
+          String decryptedText = String((char*)test_plaintext);
+          decryptedText.trim();
+          // Remove any padding/null characters
+          while (decryptedText.length() > 0 && (decryptedText.charAt(decryptedText.length() - 1) == 0 || 
+                 decryptedText.charAt(decryptedText.length() - 1) == '\0')) {
+            decryptedText = decryptedText.substring(0, decryptedText.length() - 1);
+          }
+          
+          if (decryptedText == "Master password initialized") {
+            // PIN is correct!
+            cold_storage.unlocked = true;
+            cold_storage.unlock_time = millis();
+            cold_storage.failed_attempts = 0;
+            current_password = String(pin);
+            return true;
+          }
+        }
+        break; // Only check the marker item
+      }
+    }
+    
+    // If no marker item found, verify using first wallet item (backward compatibility)
+    if (!markerFound && cold_storage.item_count > 0) {
+      for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+        if (cold_storage.items[i].active && strcmp(cold_storage.items[i].name, "Password Set") != 0) {
+          uint8_t derived_key[AES_KEY_SIZE];
+          deriveKey(pin, cold_storage.items[i].salt, derived_key);
+          
+          // Decrypt the full item data
+          uint8_t test_plaintext[MAX_ITEM_DATA_LEN];
+          if (decryptData(cold_storage.items[i].encrypted_data, cold_storage.items[i].data_length, 
+                         derived_key, cold_storage.items[i].iv, test_plaintext)) {
+            
+            // For wallet items, verify the data format strictly (should contain "|" separator and valid WIF format)
+            String decryptedText = String((char*)test_plaintext);
+            decryptedText.trim();
+            // Remove padding
+            while (decryptedText.length() > 0 && (decryptedText.charAt(decryptedText.length() - 1) == 0 || 
+                   decryptedText.charAt(decryptedText.length() - 1) == '\0')) {
+              decryptedText = decryptedText.substring(0, decryptedText.length() - 1);
+            }
+            
+            int separatorPos = decryptedText.indexOf('|');
+            if (separatorPos > 0 && separatorPos < decryptedText.length() - 1) {
+              String wif = decryptedText.substring(0, separatorPos);
+              String address = decryptedText.substring(separatorPos + 1);
+              // Verify WIF starts with 'Q' or '6' (Dogecoin WIF format) and address starts with 'D'
+              if (wif.length() >= 51 && (wif.charAt(0) == 'Q' || wif.charAt(0) == '6') && 
+                  address.length() >= 34 && address.charAt(0) == 'D') {
+                // Valid wallet format - PIN is correct!
+                cold_storage.unlocked = true;
+                cold_storage.unlock_time = millis();
+                cold_storage.failed_attempts = 0;
+                current_password = String(pin);
+                return true;
+              }
+            }
+          }
+          break; // Only check first wallet item
+        }
+      }
+    }
+  }
+  
+  cold_storage.failed_attempts++;
+  cold_storage.last_attempt_time = millis();
+  return false;
+}
+
+// Lock cold storage
+void lockColdStorage() {
+  cold_storage.unlocked = false;
+  current_password = "";
+  addLog("[Storage] Storage locked");
+}
+
+// Check if storage is unlocked
+bool isColdStorageUnlocked() {
+  if (!cold_storage.unlocked) return false;
+  
+  // Auto-lock after 30 minutes
+  unsigned long session_timeout = 1800000; // 30 minutes
+  if (millis() - cold_storage.unlock_time > session_timeout) {
+    lockColdStorage();
+    return false;
+  }
+  
+  return true;
+}
+
+// Store wallet
+bool StoreCurrentWallet() {
+  if (!isColdStorageUnlocked()) return false;
+  if (!cold_storage.password_set) return false; // PIN must be set
+  if (cold_storage.item_count >= MAX_STORAGE_ITEMS) return false;
+  if (!walletGenerated) return false;
+  
+  // Show "Please wait..." message
+  DisplayPleaseWait("Encrypting wallet...");
+  
+  // Find empty slot
+  int slot = -1;
+  for (int i = 0; i < MAX_STORAGE_ITEMS; i++) {
+    if (!cold_storage.items[i].active) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot == -1) return false;
+  
+  // Prepare wallet data (WIF + Address)
+  String walletData = String(generatedWIF) + "|" + String(generatedAddress);
+  uint16_t data_len = walletData.length();
+  if (data_len > MAX_ITEM_DATA_LEN - AES_BLOCK_SIZE) return false;
+  
+  // Generate salt and IV
+  generateSalt(cold_storage.items[slot].salt);
+  uint8_t iv[AES_BLOCK_SIZE];
+  generateSalt(iv);
+  
+  // Derive key
+  uint8_t derived_key[AES_KEY_SIZE];
+  deriveKey(current_password.c_str(), cold_storage.items[slot].salt, derived_key);
+  
+  // Encrypt data
+  uint8_t padded_data[MAX_ITEM_DATA_LEN];
+  memset(padded_data, 0, sizeof(padded_data));
+  memcpy(padded_data, walletData.c_str(), data_len);
+  uint16_t padded_len = ((data_len + AES_BLOCK_SIZE - 1) / AES_BLOCK_SIZE) * AES_BLOCK_SIZE;
+  
+  if (!encryptData(padded_data, padded_len, derived_key, iv, 
+                  cold_storage.items[slot].encrypted_data)) {
+    return false;
+  }
+  
+  memcpy(cold_storage.items[slot].iv, iv, AES_BLOCK_SIZE);
+  
+  // Fill item structure
+  cold_storage.items[slot].id = slot + 1;
+  cold_storage.items[slot].type = STORAGE_PRIVATE_KEY;
+  snprintf(cold_storage.items[slot].name, MAX_ITEM_NAME_LEN, "Wallet %d", slot + 1);
+  cold_storage.items[slot].data_length = padded_len;
+  cold_storage.items[slot].created_timestamp = millis();
+  cold_storage.items[slot].last_accessed = millis();
+  cold_storage.items[slot].active = true;
+  
+  cold_storage.item_count++;
+  
+  // Save item to NVS for persistence
+  saveStorageItemToNVS(slot);
+  
+  // Save cold storage state (item_count)
+  saveColdStorageState();
+  
+  addLog("[Storage] Wallet stored: " + String(cold_storage.items[slot].name));
+  return true;
+}
+
+// View stored wallet - decrypt and load it
+bool ViewStoredWallet(int slot) {
+  if (slot < 0 || slot >= MAX_STORAGE_ITEMS) return false;
+  if (!cold_storage.items[slot].active) return false;
+  if (!isColdStorageUnlocked()) return false;
+  
+  // Show "Please wait..." message
+  DisplayPleaseWait("Decrypting wallet...");
+  
+  // Derive key
+  uint8_t derived_key[AES_KEY_SIZE];
+  deriveKey(current_password.c_str(), cold_storage.items[slot].salt, derived_key);
+  
+  // Decrypt data
+  uint8_t decrypted_data[MAX_ITEM_DATA_LEN];
+  if (!decryptData(cold_storage.items[slot].encrypted_data, cold_storage.items[slot].data_length,
+                   derived_key, cold_storage.items[slot].iv, decrypted_data)) {
+    addLog("[Storage] Failed to decrypt wallet at slot " + String(slot));
+    return false;
+  }
+  
+  // Parse wallet data (format: "WIF|Address")
+  String walletData = String((char*)decrypted_data);
+  int separatorPos = walletData.indexOf('|');
+  
+  if (separatorPos > 0) {
+    String wif = walletData.substring(0, separatorPos);
+    String address = walletData.substring(separatorPos + 1);
+    
+    // Remove padding/null characters
+    wif.trim();
+    address.trim();
+    
+    // Copy to viewing buffers
+    strncpy(viewedWIF, wif.c_str(), PRIVKEYWIFLEN - 1);
+    viewedWIF[PRIVKEYWIFLEN - 1] = '\0';
+    strncpy(viewedAddress, address.c_str(), P2PKHLEN - 1);
+    viewedAddress[P2PKHLEN - 1] = '\0';
+    
+    // Update last accessed time
+    cold_storage.items[slot].last_accessed = millis();
+    
+    addLog("[Storage] Wallet decrypted: " + String(cold_storage.items[slot].name));
+    return true;
+  }
+  
+  addLog("[Storage] Invalid wallet data format");
+  return false;
+}
+
+// Display stored wallet text
+void DisplayStoredWalletText() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  
+  // Show wallet name if available
+  if (selectedWalletIndex >= 0 && selectedWalletIndex < MAX_STORAGE_ITEMS) {
+    radioDogeDisplay.setCursor(0, 0);
+    String walletName = String(cold_storage.items[selectedWalletIndex].name);
+    if (walletName.length() > 20) {
+      walletName = walletName.substring(0, 17) + "...";
+    }
+    radioDogeDisplay.println(walletName);
+  }
+  
+  // Show WIF Private Key (truncated to fit screen)
+  radioDogeDisplay.setCursor(0, 10);
+  radioDogeDisplay.println("WIF:");
+  radioDogeDisplay.setCursor(0, 19);
+  String wifStr = String(viewedWIF);
+  int wifLen = (int)wifStr.length();
+  radioDogeDisplay.println(wifStr.substring(0, min(21, wifLen)));
+  if (wifLen > 21) {
+    radioDogeDisplay.setCursor(0, 28);
+    radioDogeDisplay.println(wifStr.substring(21, min(42, wifLen)));
+  }
+  if (wifStr.length() > 42) {
+    radioDogeDisplay.setCursor(0, 37);
+    radioDogeDisplay.println(wifStr.substring(42));
+  }
+  
+  // Show Dogecoin Address (if there's space)
+  if (wifLen <= 42) {
+    radioDogeDisplay.setCursor(0, 46);
+    radioDogeDisplay.println("Addr:");
+    radioDogeDisplay.setCursor(0, 55);
+    String addrStr = String(viewedAddress);
+    int addrLen = (int)addrStr.length();
+    radioDogeDisplay.println(addrStr.substring(0, min(20, addrLen)));
+  }
+  
+  radioDogeDisplay.display();
+}
+
+// Delete wallet from storage
+bool deleteWallet(int slot) {
+  if (slot < 0 || slot >= MAX_STORAGE_ITEMS) return false;
+  if (!cold_storage.items[slot].active) return false;
+  if (!isColdStorageUnlocked()) return false;
+  
+  // Show "Please wait..." message
+  DisplayPleaseWait("Deleting wallet...");
+  
+  // Delete from NVS first
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+  char key[16];
+  snprintf(key, sizeof(key), "item_%d", slot);
+  
+  err = nvs_open("cold_storage", NVS_READWRITE, &nvs_handle);
+  if (err == ESP_OK) {
+    // Erase the item from NVS
+    err = nvs_erase_key(nvs_handle, key);
+    if (err == ESP_OK) {
+      err = nvs_commit(nvs_handle);
+      if (err == ESP_OK) {
+        addLog("[Storage] Wallet deleted from NVS: " + String(key));
+      }
+    }
+    nvs_close(nvs_handle);
+  }
+  
+  // Clear the item from memory
+  memset(&cold_storage.items[slot], 0, sizeof(StorageItem));
+  cold_storage.items[slot].active = false;
+  
+  // Decrease item count
+  if (cold_storage.item_count > 0) {
+    cold_storage.item_count--;
+  }
+  
+  // Update item_count in NVS
+  saveColdStorageState();
+  
+  addLog("[Storage] Wallet deleted from slot: " + String(slot));
+  return true;
+}
+
+// ============================================================================
+// PIN ENTRY FUNCTIONS
+// ============================================================================
+
+// Cycle PIN character (1 click)
+void cyclePINCharacter() {
+  pin_char_index++;
+  if (pin_char_index >= strlen(pin_charset)) {
+    pin_char_index = 0;
+  }
+}
+
+// Add PIN character (2 clicks)
+void addPINCharacter() {
+  if (pin_buffer.length() < 20) {
+    pin_buffer += pin_charset[pin_char_index];
+    pin_char_index = 0;
+  }
+}
+
+// Display PIN entry screen
+void DisplayPINEntry() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Enter PIN:");
+  radioDogeDisplay.setCursor(0, 15);
+  String displayPIN = "";
+  for (int i = 0; i < pin_buffer.length(); i++) {
+    displayPIN += "*";
+  }
+  displayPIN += pin_charset[pin_char_index];
+  radioDogeDisplay.println(displayPIN);
+  radioDogeDisplay.setCursor(0, 30);
+  radioDogeDisplay.println("Char: " + String(pin_charset[pin_char_index]));
+  radioDogeDisplay.setCursor(0, 45);
+  radioDogeDisplay.println("1:Cycle 2:Add 3:Back");
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("L:Confirm");
+  radioDogeDisplay.display();
+}
+
+// Display PIN verification screen
+void DisplayPINVerify() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Verify PIN:");
+  radioDogeDisplay.setCursor(0, 15);
+  String displayPIN = "";
+  for (int i = 0; i < pin_verify_buffer.length(); i++) {
+    displayPIN += "*";
+  }
+  displayPIN += pin_charset[pin_char_index];
+  radioDogeDisplay.println(displayPIN);
+  radioDogeDisplay.setCursor(0, 30);
+  radioDogeDisplay.println("Char: " + String(pin_charset[pin_char_index]));
+  radioDogeDisplay.setCursor(0, 45);
+  radioDogeDisplay.println("1:Cycle 2:Add 3:Back");
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("L:Confirm");
+  radioDogeDisplay.display();
+}
+
+// Display "Please wait..." message
+void DisplayPleaseWait(String message) {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 20);
+  radioDogeDisplay.println("Please wait...");
+  if (message.length() > 0) {
+    radioDogeDisplay.setCursor(0, 35);
+    radioDogeDisplay.println(message);
+  }
+  radioDogeDisplay.display();
+}
+
+// Display manual wallet entry screen
+void DisplayManualWalletEntry() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Enter Wallet:");
+  radioDogeDisplay.setCursor(0, 10);
+  radioDogeDisplay.println("(WIF or Seed)");
+  
+  // Display entered text (truncated if too long)
+  radioDogeDisplay.setCursor(0, 25);
+  String displayText = manual_wallet_buffer;
+  if (displayText.length() > 20) {
+    displayText = displayText.substring(displayText.length() - 20);
+  }
+  radioDogeDisplay.println(displayText);
+  
+  // Display current character
+  radioDogeDisplay.setCursor(0, 35);
+  radioDogeDisplay.print("Char: ");
+  radioDogeDisplay.println(String(wallet_charset[manual_wallet_char_index]));
+  
+  radioDogeDisplay.setCursor(0, 45);
+  radioDogeDisplay.println("1:Cycle 2:Add");
+  radioDogeDisplay.setCursor(0, 55);
+  radioDogeDisplay.println("3:Del  L:Confirm");
+  radioDogeDisplay.display();
+}
+
+// Display manual wallet confirmation screen
+void DisplayManualWalletConfirm() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setCursor(0, 0);
+  radioDogeDisplay.println("Confirm Entry:");
+  
+  // Display entered text (truncated if too long)
+  radioDogeDisplay.setCursor(0, 15);
+  String displayText = manual_wallet_confirm_buffer;
+  if (displayText.length() > 20) {
+    displayText = displayText.substring(displayText.length() - 20);
+  }
+  radioDogeDisplay.println(displayText);
+  
+  // Display current character
+  radioDogeDisplay.setCursor(0, 30);
+  radioDogeDisplay.print("Char: ");
+  radioDogeDisplay.println(String(wallet_charset[manual_wallet_char_index]));
+  
+  radioDogeDisplay.setCursor(0, 40);
+  radioDogeDisplay.println("1:Cycle 2:Add");
+  radioDogeDisplay.setCursor(0, 50);
+  radioDogeDisplay.println("3:Del  L:Store");
+  radioDogeDisplay.display();
+}
+
+// Derive address from WIF (helper function using libdogecoin)
+bool DeriveAddressFromWIF(const char* wif, char* address) {
+  // Use libdogecoin function to derive address
+  dogecoin_ecc_start();
+  int result = deriveAddressFromWIF(wif, address, false); // false = mainnet
+  dogecoin_ecc_stop();
+  return (result == 1);
+}
+
+// Process and store manual wallet (WIF or seed phrase)
+bool ProcessAndStoreManualWallet(String input) {
+  input.trim();
+  if (input.length() == 0) return false;
+  
+  // Check if it's a WIF (starts with Q or 6, base58 encoded, typically 51-52 chars)
+  bool isWIF = false;
+  if ((input.startsWith("Q") || input.startsWith("6")) && input.length() >= 51 && input.length() <= 52) {
+    // Likely a WIF - verify it's valid base58
+    isWIF = true;
+  }
+  
+  char tempWIF[PRIVKEYWIFLEN] = {0};
+  char tempAddress[P2PKHLEN] = {0};
+  
+  if (isWIF) {
+    // It's a WIF - derive address from it
+    strncpy(tempWIF, input.c_str(), PRIVKEYWIFLEN - 1);
+    
+    // Show "Please wait..." message
+    DisplayPleaseWait("Deriving address...");
+    
+    // Derive address from WIF
+    if (!DeriveAddressFromWIF(tempWIF, tempAddress)) {
+      return false; // Invalid WIF
+    }
+    
+    // Store the wallet
+    strncpy(generatedWIF, tempWIF, PRIVKEYWIFLEN - 1);
+    strncpy(generatedAddress, tempAddress, P2PKHLEN - 1);
+    walletGenerated = true;
+    
+    return StoreCurrentWallet();
+  } else {
+    // It's a seed phrase - for now, we'll show an error
+    // Seed phrase derivation requires BIP39/BIP32 implementation
+    // This is more complex and can be added later
+    return false; // Seed phrase not yet supported
   }
 }

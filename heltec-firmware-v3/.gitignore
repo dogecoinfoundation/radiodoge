@@ -1,0 +1,58 @@
+# Arduino IDE
+*.hex
+*.elf
+*.bin
+*.eep
+*.lss
+*.sym
+*.map
+*.tmp
+*.bak
+*.swp
+*~
+
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Binary files
+*.bin
+mklittlefs.bin
+
+# Temporary files
+*.tmp
+*.log
+check_filesystem_space.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Compiled files
+*.class
+*.dll
+*.exe
+
+# Backup files
+*.bak
+*~
+
