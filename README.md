@@ -11,7 +11,9 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.0**: Legendary Doge-Radio hero image activated ✅ · App icon, NavBar logo, Connect tab, and Dashboard all show the epic Doge/boombox artwork ✅ · Version bumped everywhere ✅
+> **v0.2.4**: Smart USB port detection (CP210x/CH340 auto-identified 🟢) ✅ · Ping Device button with ms latency ✅ · Actionable driver-hint error messages ✅ · Hero image in Connect + Dashboard tabs ✅ · Development Roadmap added ✅
+>
+> ⚠️ **Icon note**: `Radio_Doge.png` is a JPEG file with a `.png` extension — it displays fine in browsers but fails Tauri's strict PNG validator during MSI builds. The bundle icon list temporarily falls back to the default generated icons until the file is converted to a real PNG with ImageMagick or similar.
 
 ---
 

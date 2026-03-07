@@ -7,9 +7,55 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.3.0] — 2026-03-07 — 🚀 Legendary Doge Radio Image + Heltec Connection Polish
+## [0.2.4] — 2026-03-07 — 🔧 Build Fix: Bad Icon Removed, Versions Stabilised
 
-> **The epic Doge-holding-a-boombox hero image is now the soul of the app.**
+> **MSI was broken by a JPEG-disguised-as-PNG icon. Reverted to working defaults.**
+> Much relief. Very fix. Such build. Wow. 🐕
+
+### Fixed — CI Build: "Invalid PNG signature" Error
+
+**Root cause**: `Radio_Doge.png` in the repository root is a **JPEG file with a `.png` extension**
+(starts with `\xFF\xD8\xFF` JPEG magic bytes, not `\x89PNG\r\n\x1a\n`).
+When it was copied to `radiodoge-gui/src-tauri/icons/doge-radio.png` and added to
+`tauri.conf.json`'s `bundle.icon` list, Tauri's bundler (which uses the Rust `image` crate)
+tried to parse it as a PNG during the MSI build and threw:
+
+```
+failed to read icon .../doge-radio.png: Invalid PNG signature.
+```
+
+The same JPEG was referenced as the `trayIcon.iconPath`, which also fails validation.
+
+**Fix applied**:
+
+| File | Change |
+|---|---|
+| `radiodoge-gui/src-tauri/tauri.conf.json` | Removed `icons/doge-radio.png` from `bundle.icon`; reverted `trayIcon.iconPath` to `icons/icon.png` |
+| All `Cargo.toml` files + `package.json` | Hard-set to `0.2.4` (version had drifted to `0.3.0`) |
+| `tauri.conf.json` window title | Removed "v0.3.0" from title string |
+| `ConnectionPanel.svelte` / `NavBar.svelte` | Removed hardcoded "v0.3.0" from UI labels |
+| `crates/radiodoge-core/src/wallet.rs` | Removed unused `Context` import (`anyhow::{Context, Result}` → `anyhow::Result`) |
+| `radiodoge-gui/src-tauri/src/lib.rs` | Removed unused `Runtime` import from `use tauri::{...}` |
+
+The `doge-radio.png` and `images/Radio_Doge.png` files are **not deleted** — they remain in the
+repo. The frontend still serves `/doge-radio.png` (browsers are lenient with MIME types), so
+the hero image and NavBar logo continue to display correctly in the app.
+
+**To fully fix the icon in a future release**: convert `Radio_Doge.png` to a real PNG
+(e.g. with `magick Radio_Doge.png -format png Radio_Doge_fixed.png` in ImageMagick),
+replace the file, and re-add it to the `bundle.icon` list.
+
+### Note — Feature Work Preserved
+
+All serial port detection improvements (CP210x/CH340 USB detection, `list_ports_with_info`,
+Ping Device button, driver error hints) and the Development Roadmap in README.md remain intact.
+Only icon references and version numbers were changed in this commit.
+
+---
+
+## [0.3.0-dev] — 2026-03-07 — 🚀 Doge Radio Image + Heltec Connection Polish (reverted to 0.2.4)
+
+> **Features shipped in this cycle — icon was broken, version reverted, features kept.**
 > Much image. Very hero. Such radio. Wow. 🐕📻🌙
 
 ### Added — Legendary Doge Radio Hero Image
