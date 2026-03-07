@@ -7,6 +7,103 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.4] — 2026-03-07 — 🔧 Mega Fix: CI Hardening + Rust Port + Bug Fixes
+
+> **MSI now builds reliably on every push. Every code bug fixed. Everything ported to Rust.**
+> Much reliability. Very Rust. Such workspace. Wow. 🐕
+
+### Fixed — CI/CD (`build-windows.yml`)
+
+| Problem | Fix |
+|---|---|
+| `permissions: contents: write` missing | Added — `softprops/action-gh-release` was 403-ing on every release event |
+| `npm install` (non-deterministic) | Changed to `npm ci` (uses `package-lock.json` exactly) |
+| `package-lock.json` not committed | Generated and committed — enables `npm ci` and npm cache |
+| Missing `CARGO_INCREMENTAL=0` | Added — prevents corrupt Rust build cache artifacts |
+| `workspaces: radiodoge-gui/src-tauri` | Updated to `. -> target` for new workspace root |
+| MSI artifact path wrong after workspace | Updated to `target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi` |
+| No debug output on failure | Added debug steps: runner info, bundle dir listing (always runs) |
+
+### Fixed — Rust: Blocking Read Stalling Tokio Runtime (serial.rs)
+
+**Bug**: `serial.rs` called `port.read()` (a blocking syscall) while holding a
+`tokio::sync::Mutex` lock guard. This blocked the entire Tokio executor thread pool,
+causing UI lag and potential deadlocks. The comment even said "Use spawn_blocking" but
+it was never actually used.
+
+**Fix**: Changed `port` and `cancel` fields to `std::sync::Mutex`. The read loop now
+uses `tokio::task::spawn_blocking` — correct, non-blocking Tokio I/O.
+
+### Fixed — Rust: `send_transaction` Silently Truncating Large Payloads (lib.rs)
+
+**Bug**: `lib.rs:206` had `// For MVP: truncate to single packet` — if an encoded
+transaction exceeded 192 bytes (e.g. long memos or future extended formats), bytes were
+silently dropped. The user thought they sent the full payload; the device got garbage.
+
+**Fix**: Properly dispatches multipart packets with 50ms inter-packet spacing when
+payload exceeds `MAX_SINGLE_PAYLOAD_LEN`.
+
+### Added — Cargo Workspace at Repo Root
+
+New `Cargo.toml` at the repository root defines a workspace with three members:
+
+```
+crates/radiodoge-core   ← shared pure-Rust library (no Tauri)
+crates/radiodoge-cli    ← headless CLI binary
+radiodoge-gui/src-tauri ← Tauri 2 desktop GUI backend
+```
+
+Shared dependency versions are pinned in `[workspace.dependencies]`.
+
+### Added — `crates/radiodoge-core` (shared pure-Rust library)
+
+Extracted the four non-Tauri modules from `radiodoge-gui/src-tauri/src/` into a
+standalone library crate consumed by both the GUI and the new CLI:
+
+- `types.rs` — all shared data structures
+- `wallet.rs` — pure Rust Dogecoin keypair generation and transaction encoding
+- `radio.rs` — LoRa packet protocol encoding/decoding
+- `serial.rs` — cross-platform serial port management (with the blocking-read fix above)
+
+### Added — `crates/radiodoge-cli` (Rust port of RadioDogeSharp + serdog)
+
+A full headless CLI replacing the C# `RadioDogeSharp` and C `serdog` legacy tools:
+
+```
+radiodoge-cli ports                    list serial ports
+radiodoge-cli wallet generate          new Dogecoin keypair
+radiodoge-cli wallet validate <ADDR>   validate address
+radiodoge-cli send -p <PORT> -t <ADDR> -a <DOGE>  send transaction over LoRa
+radiodoge-cli receive -p <PORT>        listen for incoming packets
+radiodoge-cli ping -p <PORT>           ping device
+radiodoge-cli connect <PORT>           interactive REPL (replaces RadioDogeSharp menu)
+radiodoge-cli daemon -p <PORT>         headless daemon (replaces serdog)
+```
+
+Build: `cargo build -p radiodoge-cli --release`
+
+### Changed — `radiodoge-gui/src-tauri/src/lib.rs`
+
+- Removed `mod types; mod serial; mod wallet; mod radio;` (now in `radiodoge-core`)
+- Added `use radiodoge_core::{radio, wallet, serial, types};`
+- Removed the 4 module `.rs` files that were duplicated in the GUI crate
+
+### Changed — Version bumped to 0.2.4
+
+- `radiodoge-gui/package.json`
+- `radiodoge-gui/src-tauri/tauri.conf.json`
+- `radiodoge-gui/src-tauri/Cargo.toml`
+- `crates/radiodoge-core/Cargo.toml`
+- `crates/radiodoge-cli/Cargo.toml`
+
+### Changed — `package.json`: added `engines` field
+
+```json
+"engines": { "node": ">=20.0.0" }
+```
+
+---
+
 ## [0.2.3] — 2026-03-07 — 🚀 Push-Triggered MSI Builds — No Tag Required!
 
 > **MSI auto-builds on every push to master — download instantly from the Actions tab!**

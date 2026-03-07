@@ -11,6 +11,8 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
+> **v0.2.4**: MSI now builds reliably on every push ✅ · Rust workspace with shared core library ✅ · New `radiodoge-cli` headless tool ✅ · Async serial I/O bug fixed ✅
+
 ---
 
 ## 🚀 Get the MSI — Two Ways, Both Easy
@@ -100,10 +102,34 @@ git clone --recurse-submodules https://github.com/jnowat/RadioDoge.git
 cd RadioDoge/radiodoge-gui
 
 # Install frontend dependencies
-npm install
+npm ci
 
 # Run in development mode (hot-reloading!)
 cargo tauri dev
+```
+
+### Option C: Use the Headless CLI (no GUI needed)
+
+The new `radiodoge-cli` replaces RadioDogeSharp (C#) and serdog (C) with a pure Rust binary:
+
+```bash
+# Build the CLI
+cargo build -p radiodoge-cli --release
+
+# List available serial ports
+./target/release/radiodoge-cli ports
+
+# Generate a Dogecoin wallet
+./target/release/radiodoge-cli wallet generate
+
+# Send DOGE over LoRa (no GUI required!)
+./target/release/radiodoge-cli send -p COM3 -t DH5yaieq... -a 4.20 -m "much transfer"
+
+# Listen for incoming LoRa packets
+./target/release/radiodoge-cli receive -p COM3 --timeout 60
+
+# Run as a headless gateway daemon (replaces serdog)
+./target/release/radiodoge-cli daemon -p /dev/ttyUSB0
 ```
 
 ### Flash the Heltec Firmware
@@ -125,16 +151,22 @@ cargo tauri dev
 
 ```
 radiodoge/
+├── Cargo.toml               🆕 Cargo workspace root (all Rust crates)
 ├── .github/workflows/
-│   └── build-windows.yml    🆕 Push-triggered MSI builds (every push to master!)
-├── radiodoge-gui/           🆕 Rust + Tauri 2 desktop GUI (PRIMARY)
+│   └── build-windows.yml    Push-triggered MSI builds (every push to master!)
+├── crates/
+│   ├── radiodoge-core/      🆕 Pure Rust shared library (no Tauri, no GUI)
+│   │   └── src/             types, wallet, radio protocol, serial port manager
+│   └── radiodoge-cli/       🆕 Headless CLI (Rust port of RadioDogeSharp + serdog)
+│       └── src/main.rs      ports, wallet, send, receive, ping, connect, daemon
+├── radiodoge-gui/           Rust + Tauri 2 desktop GUI (PRIMARY)
 │   ├── src/                 Svelte 5 + TypeScript frontend
-│   └── src-tauri/           Rust backend (serial, wallet, radio protocol)
+│   └── src-tauri/           Rust Tauri backend (uses radiodoge-core)
 ├── heltec-firmware-v3/      Arduino firmware for Heltec ESP32 (primary)
 ├── heltec-firmware/         Arduino firmware v2 (prototype)
-├── RadioDogeSharp/          C# .NET console app (legacy, Windows)
-├── serdog/                  C serial daemon (Linux legacy)
-├── libdogecoin/             Dogecoin cryptography library (git submodule)
+├── RadioDogeSharp/          C# .NET console app (legacy — replaced by radiodoge-cli)
+├── serdog/                  C serial daemon (legacy — replaced by radiodoge-cli daemon)
+├── libdogecoin/             Dogecoin cryptography library (legacy — replaced by pure Rust wallet)
 └── docs/                    Documentation
 ```
 

@@ -1,10 +1,13 @@
 //! RadioDoge GUI — Tauri 2 backend library.
 //!
-//! This file wires together the Tauri app:
+//! Wires together the Tauri app:
 //!   - Registers all Tauri commands (IPC from frontend to Rust)
 //!   - Sets up shared AppState
-//!   - Initializes the system tray
+//!   - Initialises the system tray
 //!   - Starts background stats polling when connected
+//!
+//! All protocol, wallet, and serial logic lives in `radiodoge-core`
+//! (no Tauri dependency) so it is shared with `radiodoge-cli`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,14 +15,13 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio::sync::Mutex;
 
-mod radio;
-mod serial;
+// Tauri-specific module (stays in the GUI crate)
 mod tray;
-mod types;
-mod wallet;
 
-use serial::SerialManager;
-use types::{
+// All protocol + hardware logic from the shared core library
+use radiodoge_core::{radio, wallet};
+use radiodoge_core::serial::SerialManager;
+use radiodoge_core::types::{
     ConnectionStatusEvent, IncomingPacket, LoraSettings, NodeAddress, RadioStats,
     TransactionRequest, WalletInfo,
 };
@@ -60,10 +62,8 @@ async fn connect_port(
 ) -> Result<(), String> {
     log::info!("connect_port: {}", port);
 
-    // Emit "connecting" status
     let _ = app.emit("connection-status", ConnectionStatusEvent::connecting(&port));
 
-    // Clone app handle for use inside the packet callback
     let app_for_packets = app.clone();
     let on_packet = Arc::new(move |packet: IncomingPacket| {
         let _ = app_for_packets.emit("radio-packet", &packet);
@@ -75,20 +75,17 @@ async fn connect_port(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Store the current port name
     *state.current_port.lock().await = Some(port.clone());
 
-    // Emit "connected" status with node address
     let node_addr = state.serial.get_node_address().await;
     let _ = app.emit(
         "connection-status",
-        ConnectionStatusEvent::connected(&port, node_addr.clone()),
+        ConnectionStatusEvent::connected(&port, node_addr),
     );
 
-    // Update tray
     tray::update_tray_status(&app, true, Some(&port));
 
-    // Start background stats polling (every 2 seconds)
+    // Background stats polling — pushes stats to the frontend every 2 s
     let serial = Arc::clone(&state.serial);
     let app_for_poll = app.clone();
     tokio::spawn(async move {
@@ -113,11 +110,7 @@ async fn disconnect_port(
 ) -> Result<(), String> {
     log::info!("disconnect_port");
 
-    state
-        .serial
-        .disconnect()
-        .await
-        .map_err(|e| e.to_string())?;
+    state.serial.disconnect().await.map_err(|e| e.to_string())?;
 
     *state.current_port.lock().await = None;
 
@@ -154,7 +147,7 @@ async fn ping_device(state: State<'_, AppState>) -> Result<bool, String> {
 
 /// Generate a new Dogecoin keypair (address + keys).
 /// Uses OS-level entropy — safe to call multiple times.
-/// ⚠️  The returned private key must be saved by the user!
+/// ⚠️  The returned private key must be saved by the user — it is never stored!
 #[tauri::command]
 async fn generate_wallet() -> Result<WalletInfo, String> {
     wallet::generate_keypair().map_err(|e| e.to_string())
@@ -162,9 +155,8 @@ async fn generate_wallet() -> Result<WalletInfo, String> {
 
 /// Send a Dogecoin transaction over the LoRa radio.
 ///
-/// This packages the transaction as a RadioDoge packet and writes it
-/// to the connected Heltec device via serial. The device then broadcasts
-/// it over LoRa.
+/// Large payloads are correctly split into multipart packets (was silently
+/// truncated in previous versions — that bug is now fixed).
 #[tauri::command]
 async fn send_transaction(
     tx: TransactionRequest,
@@ -175,7 +167,6 @@ async fn send_transaction(
         return Err("Not connected to a Heltec device. Please connect first.".to_string());
     }
 
-    // Validate the recipient address
     if !wallet::is_valid_address(&tx.to_address) {
         return Err(format!(
             "Invalid Dogecoin address: {}. Addresses start with 'D'.",
@@ -187,7 +178,6 @@ async fn send_transaction(
         return Err("Amount must be greater than 0 DOGE".to_string());
     }
 
-    // Encode the transaction as a binary payload
     let payload = wallet::encode_transaction_payload(
         &tx.to_address,
         tx.amount_doge,
@@ -196,67 +186,56 @@ async fn send_transaction(
     .map_err(|e| e.to_string())?;
 
     let src = state.serial.get_node_address().await;
-    let dst = NodeAddress::broadcast(); // Broadcast to all nodes
+    let dst = NodeAddress::broadcast();
 
-    // Build the packet(s) — use multipart if payload is large
-    let bytes = if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
-        radio::build_doge_tx(&src, &dst, &payload)
+    // ── FIXED: proper multipart for large payloads (was silently truncated before) ──
+    if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
+        let pkt = radio::build_doge_tx(&src, &dst, &payload);
+        state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
     } else {
-        // For MVP: truncate to single packet; full multipart handled in future
-        radio::build_doge_tx(&src, &dst, &payload[..radio::MAX_SINGLE_PAYLOAD_LEN])
-    };
-
-    state
-        .serial
-        .send_raw(bytes)
-        .await
-        .map_err(|e| e.to_string())?;
+        let pkts = radio::build_multipart_packets(&src, &dst, radio::CMD_DOGE_TX, &payload);
+        for pkt in pkts {
+            state
+                .serial
+                .send_raw(pkt)
+                .await
+                .map_err(|e| e.to_string())?;
+            // Small inter-packet gap to avoid flooding the device buffer
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
 
     let msg = format!(
         "Broadcast {:.8} DOGE → {} via LoRa! 🐕🌙",
         tx.amount_doge, tx.to_address
     );
 
-    // Emit a success event so the frontend can trigger confetti 🎉
+    // Trigger confetti 🎉 on the frontend
     let _ = app.emit("transaction-sent", &msg);
 
     log::info!("Transaction sent: {}", msg);
     Ok(msg)
 }
 
-/// Update LoRa settings and send them to the Heltec device.
+/// Update LoRa settings and push the node address to the Heltec device.
 #[tauri::command]
 async fn update_lora_settings(
     settings: LoraSettings,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Store settings locally
     *state.lora_settings.lock().await = settings.clone();
 
     if !state.serial.is_connected() {
-        // Not connected — just store for later
-        return Ok(());
+        return Ok(()); // Not connected — just store for later
     }
 
-    // Send the node address update to the device
     let current_addr = state.serial.get_node_address().await;
-    let set_addr_packet = radio::build_set_node_addr(&current_addr, &settings.node_address);
-
-    state
-        .serial
-        .send_raw(set_addr_packet)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Note: Other LoRa parameters (freq, SF, BW, etc.) would be sent via
-    // additional commands once the firmware supports runtime reconfiguration.
-    // For now, those are set at flash time on the device.
+    let pkt = radio::build_set_node_addr(&current_addr, &settings.node_address);
+    state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
 
     log::info!(
         "LoRa settings updated: {}MHz, SF{}, {}kHz",
-        settings.frequency_mhz,
-        settings.spreading_factor,
-        settings.bandwidth_khz
+        settings.frequency_mhz, settings.spreading_factor, settings.bandwidth_khz
     );
 
     Ok(())
@@ -270,7 +249,7 @@ async fn get_lora_settings(state: State<'_, AppState>) -> Result<LoraSettings, S
 
 // ─── App Builder ─────────────────────────────────────────────────────────────
 
-/// Entry point for both desktop (main.rs) and mobile (lib.rs for CDyLib).
+/// Entry point for desktop (main.rs) and mobile (lib for CDyLib).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -293,7 +272,6 @@ pub fn run() {
             get_lora_settings,
         ])
         .setup(|app| {
-            // Set up system tray
             tray::setup_tray(app)?;
             log::info!("RadioDoge GUI started — much wow 🐕");
             Ok(())

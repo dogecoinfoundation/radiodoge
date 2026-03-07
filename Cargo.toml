@@ -1,0 +1,43 @@
+# RadioDoge — Cargo Workspace
+#
+# All Rust crates in this repository are members of this workspace.
+# Shared dependency versions are declared in [workspace.dependencies] so every
+# crate uses exactly the same versions (no diamond-dependency drift).
+#
+# Members:
+#   radiodoge-core    Pure Rust core library (protocol, wallet, serial) — no Tauri
+#   radiodoge-cli     Headless CLI/daemon (Rust port of RadioDogeSharp + serdog)
+#   radiodoge-gui     Tauri 2 desktop GUI (Svelte frontend + Rust backend)
+#
+# Build all crates:   cargo build --workspace
+# Run tests:          cargo test  --workspace
+# Build CLI binary:   cargo build -p radiodoge-cli --release
+
+[workspace]
+members = [
+    "crates/radiodoge-core",
+    "crates/radiodoge-cli",
+    "radiodoge-gui/src-tauri",
+]
+resolver = "2"
+
+# ── Shared dependency versions ──────────────────────────────────────────────
+# Crates reference these with `{ workspace = true }` to stay in lock-step.
+[workspace.dependencies]
+serde       = { version = "1",    features = ["derive"] }
+serde_json  = "1"
+tokio       = { version = "1",    features = ["full"] }
+tokio-util  = { version = "0.7",  features = ["full"] }
+serialport  = "4"
+secp256k1   = { version = "0.29", features = ["rand", "global-context"] }
+sha2        = "0.10"
+ripemd      = "0.1"
+bs58        = { version = "0.5",  features = ["check"] }
+rand        = "0.8"
+hex         = "0.4"
+anyhow      = "1"
+thiserror   = "1"
+log         = "0.4"
+env_logger  = "0.11"
+clap        = { version = "4",    features = ["derive", "color"] }
+radiodoge-core = { path = "crates/radiodoge-core" }

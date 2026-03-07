@@ -1,6 +1,6 @@
 [package]
 name = "radiodoge-gui"
-version = "0.2.3"
+version = "0.2.4"
 description = "RadioDoge — Wireless P2P Dogecoin Over LoRa (Tauri 2 GUI)"
 authors = ["RadioDoge Contributors"]
 license = "MIT"
@@ -17,6 +17,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Core protocol library (shared with radiodoge-cli — no Tauri dependency)
+# Provides: radio protocol, Dogecoin wallet, serial port management
+radiodoge-core = { workspace = true }
+
 # Tauri 2 — tray icon + PNG image support
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
