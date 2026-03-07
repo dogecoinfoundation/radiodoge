@@ -74,12 +74,13 @@
     <!-- Frequency -->
     <div class="card-doge">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-        <label style="font-weight: 600; font-size: 0.9rem;">📻 Frequency</label>
+        <label for="settings-frequency" style="font-weight: 600; font-size: 0.9rem;">📻 Frequency</label>
         <span style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 700;">
           {settings.frequencyMhz} MHz
         </span>
       </div>
       <input
+        id="settings-frequency"
         type="number"
         bind:value={settings.frequencyMhz}
         min="433"
@@ -95,12 +96,13 @@
     <!-- TX Power -->
     <div class="card-doge">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-        <label style="font-weight: 600; font-size: 0.9rem;">⚡ TX Power</label>
+        <label for="settings-tx-power" style="font-weight: 600; font-size: 0.9rem;">⚡ TX Power</label>
         <span style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 700;">
           {settings.powerDbm} dBm
         </span>
       </div>
       <input
+        id="settings-tx-power"
         type="range"
         bind:value={settings.powerDbm}
         min="5"
@@ -120,9 +122,9 @@
 
     <!-- Spreading Factor -->
     <div class="card-doge">
-      <label style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 12px;">
+      <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 12px 0;">
         📶 Spreading Factor
-      </label>
+      </p>
       <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;">
         {#each SPREADING_FACTORS as sf}
           <button
@@ -150,9 +152,9 @@
 
     <!-- Bandwidth -->
     <div class="card-doge">
-      <label style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 12px;">
+      <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 12px 0;">
         〰️ Bandwidth
-      </label>
+      </p>
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
         {#each BANDWIDTHS as bw}
           <button
@@ -177,9 +179,9 @@
 
     <!-- Coding Rate -->
     <div class="card-doge">
-      <label style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 12px;">
+      <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 12px 0;">
         🔢 Coding Rate
-      </label>
+      </p>
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
         {#each CODING_RATES as cr}
           <button
@@ -204,9 +206,9 @@
 
     <!-- Node Address -->
     <div class="card-doge">
-      <label style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">
+      <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">
         📍 Node Address
-      </label>
+      </p>
       <p style="margin: 0 0 12px 0; font-size: 0.75rem; color: var(--doge-muted);">
         Region.Community.Node — identifies your device on the mesh
       </p>
