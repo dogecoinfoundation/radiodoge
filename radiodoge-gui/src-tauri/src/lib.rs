@@ -5,14 +5,18 @@
 //!   - Sets up shared AppState
 //!   - Initialises the system tray
 //!   - Starts background stats polling when connected
+//!   - Auto-reconnects on USB re-plug (exponential backoff)
+//!   - Sends desktop notifications for incoming DOGE TX packets
 //!
 //! All protocol, wallet, and serial logic lives in `radiodoge-core`
 //! (no Tauri dependency) so it is shared with `radiodoge-cli`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 
 // Tauri-specific module (stays in the GUI crate)
@@ -31,6 +35,8 @@ pub struct AppState {
     pub serial: Arc<SerialManager>,
     pub current_port: Arc<Mutex<Option<String>>>,
     pub lora_settings: Arc<Mutex<LoraSettings>>,
+    /// Set to false when the user explicitly disconnects — stops the reconnect watchdog.
+    pub reconnect_enabled: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -39,6 +45,7 @@ impl AppState {
             serial: Arc::new(SerialManager::new()),
             current_port: Arc::new(Mutex::new(None)),
             lora_settings: Arc::new(Mutex::new(LoraSettings::default())),
+            reconnect_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -65,6 +72,7 @@ async fn list_ports_detailed() -> Result<Vec<PortInfo>, String> {
 
 /// Open a serial connection to the Heltec device on the given port.
 /// Emits "connection-status" events as the connection progresses.
+/// Spawns auto-reconnect watchdog and desktop notifications for DOGE TX.
 #[tauri::command]
 async fn connect_port(
     port: String,
@@ -75,9 +83,26 @@ async fn connect_port(
 
     let _ = app.emit("connection-status", ConnectionStatusEvent::connecting(&port));
 
+    // Enable the reconnect watchdog for this session
+    state.reconnect_enabled.store(true, Ordering::Relaxed);
+
     let app_for_packets = app.clone();
     let on_packet = Arc::new(move |packet: IncomingPacket| {
         let _ = app_for_packets.emit("radio-packet", &packet);
+
+        // Desktop toast notification for incoming Dogecoin transactions
+        if packet.command == radio::CMD_DOGE_TX {
+            let body = packet
+                .decoded
+                .clone()
+                .unwrap_or_else(|| "Incoming Dogecoin transaction over LoRa".to_string());
+            let _ = app_for_packets
+                .notification()
+                .builder()
+                .title("🐕 DOGE Transaction Received!")
+                .body(&body)
+                .show();
+        }
     });
 
     state
@@ -120,38 +145,115 @@ async fn connect_port(
 
     *state.current_port.lock().await = Some(port.clone());
 
+    // Query firmware version — give the device up to 500 ms to respond
+    let fw_query = radio::build_get_firmware_version(&NodeAddress::default_local());
+    state.serial.send_raw(fw_query).await.ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let firmware_version = state.serial.get_firmware_version().await;
+
     let node_addr = state.serial.get_node_address().await;
     let _ = app.emit(
         "connection-status",
-        ConnectionStatusEvent::connected(&port, node_addr),
+        ConnectionStatusEvent::connected(&port, node_addr, firmware_version),
     );
 
     tray::update_tray_status(&app, true, Some(&port));
 
     // Background stats polling — pushes stats to the frontend every 2 s
-    let serial = Arc::clone(&state.serial);
+    let serial_poll = Arc::clone(&state.serial);
     let app_for_poll = app.clone();
     tokio::spawn(async move {
         loop {
-            if !serial.is_connected() {
+            if !serial_poll.is_connected() {
                 break;
             }
-            let stats = serial.get_stats().await;
+            let stats = serial_poll.get_stats().await;
             let _ = app_for_poll.emit("radio-stats-update", &stats);
             tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+
+    // Auto-reconnect watchdog — monitors connection health and retries with
+    // exponential backoff (1s → 2s → 4s → … → 30s max) up on USB re-plug.
+    let serial_wr = Arc::clone(&state.serial);
+    let current_port_wr = Arc::clone(&state.current_port);
+    let reconnect_enabled_wr = Arc::clone(&state.reconnect_enabled);
+    let app_wr = app.clone();
+    let port_wr = port.clone();
+    tokio::spawn(async move {
+        let mut backoff = Duration::from_secs(1);
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            if !reconnect_enabled_wr.load(Ordering::Relaxed) {
+                // User explicitly disconnected — stop watchdog
+                break;
+            }
+
+            if serial_wr.is_connected() {
+                backoff = Duration::from_secs(1); // reset on healthy connection
+                continue;
+            }
+
+            // Unexpected disconnect detected — attempt reconnect
+            log::info!("Auto-reconnect: connection lost on {}, retrying…", port_wr);
+            let _ = app_wr.emit(
+                "connection-status",
+                ConnectionStatusEvent::reconnecting(&port_wr),
+            );
+
+            let app_inner = app_wr.clone();
+            let on_pkt = Arc::new(move |packet: IncomingPacket| {
+                let _ = app_inner.emit("radio-packet", &packet);
+                if packet.command == radio::CMD_DOGE_TX {
+                    let body = packet
+                        .decoded
+                        .clone()
+                        .unwrap_or_else(|| "Incoming Dogecoin transaction".to_string());
+                    let _ = app_inner
+                        .notification()
+                        .builder()
+                        .title("🐕 DOGE Transaction Received!")
+                        .body(&body)
+                        .show();
+                }
+            });
+
+            match serial_wr.connect(&port_wr, on_pkt).await {
+                Ok(_) => {
+                    *current_port_wr.lock().await = Some(port_wr.clone());
+                    let node_addr = serial_wr.get_node_address().await;
+                    let _ = app_wr.emit(
+                        "connection-status",
+                        ConnectionStatusEvent::connected(&port_wr, node_addr, None),
+                    );
+                    tray::update_tray_status(&app_wr, true, Some(&port_wr));
+                    backoff = Duration::from_secs(1);
+                    log::info!("Auto-reconnect: reconnected to {}", port_wr);
+                }
+                Err(e) => {
+                    log::warn!("Auto-reconnect failed: {} — retrying in {:?}", e, backoff);
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                }
+            }
         }
     });
 
     Ok(())
 }
 
-/// Close the serial connection.
+/// Close the serial connection (disables auto-reconnect).
 #[tauri::command]
 async fn disconnect_port(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     log::info!("disconnect_port");
+
+    // Disable the reconnect watchdog before disconnecting
+    state.reconnect_enabled.store(false, Ordering::Relaxed);
 
     state.serial.disconnect().await.map_err(|e| e.to_string())?;
 
@@ -179,6 +281,13 @@ async fn get_radio_stats(state: State<'_, AppState>) -> Result<RadioStats, Strin
 #[tauri::command]
 async fn get_node_address(state: State<'_, AppState>) -> Result<NodeAddress, String> {
     Ok(state.serial.get_node_address().await)
+}
+
+/// Get the firmware version string from the connected device.
+/// Returns None if the device has not responded to the version query yet.
+#[tauri::command]
+async fn get_firmware_version(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(state.serial.get_firmware_version().await)
 }
 
 /// Send a PING to the connected device.
@@ -261,27 +370,46 @@ async fn send_transaction(
 }
 
 /// Update LoRa settings and push the node address to the Heltec device.
+///
+/// Returns `true` if the device confirmed the new address (round-trip verified),
+/// `false` if saved locally but the device did not respond within 1 second.
 #[tauri::command]
 async fn update_lora_settings(
     settings: LoraSettings,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     *state.lora_settings.lock().await = settings.clone();
 
     if !state.serial.is_connected() {
-        return Ok(()); // Not connected — just store for later
+        return Ok(false); // Not connected — just store for later, not verified
     }
 
     let current_addr = state.serial.get_node_address().await;
     let pkt = radio::build_set_node_addr(&current_addr, &settings.node_address);
     state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
 
+    // Verify the device accepted the new address with a round-trip check
+    let verified = state
+        .serial
+        .verify_node_address_set(&settings.node_address, 1000)
+        .await;
+
+    if verified {
+        state
+            .serial
+            .update_node_address(settings.node_address.clone())
+            .await;
+    }
+
     log::info!(
-        "LoRa settings updated: {}MHz, SF{}, {}kHz",
-        settings.frequency_mhz, settings.spreading_factor, settings.bandwidth_khz
+        "LoRa settings updated (verified={}): {}MHz, SF{}, {}kHz",
+        verified,
+        settings.frequency_mhz,
+        settings.spreading_factor,
+        settings.bandwidth_khz
     );
 
-    Ok(())
+    Ok(verified)
 }
 
 /// Get the current stored LoRa settings.
@@ -309,6 +437,7 @@ pub fn run() {
             is_connected,
             get_radio_stats,
             get_node_address,
+            get_firmware_version,
             ping_device,
             generate_wallet,
             send_transaction,
@@ -321,5 +450,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("Error running RadioDoge GUI");
+        .expect("Error running RadioDoge GUI")
 }

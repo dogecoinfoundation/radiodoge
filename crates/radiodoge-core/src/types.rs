@@ -197,6 +197,8 @@ pub struct ConnectionStatusEvent {
     pub port: Option<String>,
     pub node_address: Option<NodeAddress>,
     pub message: Option<String>,
+    /// Firmware version string reported by the Heltec device, e.g. "v1.2.3"
+    pub firmware_version: Option<String>,
 }
 
 impl ConnectionStatusEvent {
@@ -206,6 +208,7 @@ impl ConnectionStatusEvent {
             port: None,
             node_address: None,
             message: None,
+            firmware_version: None,
         }
     }
 
@@ -215,15 +218,27 @@ impl ConnectionStatusEvent {
             port: Some(port.to_string()),
             node_address: None,
             message: None,
+            firmware_version: None,
         }
     }
 
-    pub fn connected(port: &str, addr: NodeAddress) -> Self {
+    pub fn connected(port: &str, addr: NodeAddress, firmware_version: Option<String>) -> Self {
         ConnectionStatusEvent {
             status: "connected".to_string(),
             port: Some(port.to_string()),
             node_address: Some(addr),
             message: None,
+            firmware_version,
+        }
+    }
+
+    pub fn reconnecting(port: &str) -> Self {
+        ConnectionStatusEvent {
+            status: "reconnecting".to_string(),
+            port: Some(port.to_string()),
+            node_address: None,
+            message: None,
+            firmware_version: None,
         }
     }
 
@@ -233,6 +248,7 @@ impl ConnectionStatusEvent {
             port: None,
             node_address: None,
             message: Some(msg.to_string()),
+            firmware_version: None,
         }
     }
 }

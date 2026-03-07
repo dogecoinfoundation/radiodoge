@@ -25,6 +25,7 @@
     connection,
     setConnected,
     setConnecting,
+    setReconnecting,
     setDisconnected,
     setError,
     updateStats,
@@ -64,11 +65,14 @@
           setConnecting(status.port ?? '');
           break;
         case 'connected':
-          setConnected(status.port ?? '', status.nodeAddress ?? null);
+          setConnected(status.port ?? '', status.nodeAddress ?? null, status.firmwareVersion);
           // Auto-navigate to Dashboard on connect
           if (activeTab === 'connect') {
             activeTab = 'dashboard';
           }
+          break;
+        case 'reconnecting':
+          setReconnecting(status.port ?? '');
           break;
         case 'disconnected':
           setDisconnected();
@@ -146,7 +150,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.2.3</span>
+    <span>RadioDoge v0.3.0</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">

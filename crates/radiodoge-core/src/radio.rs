@@ -43,6 +43,7 @@ pub const CMD_BROADCAST: u8 = 0x04;
 pub const CMD_MULTIPART: u8 = 0x05;
 pub const CMD_DOGE_TX: u8 = 0x10;     // Dogecoin transaction
 pub const CMD_REQUEST_BALANCE: u8 = 0x11; // Balance request
+pub const CMD_GET_FIRMWARE_VERSION: u8 = 0x20; // Query firmware version string
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -58,6 +59,12 @@ pub const FLAG_MULTIPART: u8 = 0x01;
 pub fn build_get_node_addr(src: &NodeAddress) -> Vec<u8> {
     let broadcast = NodeAddress::broadcast();
     build_header(CMD_GET_NODE_ADDR, FLAG_STANDARD, src, &broadcast)
+}
+
+/// Build a GET_FIRMWARE_VERSION command (CMD 0x20).
+/// The device should respond with a packet whose payload is the version string.
+pub fn build_get_firmware_version(src: &NodeAddress) -> Vec<u8> {
+    build_header(CMD_GET_FIRMWARE_VERSION, FLAG_STANDARD, src, &NodeAddress::broadcast())
 }
 
 /// Build a PING packet to check if the device is alive.
@@ -186,6 +193,11 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
         CMD_DOGE_TX => {
             crate::wallet::decode_transaction_payload(payload)
                 .map(|s| format!("🐕 {}", s))
+        }
+        CMD_GET_FIRMWARE_VERSION => {
+            std::str::from_utf8(payload)
+                .ok()
+                .map(|s| format!("🔧 FW: {}", s.trim_matches('\0').trim()))
         }
         _ => None,
     }

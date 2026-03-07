@@ -11,6 +11,7 @@
 
   let isSaving = $state(false);
   let saveSuccess = $state(false);
+  let saveVerified = $state<boolean | null>(null);
   let saveError = $state<string | null>(null);
 
   // Local copy for editing
@@ -24,6 +25,7 @@
   async function saveSettings() {
     isSaving = true;
     saveSuccess = false;
+    saveVerified = null;
     saveError = null;
 
     const fullSettings = {
@@ -32,10 +34,11 @@
     };
 
     try {
-      await invoke('update_lora_settings', { settings: fullSettings });
+      const verified = await invoke<boolean>('update_lora_settings', { settings: fullSettings });
       updateSettings(fullSettings);
       saveSuccess = true;
-      setTimeout(() => { saveSuccess = false; }, 3000);
+      saveVerified = verified;
+      setTimeout(() => { saveSuccess = false; saveVerified = null; }, 4000);
     } catch (e: unknown) {
       saveError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -260,18 +263,19 @@
     {#if saveSuccess}
       <div class="slide-up" style="
         padding: 12px 16px;
-        background: rgba(0, 255, 136, 0.1);
-        border: 1px solid rgba(0, 255, 136, 0.3);
+        background: {saveVerified ? 'rgba(0, 255, 136, 0.1)' : 'rgba(245, 197, 24, 0.08)'};
+        border: 1px solid {saveVerified ? 'rgba(0, 255, 136, 0.3)' : 'rgba(245, 197, 24, 0.25)'};
         border-radius: 8px;
-        color: var(--doge-neon);
+        color: {saveVerified ? 'var(--doge-neon)' : 'var(--doge-yellow)'};
         font-size: 0.85rem;
         text-align: center;
       ">
-        ✅ Settings saved! Much configure. Very radio. Wow.
         {#if !connection.isConnected}
-          <span style="display: block; font-size: 0.75rem; color: var(--doge-muted); margin-top: 4px;">
-            (Settings stored locally — connect a device to apply them)
-          </span>
+          ✅ Settings stored locally — connect a device to apply them.
+        {:else if saveVerified}
+          ✅ Settings saved &amp; verified on device! Much configure. Very radio. Wow.
+        {:else}
+          ⚠️ Settings sent — could not verify on device (no response). Check connection.
         {/if}
       </div>
     {/if}
