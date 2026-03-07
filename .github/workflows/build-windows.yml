@@ -1,47 +1,32 @@
 # RadioDoge — Windows MSI Build Workflow
 #
-# Modeled after SteloPTC's build-windows.yml for instant, push-triggered MSI builds.
+# Builds on every push to master/main and when a GitHub Release is created.
 #
 # ┌─────────────────────────────────────────────────────────────────────┐
 # │  HOW TO GET YOUR MSI                                                │
 # │                                                                     │
-# │  Option A (push — instant, no tag needed):                          │
-# │    1. Push any commit to master                                      │
-# │    2. Go to Actions tab → "🐕 Build Windows MSI" → latest run       │
-# │    3. Scroll to "Artifacts" at the bottom → download the .zip       │
-# │    4. Unzip → double-click the .msi. Done! 🐕                       │
+# │  On every push to master:                                           │
+# │    Actions tab → "🐕 Build Windows MSI" → Artifacts → download zip │
 # │                                                                     │
-# │  Option B (release — polished, permanent):                          │
-# │    1. Create a GitHub Release (any tag)                             │
-# │    2. MSI auto-attaches to the Release within ~10 min               │
-# │    3. Download from the Releases page forever                       │
+# │  On GitHub Release:                                                 │
+# │    MSI auto-attaches to the release for permanent download          │
 # └─────────────────────────────────────────────────────────────────────┘
 #
-# Signing (optional — skip for dev builds):
-#   Generate:  cargo tauri signer generate -w ~/.tauri/radiodoge.key
-#   Add secrets to repo (Settings → Secrets → Actions):
-#     TAURI_SIGNING_PRIVATE_KEY          ← base64 contents of .key file
+# Signing (optional):
+#   cargo tauri signer generate -w ~/.tauri/radiodoge.key
+#   Add to repo Secrets:
+#     TAURI_SIGNING_PRIVATE_KEY          ← base64 .key file
 #     TAURI_SIGNING_PRIVATE_KEY_PASSWORD ← passphrase
-#
-# Much CI. Very automation. Wow. 🐕
 
 name: 🐕 Build Windows MSI
 
 on:
-  # ── Fires on every push to master → MSI artifact in Actions tab (no tag needed!)
   push:
-    branches:
-      - master
-      - main
-
-  # ── Fires when a GitHub Release is created → MSI attaches to the release
+    branches: [master, main]
   release:
     types: [created]
-
-  # ── Manual trigger from the Actions tab → useful for debugging
   workflow_dispatch:
 
-# Cancel in-progress builds for the same branch so only the latest commit wins.
 concurrency:
   group: msi-build-${{ github.ref }}
   cancel-in-progress: true
@@ -50,170 +35,156 @@ jobs:
   build-windows:
     name: 🪟 Windows x64 MSI
     runs-on: windows-latest
-
-    # ── CRITICAL: write permission is required for release asset upload ──────────
-    # Without this, softprops/action-gh-release gets a 403 on every release event.
     permissions:
-      contents: write
+      contents: write   # required for softprops/action-gh-release to upload assets
 
     steps:
       # ── 1. Checkout ─────────────────────────────────────────────────────────
-      - name: 🔍 Checkout repository
+      - name: 🔍 Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── 2. Debug: print environment info for diagnosing failures ─────────────
-      - name: 🔎 Debug — print runner info
-        shell: bash
-        run: |
-          echo "Runner OS  : $RUNNER_OS"
-          echo "Node       : $(node --version)"
-          echo "npm        : $(npm --version)"
-          echo "Rust       : $(rustc --version 2>/dev/null || echo not-installed-yet)"
-          echo "Workspace  : $(pwd)"
-          ls -la
-
-      # ── 3. Read version (single source of truth: package.json) ──────────────
-      - name: 📋 Read app version from package.json
+      # ── 2. Read version ──────────────────────────────────────────────────────
+      - name: 📋 Read version
         id: version
         shell: bash
         run: |
           VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
           echo "value=$VERSION" >> $GITHUB_OUTPUT
-          echo "::notice::Building RadioDoge v$VERSION"
+          echo "Building RadioDoge v$VERSION"
 
-      # ── 4. Node.js ──────────────────────────────────────────────────────────
+      # ── 3. Node.js ───────────────────────────────────────────────────────────
+      # NOTE: No `cache:` option here.
+      # The npm cache option in setup-node requires a valid, non-empty
+      # package-lock.json to compute the cache key. If the lockfile is missing
+      # or empty it throws "Some specified paths were not resolved, unable to
+      # cache dependencies" and the job dies before a single line of Rust
+      # compiles. Skipping npm caching here is the simplest reliable fix.
+      # Build speed impact: ~30s extra per run — totally worth it for reliability.
       - name: 📦 Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # npm cache keyed on package-lock.json for hermetic, reproducible installs
-          cache: 'npm'
-          cache-dependency-path: radiodoge-gui/package-lock.json
 
-      # ── 5. Rust (stable MSVC toolchain for Windows MSI) ─────────────────────
-      - name: 🦀 Install Rust stable (x86_64-pc-windows-msvc)
+      # ── 4. Rust stable (Windows MSVC) ────────────────────────────────────────
+      - name: 🦀 Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
-      # ── 6. Rust build cache ──────────────────────────────────────────────────
-      # With the Cargo workspace at the repo root, target/ is at the workspace
-      # root — not inside radiodoge-gui/src-tauri/ anymore.
-      - name: 🗃️ Cache Rust build artifacts
+      # ── 5. Rust build cache ──────────────────────────────────────────────────
+      # NOTE: No `workspaces:` option here.
+      # Specifying `workspaces: . -> target` makes rust-cache require a Cargo.lock
+      # at the repo root. We have a workspace Cargo.toml but Cargo.lock is only
+      # generated on first `cargo build` — so there is no Cargo.lock to hash on a
+      # fresh clone, which causes another "path not resolved" error.
+      # Without the option, rust-cache auto-detects from any Cargo.toml it finds.
+      - name: 🗃️ Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
-          # Workspace root → shared target/ directory for all workspace members
-          workspaces: . -> target
           cache-on-failure: true
 
-      # ── 7. Install frontend dependencies (deterministic via lock file) ───────
+      # ── 6. Frontend dependencies ─────────────────────────────────────────────
+      # Use `npm install` rather than `npm ci`.
+      # `npm ci` aborts if package-lock.json is absent, empty, or out-of-sync.
+      # `npm install` generates or repairs the lock file as needed — much safer
+      # for a CI workflow where the lockfile may not be perfectly maintained.
       - name: 📥 Install frontend dependencies
         working-directory: radiodoge-gui
-        # npm ci: uses package-lock.json exactly — never upgrades, fails fast on mismatch
-        run: npm ci
+        run: npm install
 
-      # ── 8. Build the MSI ─────────────────────────────────────────────────────
-      # --bundles msi       → WiX MSI only (skip NSIS which 502s on CI regularly)
-      # --target            → explicit Windows x64 MSVC target
-      # CARGO_INCREMENTAL=0 → disable incremental compilation (avoids corrupt caches)
+      # ── 7. Build the MSI ─────────────────────────────────────────────────────
+      # --bundles msi  : WiX MSI only; skip NSIS (regularly 502s during CI)
+      # --verbose      : full output so failures are diagnosable
+      # CARGO_INCREMENTAL=0 : avoids stale/corrupt incremental cache artefacts
       #
-      # Retry logic (3 attempts, exponential backoff) handles transient WiX
-      # toolset download failures from GitHub Releases.
-      - name: 🚀 Build Windows x64 MSI (with retry for WiX flakiness)
+      # Retry loop handles transient WiX toolset download failures (GitHub
+      # Releases sometimes returns 502/503 on first attempt).
+      - name: 🚀 Build MSI
         working-directory: radiodoge-gui
         shell: pwsh
         env:
-          # Disable incremental compilation — critical for correctness with Rust cache
           CARGO_INCREMENTAL: "0"
-          # Signing — leave unset for unsigned dev builds; set secrets for prod
-          # If these secrets are not configured, Tauri silently skips signing.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $maxAttempts = 3
-          $attempt = 0
-          $delay = 15  # seconds (doubles each retry: 15 → 30 → 60)
+          $attempt    = 0
+          $delay      = 15   # seconds; doubles each retry (15 → 30 → 60)
 
           while ($attempt -lt $maxAttempts) {
             $attempt++
-            Write-Host "🐕 Build attempt $attempt of $maxAttempts..."
+            Write-Host "🐕 Build attempt $attempt / $maxAttempts ..."
 
-            npx tauri build `
-              --target x86_64-pc-windows-msvc `
-              --bundles msi `
-              --verbose
+            npx tauri build --target x86_64-pc-windows-msvc --bundles msi --verbose
 
             if ($LASTEXITCODE -eq 0) {
-              Write-Host "✅ Build succeeded on attempt $attempt! Such compile. Wow."
+              Write-Host "✅ Succeeded on attempt $attempt. Such build. Wow."
               break
             }
 
             if ($attempt -lt $maxAttempts) {
-              Write-Host "⚠️  Build failed (exit $LASTEXITCODE). Retrying in ${delay}s..."
-              Write-Host "(Common cause: WiX toolset download 502 from GitHub Releases)"
+              Write-Host "⚠️  Attempt $attempt failed (exit $LASTEXITCODE). Retrying in ${delay}s ..."
               Start-Sleep -Seconds $delay
               $delay = $delay * 2
             } else {
-              Write-Host "❌ All $maxAttempts attempts failed. Very sad. No MSI. 😢"
-              Write-Host "Check the --verbose output above for the root cause."
+              Write-Host "❌ All $maxAttempts attempts failed. No MSI. Very sad. 😢"
               exit 1
             }
           }
 
-      # ── 9. Debug: list bundle output directory ───────────────────────────────
-      - name: 🔎 Debug — list generated bundle files
+      # ── 8. Find the MSI (debug — runs even on failure) ───────────────────────
+      # Prints the exact path of every .msi produced so we know where to look.
+      # The workspace Cargo.toml puts target/ at the repo root; tauri may also
+      # write to radiodoge-gui/src-tauri/target/. This step shows us which.
+      - name: 🔎 Find generated MSI files
         if: always()
         shell: pwsh
         run: |
-          $bundleDir = "target\x86_64-pc-windows-msvc\release\bundle"
-          if (Test-Path $bundleDir) {
-            Write-Host "Bundle directory contents:"
-            Get-ChildItem -Recurse $bundleDir | Select-Object FullName
+          Write-Host "=== Searching for *.msi files ==="
+          $files = Get-ChildItem -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue
+          if ($files) {
+            $files | ForEach-Object { Write-Host "  FOUND: $($_.FullName)" }
           } else {
-            Write-Host "Bundle directory not found at: $bundleDir"
-            Write-Host "Workspace root contents:"
-            Get-ChildItem | Select-Object Name
+            Write-Host "  (none found — build likely failed before bundling)"
+            Write-Host ""
+            Write-Host "=== Root directory listing ==="
+            Get-ChildItem | Select-Object Name, Length
+            Write-Host ""
+            Write-Host "=== radiodoge-gui/ listing ==="
+            Get-ChildItem radiodoge-gui -ErrorAction SilentlyContinue | Select-Object Name
           }
 
-      # ── 10a. ON PUSH: Upload MSI as downloadable Actions artifact ────────────
-      # Instant MSI on every push — no release tag needed!
-      # Find: Actions tab → this run → "Artifacts" section → download & install.
-      #
-      # NOTE: With the Cargo workspace at the repo root, the MSI is built into
-      # target/ (workspace root), not radiodoge-gui/src-tauri/target/ anymore.
-      - name: 📤 Upload MSI as Actions artifact (push/dispatch builds)
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      # ── 9a. Upload artifact (push / manual dispatch) ─────────────────────────
+      # Wildcard path finds the MSI regardless of whether Cargo puts it under
+      # the workspace root target/ or inside radiodoge-gui/src-tauri/target/.
+      - name: 📤 Upload MSI artifact
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && success()
         uses: actions/upload-artifact@v4
         with:
           name: RadioDoge-${{ steps.version.outputs.value }}-windows-x64-msi
-          # Workspace root target/ (changed from radiodoge-gui/src-tauri/target/)
-          path: target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          path: "**/bundle/msi/*.msi"
           retention-days: 30
           if-no-files-found: error
 
-      # ── 10b. ON RELEASE: Attach MSI to the GitHub Release ───────────────────
-      # The permissions: contents: write block above enables this step.
-      - name: 📎 Attach MSI to GitHub Release
+      # ── 9b. Attach to GitHub Release ─────────────────────────────────────────
+      - name: 📎 Attach MSI to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          files: "**/bundle/msi/*.msi"
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 11. Job summary with download instructions ───────────────────────────
-      - name: 📋 Print artifact download instructions
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && success()
+      # ── 10. Job summary ───────────────────────────────────────────────────────
+      - name: 📋 Summary
+        if: success() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         shell: bash
         run: |
-          echo "## 🐕 RadioDoge v${{ steps.version.outputs.value }} — MSI Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🐕 RadioDoge v${{ steps.version.outputs.value }} MSI — Build Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⬇️ Download Your MSI" >> $GITHUB_STEP_SUMMARY
-          echo "1. Scroll to the **Artifacts** section at the bottom of this page" >> $GITHUB_STEP_SUMMARY
-          echo "2. Click \`RadioDoge-${{ steps.version.outputs.value }}-windows-x64-msi\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Unzip → double-click the \`.msi\` → install → connect your Heltec! 🐕" >> $GITHUB_STEP_SUMMARY
+          echo "**Scroll to Artifacts below → click the zip → unzip → run the .msi**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*Much wireless. Very Dogecoin. Such LoRa. Wow. 🐕🌙*" >> $GITHUB_STEP_SUMMARY
+          echo "*Much CI. Very reliable. Wow. 🐕🌙*" >> $GITHUB_STEP_SUMMARY
