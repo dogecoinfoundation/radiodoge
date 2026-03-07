@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 // Tauri-specific module (stays in the GUI crate)

@@ -138,7 +138,7 @@
       background-clip: text;
       margin: 0 0 8px 0;
     ">
-      RadioDoge v0.3.0
+      RadioDoge
     </h1>
     <p style="color: var(--doge-muted); margin: 0; font-size: 0.95rem;">
       Wireless P2P Dogecoin — no internet required 🌐✖️

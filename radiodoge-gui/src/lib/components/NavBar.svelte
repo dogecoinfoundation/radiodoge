@@ -75,7 +75,7 @@
         "
       >DOGE RADIO</div>
       <div style="font-size: 0.6rem; color: var(--doge-subtle); letter-spacing: 0.1em;">
-        v0.3.0 · WIRELESS P2P
+        WIRELESS P2P
       </div>
     </div>
   </div>

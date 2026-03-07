@@ -7,7 +7,7 @@
 //!
 //! No FFI to libdogecoin is needed — everything is done in pure Rust.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rand::rngs::OsRng;
 use ripemd::{Digest as RipemdDigest, Ripemd160};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
