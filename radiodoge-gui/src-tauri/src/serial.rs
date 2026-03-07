@@ -234,20 +234,21 @@ impl SerialManager {
 
     /// Write raw bytes to the serial port.
     pub async fn send_raw(&self, bytes: Vec<u8>) -> Result<()> {
-        let mut port_guard = self.port.lock().await;
-        if let Some(port) = port_guard.as_mut() {
-            port.write_all(&bytes)
-                .context("Failed to write to serial port")?;
+        // Scope the MutexGuard so it is dropped before we try to lock `stats`.
+        // (Rust won't let us call `drop(port_guard)` while `port` — a &mut into
+        // *port_guard — is still live in the same scope.)
+        {
+            let mut port_guard = self.port.lock().await;
+            let port = port_guard
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("No serial port open — connect first"))?;
+            port.write_all(&bytes).context("Failed to write to serial port")?;
             port.flush().context("Failed to flush serial port")?;
+        } // port_guard (and the borrow of port) dropped here
 
-            // Update sent counter
-            drop(port_guard);
-            let mut stats = self.stats.lock().await;
-            stats.packets_sent += 1;
-            Ok(())
-        } else {
-            anyhow::bail!("No serial port open — connect first")
-        }
+        let mut stats = self.stats.lock().await;
+        stats.packets_sent += 1;
+        Ok(())
     }
 
     /// Send a PING to the device and wait briefly for a response.
