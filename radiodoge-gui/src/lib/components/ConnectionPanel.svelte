@@ -61,8 +61,19 @@
 <div style="max-width: 600px; margin: 0 auto; padding: 32px 24px;">
   <!-- Hero section -->
   <div style="text-align: center; margin-bottom: 40px;">
-    <div style="font-size: 4rem; margin-bottom: 16px; animation: bounce-doge 2s ease-in-out infinite; display: inline-block;">
-      🐕
+    <div style="
+      margin-bottom: 20px;
+      display: inline-block;
+      animation: bounce-doge 3s ease-in-out infinite;
+      filter: drop-shadow(0 0 24px rgba(245, 197, 24, 0.45));
+    ">
+      <img
+        src="/doge-radio.png"
+        alt="Doge holding a boombox radio with glowing Dogecoins"
+        width="180"
+        height="180"
+        style="border-radius: 24px; display: block;"
+      />
     </div>
     <h1 style="
       font-size: 2rem;
@@ -73,10 +84,13 @@
       background-clip: text;
       margin: 0 0 8px 0;
     ">
-      RadioDoge
+      RadioDoge v0.3.0
     </h1>
     <p style="color: var(--doge-muted); margin: 0; font-size: 0.95rem;">
       Wireless P2P Dogecoin — no internet required 🌐✖️
+    </p>
+    <p style="color: var(--doge-subtle); margin: 6px 0 0 0; font-size: 0.78rem; font-style: italic;">
+      Much radio. Very LoRa. Such decentralize. Wow. 🐕🌙
     </p>
   </div>
 

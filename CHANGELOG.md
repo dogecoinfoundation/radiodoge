@@ -7,6 +7,43 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-03-07 — 🚀 Legendary Doge Radio Image + Real Hardware Readiness
+
+> **The epic Doge-holding-a-boombox hero image is now the soul of the app.**
+> Much image. Very hero. Such radio. Wow. 🐕📻🌙
+
+### Added — Legendary Doge Radio Hero Image
+
+- **`images/Radio_Doge.png`** — canonical 512×512 RGBA PNG home for the epic Doge/boombox artwork
+- **`radiodoge-gui/src-tauri/icons/doge-radio.png`** — Tauri bundle icon (app icon in taskbar, MSI, system tray)
+- **`radiodoge-gui/static/doge-radio.png`** — served as `/doge-radio.png` by the Vite frontend for all in-app uses
+
+### Changed — UI: Hero Image Activated Everywhere
+
+| Location | Before | After |
+|---|---|---|
+| **Connect tab hero** | Bouncing 🐕 emoji | 180×180 `doge-radio.png` with gold drop-shadow glow, `bounce-doge` animation |
+| **Dashboard empty state** | 📡 emoji | 160×160 `doge-radio.png` with subtle opacity + glow when disconnected |
+| **NavBar logo** | 🐕 emoji | 32×32 `doge-radio.png` with rounded corners + gold drop-shadow |
+| **NavBar subtitle** | `WIRELESS P2P` | `v0.3.0 · WIRELESS P2P` |
+| **Connect tab title** | `RadioDoge` | `RadioDoge v0.3.0` |
+| **Window title** | `RadioDoge 🐕 — Wireless Dogecoin` | `RadioDoge v0.3.0 🐕 — Wireless Dogecoin` |
+| **Tray icon** | `icons/icon.png` | `icons/doge-radio.png` |
+| **Bundle icon list** | Standard generated icons only | `doge-radio.png` added as primary 512×512 source |
+| **Copyright** | `© 2024` | `© 2026` |
+
+All existing serial communication, wallet generation, transaction signing, and LoRa packet logic remain fully functional (shipped in v0.2.4).
+
+### Changed — Version bumped to 0.3.0
+
+- `radiodoge-gui/package.json`
+- `radiodoge-gui/src-tauri/tauri.conf.json`
+- `radiodoge-gui/src-tauri/Cargo.toml`
+- `crates/radiodoge-core/Cargo.toml`
+- `crates/radiodoge-cli/Cargo.toml`
+
+---
+
 ## [0.2.4] — 2026-03-07 — 🔧 Mega Fix: CI Hardening + Rust Port + Bug Fixes
 
 > **MSI now builds reliably on every push. Every code bug fixed. Everything ported to Rust.**

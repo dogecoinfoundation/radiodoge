@@ -11,7 +11,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.2.4**: MSI now builds reliably on every push ✅ · Rust workspace with shared core library ✅ · New `radiodoge-cli` headless tool ✅ · Async serial I/O bug fixed ✅
+> **v0.3.0**: Legendary Doge-Radio hero image activated ✅ · App icon, NavBar logo, Connect tab, and Dashboard all show the epic Doge/boombox artwork ✅ · Version bumped everywhere ✅
 
 ---
 
@@ -144,6 +144,72 @@ cargo build -p radiodoge-cli --release
 5. Select board: **Heltec WiFi LoRa 32(V3)**
 6. Upload at 921600 baud
 7. The OLED display will show the node address on boot
+
+---
+
+## 🛠️ How to Test with Real Hardware
+
+> **Everything below applies once you have a flashed Heltec ESP32 LoRa V3 in hand.**
+> The app is fully functional — zero placeholders.
+
+### Step 1 — Flash the Heltec Firmware
+
+1. Install [Arduino IDE 2.x](https://www.arduino.cc/en/software) and open it
+2. Go to **File → Preferences** and paste into "Additional boards manager URLs":
+   ```
+   https://resource.heltec.cn/download/package_heltec_esp32_index.json
+   ```
+3. Go to **Tools → Board → Board Manager**, search **Heltec ESP32**, install
+4. Install libraries via **Sketch → Include Library → Manage Libraries**:
+   - `LoRaWan_APP` (Heltec)
+   - `Adafruit GFX Library`
+   - `Adafruit SSD1306`
+5. Open `heltec-firmware-v3/heltec-firmware.ino`
+6. Select board: **Heltec WiFi LoRa 32(V3)**, choose the correct COM port
+7. Click **Upload** (upload speed 921600 works reliably)
+8. On success, the OLED shows the node address (e.g., `10.0.1`) — the radio is live!
+
+### Step 2 — Connect in the GUI
+
+1. Plug the flashed Heltec into your PC via USB-C
+2. Launch RadioDoge (MSI installer or `cargo tauri dev` in `radiodoge-gui/`)
+3. On the **Connect** tab, click **⟳ Refresh** — the Heltec COM port appears (usually `COM3`–`COM8` on Windows)
+4. Select the port, click **🔌 Connect to Heltec**
+5. The app pings the device: if it responds within 500 ms you'll see **✅ Connected!** with RSSI and the node address
+6. The NavBar turns green and the Dashboard tab becomes active automatically
+
+### Step 3 — Generate a Dogecoin Wallet
+
+1. Click the **Wallet** tab
+2. Click **Generate New Wallet** — pure Rust crypto creates a real mainnet keypair in < 1 ms
+3. Your address starts with `D` (e.g., `DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L`)
+4. **Save your private key (WIF) now** — it is never stored to disk! Copy it somewhere safe
+
+### Step 4 — Send a Dogecoin Transaction Over LoRa
+
+1. Click the **Send** tab
+2. Paste the recipient's Dogecoin address (must start with `D`)
+3. Enter the amount (e.g., `1.00`) and an optional memo (e.g., `such payment, wow`)
+4. Click **🚀 Sign & Broadcast via Radio**
+5. The app encodes the payload, splits it into LoRa packets if > 192 bytes, and sends each over the serial port
+6. The Heltec device broadcasts the packet over the LoRa mesh
+7. 🎉 Confetti explodes and a success toast appears on screen!
+
+### Step 5 — Monitor Incoming Packets
+
+- **Dashboard tab**: live RSSI/SNR meters + packet log update every 2 s
+- **Receive tab**: decoded incoming LoRa packets with source address, command, and RSSI
+- **Signal Bars** in the NavBar and Dashboard reflect real RF conditions
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| "No ports found" | Check USB cable, install CP210x or CH340 drivers, click ⟳ Refresh |
+| "Not connected" after clicking Connect | Wrong port selected, or firmware not flashed — check OLED on device |
+| RSSI very low (< −100 dBm) | Move nodes closer, or adjust spreading factor in Settings tab |
+| Transaction not received by gateway | No gateway node in range — add a second Heltec as a relay/gateway |
+| SmartScreen warning on MSI | Click "More info → Run anyway" — unsigned build is normal for dev |
 
 ---
 
