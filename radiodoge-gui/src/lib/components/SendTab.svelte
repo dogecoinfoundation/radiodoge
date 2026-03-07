@@ -110,11 +110,12 @@
   <div class="card-doge" style="display: flex; flex-direction: column; gap: 20px;">
     <!-- Recipient address -->
     <div>
-      <label style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+      <label for="send-to-address" style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
         Recipient Address
       </label>
       <div style="display: flex; gap: 8px;">
         <input
+          id="send-to-address"
           bind:value={toAddress}
           placeholder="DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L"
           class="input-doge"
@@ -137,11 +138,12 @@
 
     <!-- Amount -->
     <div>
-      <label style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+      <label for="send-amount" style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
         Amount (DOGE)
       </label>
       <div style="position: relative;">
         <input
+          id="send-amount"
           bind:value={amountDoge}
           type="number"
           min="0"
@@ -171,10 +173,11 @@
 
     <!-- Memo (optional) -->
     <div>
-      <label style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+      <label for="send-memo" style="display: block; font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
         Memo <span style="color: var(--doge-subtle); text-transform: none; font-size: 0.75rem;">(optional)</span>
       </label>
       <input
+        id="send-memo"
         bind:value={memo}
         placeholder="such payment, very thanks, wow"
         class="input-doge"

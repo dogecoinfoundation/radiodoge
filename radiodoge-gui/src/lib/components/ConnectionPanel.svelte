@@ -88,11 +88,12 @@
 
     <!-- Port selection -->
     <div style="margin-bottom: 16px;">
-      <label style="display: block; font-size: 0.8rem; color: var(--doge-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
+      <label for="serial-port-select" style="display: block; font-size: 0.8rem; color: var(--doge-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
         Serial Port
       </label>
       <div style="display: flex; gap: 8px;">
         <select
+          id="serial-port-select"
           bind:value={selectedPort}
           disabled={connection.isConnected || connection.isConnecting}
           style="
