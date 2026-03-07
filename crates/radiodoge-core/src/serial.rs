@@ -95,6 +95,9 @@ pub struct SerialManager {
 
     /// The LoRa mesh address reported by the Heltec device on connect.
     node_address: Arc<TokioMutex<NodeAddress>>,
+
+    /// Firmware version string, populated after CMD_GET_FIRMWARE_VERSION response.
+    firmware_version: Arc<TokioMutex<Option<String>>>,
 }
 
 impl SerialManager {
@@ -107,6 +110,7 @@ impl SerialManager {
             cancel: Arc::new(StdMutex::new(None)),
             stats: Arc::new(TokioMutex::new(RadioStats::default())),
             node_address: Arc::new(TokioMutex::new(NodeAddress::default_local())),
+            firmware_version: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -246,6 +250,8 @@ impl SerialManager {
         let port_clone = Arc::clone(&self.port);
         let connected_clone = Arc::clone(&self.connected);
         let stats_clone = Arc::clone(&self.stats);
+        let node_address_clone = Arc::clone(&self.node_address);
+        let firmware_version_clone = Arc::clone(&self.firmware_version);
         let packet_tx_clone = self.packet_tx.clone();
 
         tokio::spawn(async move {
@@ -310,6 +316,25 @@ impl SerialManager {
                                     stats.packets_received += 1;
                                 }
 
+                                // Auto-update node address from GET_NODE_ADDR responses
+                                if packet.command == radio::CMD_GET_NODE_ADDR
+                                    && packet.source != NodeAddress::broadcast()
+                                {
+                                    *node_address_clone.lock().await = packet.source.clone();
+                                }
+
+                                // Parse firmware version from CMD_GET_FIRMWARE_VERSION responses
+                                if packet.command == radio::CMD_GET_FIRMWARE_VERSION {
+                                    if let Ok(bytes) = hex::decode(&packet.payload_hex) {
+                                        if let Ok(ver) = String::from_utf8(bytes) {
+                                            let ver = ver.trim_matches('\0').trim().to_string();
+                                            if !ver.is_empty() {
+                                                *firmware_version_clone.lock().await = Some(ver);
+                                            }
+                                        }
+                                    }
+                                }
+
                                 // Broadcast to all subscribers
                                 let _ = packet_tx_clone.send(packet.clone());
 
@@ -355,8 +380,9 @@ impl SerialManager {
         *self.port.lock().expect("port mutex poisoned") = None;
         self.connected.store(false, Ordering::Relaxed);
 
-        // Reset stats
+        // Reset stats and firmware version
         *self.stats.lock().await = RadioStats::default();
+        *self.firmware_version.lock().await = None;
 
         Ok(())
     }
@@ -409,6 +435,46 @@ impl SerialManager {
     /// Update the stored node address (called when we receive a GET_NODE_ADDR response).
     pub async fn update_node_address(&self, addr: NodeAddress) {
         *self.node_address.lock().await = addr;
+    }
+
+    /// The firmware version string reported by the connected device, if available.
+    pub async fn get_firmware_version(&self) -> Option<String> {
+        self.firmware_version.lock().await.clone()
+    }
+
+    /// After sending SET_NODE_ADDR, verify the device accepted it by querying
+    /// GET_NODE_ADDR and checking the response source matches `expected`.
+    ///
+    /// Returns `true` if the device confirmed the new address within `timeout_ms`.
+    pub async fn verify_node_address_set(&self, expected: &NodeAddress, timeout_ms: u64) -> bool {
+        if !self.is_connected() {
+            return false;
+        }
+
+        let mut rx = self.packet_tx.subscribe();
+        let local = self.node_address.lock().await.clone();
+        let query = radio::build_get_node_addr(&local);
+        if self.send_raw(query).await.is_err() {
+            return false;
+        }
+
+        let expected_owned = expected.clone();
+        let deadline = std::time::Duration::from_millis(timeout_ms);
+        match tokio::time::timeout(deadline, async move {
+            loop {
+                match rx.recv().await {
+                    Ok(pkt) if pkt.command == radio::CMD_GET_NODE_ADDR
+                        && pkt.source == expected_owned => return true,
+                    Ok(_) => continue,
+                    Err(_) => return false,
+                }
+            }
+        })
+        .await
+        {
+            Ok(verified) => verified,
+            Err(_) => false, // timeout
+        }
     }
 }
 

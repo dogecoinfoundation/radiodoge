@@ -29,6 +29,14 @@
   }
 
   let showRaw = $state(false);
+
+  /** Track which packet index was just copied (for transient ✅ feedback). */
+  let copiedPacketIndex = $state<number | null>(null);
+  async function copyPacket(text: string, idx: number) {
+    await navigator.clipboard.writeText(text);
+    copiedPacketIndex = idx;
+    setTimeout(() => { copiedPacketIndex = null; }, 1500);
+  }
 </script>
 
 <div style="padding: 24px; max-width: 900px; margin: 0 auto;">
@@ -183,6 +191,19 @@
           ">
             {packet.rssi} dBm
           </span>
+
+          <!-- Copy button -->
+          <button
+            onclick={() => copyPacket(
+              showRaw || !packet.decoded ? packet.payloadHex : (packet.decoded ?? packet.payloadHex),
+              i
+            )}
+            class="btn-ghost"
+            title="Copy to clipboard"
+            style="padding: 2px 6px; font-size: 0.7rem; flex-shrink: 0;"
+          >
+            {copiedPacketIndex === i ? '✅' : '📋'}
+          </button>
         </div>
       {/each}
     </div>

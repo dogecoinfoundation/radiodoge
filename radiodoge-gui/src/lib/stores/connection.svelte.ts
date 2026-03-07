@@ -29,6 +29,10 @@ export const connection = $state({
   stats: null as RadioStats | null,
   /** Whether a connection attempt is in progress */
   isConnecting: false,
+  /** Whether auto-reconnect is in progress after unexpected disconnect */
+  isReconnecting: false,
+  /** Firmware version string reported by the Heltec device, e.g. "v1.2.3" */
+  firmwareVersion: null as string | null,
 });
 
 /** Update available ports list */
@@ -37,20 +41,33 @@ export function setAvailablePorts(ports: string[]) {
 }
 
 /** Set connected state */
-export function setConnected(port: string, nodeAddress: NodeAddress | null) {
+export function setConnected(port: string, nodeAddress: NodeAddress | null, firmwareVersion?: string | null) {
   connection.isConnected = true;
   connection.isConnecting = false;
+  connection.isReconnecting = false;
   connection.portName = port;
   connection.nodeAddress = nodeAddress;
   connection.status = 'connected';
   connection.error = null;
+  connection.firmwareVersion = firmwareVersion ?? null;
 }
 
 /** Set connecting state */
 export function setConnecting(port: string) {
   connection.isConnecting = true;
+  connection.isReconnecting = false;
   connection.portName = port;
   connection.status = 'connecting';
+  connection.error = null;
+}
+
+/** Set reconnecting state (auto-reconnect in progress) */
+export function setReconnecting(port: string) {
+  connection.isConnected = false;
+  connection.isConnecting = false;
+  connection.isReconnecting = true;
+  connection.portName = port;
+  connection.status = 'reconnecting';
   connection.error = null;
 }
 
@@ -58,16 +75,19 @@ export function setConnecting(port: string) {
 export function setDisconnected() {
   connection.isConnected = false;
   connection.isConnecting = false;
+  connection.isReconnecting = false;
   connection.portName = '';
   connection.nodeAddress = null;
   connection.status = 'disconnected';
   connection.stats = null;
+  connection.firmwareVersion = null;
 }
 
 /** Set error state */
 export function setError(msg: string) {
   connection.isConnected = false;
   connection.isConnecting = false;
+  connection.isReconnecting = false;
   connection.status = 'error';
   connection.error = msg;
 }

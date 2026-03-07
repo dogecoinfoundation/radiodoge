@@ -9,10 +9,19 @@
    */
 
   import { invoke } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-shell';
   import { connection, setAvailablePorts, setConnecting, setDisconnected, setError } from '$lib/stores/connection.svelte';
   import SignalBars from './SignalBars.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
   import { nodeAddressToString, type PortInfo } from '$lib/types';
+
+  /** Copy text to clipboard and briefly show confirmation. */
+  let copiedField = $state<string | null>(null);
+  async function copyToClipboard(text: string, field: string) {
+    await navigator.clipboard.writeText(text);
+    copiedField = field;
+    setTimeout(() => { copiedField = null; }, 1500);
+  }
 
   let selectedPort = $state('');
   let isRefreshing = $state(false);
@@ -244,10 +253,24 @@
           <ol style="margin: 6px 0 0 0; padding-left: 20px;">
             <li>Plug the Heltec into a USB port and click ⟳</li>
             <li>If still empty, install the <strong>CP210x driver</strong> (most Heltec boards):
-              <br><span class="mono" style="font-size: 0.72rem;">silabs.com/developers/usb-to-uart-bridge-vcp-drivers</span>
+              <br>
+              <button
+                onclick={() => open('https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers')}
+                class="btn-ghost"
+                style="font-size: 0.72rem; padding: 2px 8px; margin-top: 4px; text-decoration: underline; color: var(--doge-yellow);"
+              >
+                🔗 silabs.com — CP210x USB Driver
+              </button>
             </li>
             <li>Or the <strong>CH340 driver</strong> for some boards:
-              <br><span class="mono" style="font-size: 0.72rem;">wch-ic.com/products/CH340.html</span>
+              <br>
+              <button
+                onclick={() => open('https://www.wch-ic.com/products/CH340.html')}
+                class="btn-ghost"
+                style="font-size: 0.72rem; padding: 2px 8px; margin-top: 4px; text-decoration: underline; color: var(--doge-yellow);"
+              >
+                🔗 wch-ic.com — CH340 USB Driver
+              </button>
             </li>
             <li>Check Device Manager for a ⚠️ yellow warning on the port</li>
           </ol>
@@ -262,7 +285,7 @@
       {/if}
     </div>
 
-    <!-- Connect / Disconnect / Connecting buttons -->
+    <!-- Connect / Disconnect / Connecting / Reconnecting buttons -->
     {#if connection.isConnected}
       <button
         onclick={disconnect}
@@ -280,6 +303,11 @@
         "
       >
         🔌 Disconnect
+      </button>
+    {:else if connection.isReconnecting}
+      <button disabled class="btn-doge" style="width: 100%; padding: 14px; font-size: 1rem; opacity: 0.85;">
+        <DogeSpinner size="sm" message="" />
+        <span style="margin-left: 8px;">🔄 Reconnecting... such retry 🐕</span>
       </button>
     {:else if connection.isConnecting}
       <button disabled class="btn-doge" style="width: 100%; padding: 14px; font-size: 1rem;">
@@ -319,7 +347,34 @@
   {#if connection.isConnected}
     <div class="card-doge card-connected" style="margin-top: 16px; animation: slide-up 0.3s ease;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-        <h3 style="margin: 0; font-size: 1rem; color: var(--doge-neon);">✅ Connected!</h3>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h3 style="margin: 0; font-size: 1rem; color: var(--doge-neon);">✅ Connected!</h3>
+          {#if connection.firmwareVersion}
+            <span style="
+              background: rgba(0,255,136,0.1);
+              border: 1px solid rgba(0,255,136,0.3);
+              border-radius: 12px;
+              padding: 2px 10px;
+              font-size: 0.72rem;
+              font-family: var(--font-mono);
+              color: var(--doge-neon);
+            ">
+              FW {connection.firmwareVersion}
+            </span>
+          {:else}
+            <span style="
+              background: rgba(136,136,136,0.1);
+              border: 1px solid rgba(136,136,136,0.2);
+              border-radius: 12px;
+              padding: 2px 10px;
+              font-size: 0.72rem;
+              font-family: var(--font-mono);
+              color: var(--doge-subtle);
+            ">
+              FW v?.?.?
+            </span>
+          {/if}
+        </div>
         <SignalBars rssi={connection.stats?.rssi ?? -120} connected={true} size="md" />
       </div>
 
@@ -333,8 +388,18 @@
         {#if connection.nodeAddress}
           <div>
             <div class="stat-label">Node Address</div>
-            <div style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 600;">
-              {nodeAddressToString(connection.nodeAddress)}
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 600;">
+                {nodeAddressToString(connection.nodeAddress)}
+              </span>
+              <button
+                onclick={() => copyToClipboard(nodeAddressToString(connection.nodeAddress!), 'nodeAddr')}
+                class="btn-ghost"
+                title="Copy node address"
+                style="padding: 2px 6px; font-size: 0.7rem; flex-shrink: 0;"
+              >
+                {copiedField === 'nodeAddr' ? '✅' : '📋'}
+              </button>
             </div>
           </div>
         {/if}

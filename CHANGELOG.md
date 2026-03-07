@@ -7,6 +7,70 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-03-07 — 🚀 Full v0.3.0 Feature Release
+
+> **Real hardware integration complete. Much functionality. Very radio. Such wow. 🐕🌙**
+
+### Added
+
+#### App Icon
+- **Real PNG icon**: `Radio_Doge.png` (JPEG-disguised-as-PNG) has been converted to a genuine
+  PNG using Python Pillow; all icon targets (`icons/doge-radio.png`, `icons/icon.ico`,
+  `images/Radio_Doge.png`, `static/doge-radio.png`) are now valid PNG files with correct magic bytes.
+  The Doge boombox image is now the official Windows application icon.
+
+#### Firmware Version Badge
+- On connect, RadioDoge sends `CMD_GET_FIRMWARE_VERSION` (0x20) to the device and waits up to
+  500 ms for a response. The firmware version string (e.g. `v1.2.3`) is displayed as a badge
+  in the Connected status card. If the device doesn't respond, shows `FW v?.?.?` gracefully.
+
+#### Auto-Reconnect on USB Re-Plug
+- A background watchdog task monitors connection health after each successful connect.
+- On unexpected disconnect, emits `reconnecting` status and retries the connection with
+  exponential backoff: 1 s → 2 s → 4 s → … → 30 s max.
+- The user can stop the watchdog at any time by clicking Disconnect.
+- UI shows "🔄 Reconnecting..." spinner during reconnect attempts.
+
+#### LoRa Settings Round-Trip Verification
+- `update_lora_settings` now performs a round-trip check after sending `CMD_SET_NODE_ADDR`:
+  it queries the device with `CMD_GET_NODE_ADDR` and waits up to 1 second for a response
+  confirming the new address.
+- Returns `true` (verified) or `false` (sent but no confirmation) to the frontend.
+- SettingsTab now shows `✅ Settings saved & verified on device!` or
+  `⚠️ Settings sent — could not verify on device`.
+
+#### Desktop Toast Notifications for DOGE TX
+- Incoming `CMD_DOGE_TX` packets trigger a native OS desktop notification via
+  `tauri-plugin-notification`, showing the decoded amount and recipient address.
+- Works on Windows, macOS, and Linux without any additional setup.
+
+#### Clickable Driver Download Links
+- The "No ports detected" help box in ConnectionPanel now has clickable buttons
+  (`🔗 silabs.com — CP210x USB Driver` and `🔗 wch-ic.com — CH340 USB Driver`)
+  that open the driver download pages in the system browser via `@tauri-apps/plugin-shell`.
+
+#### Copy-to-Clipboard
+- **ConnectionPanel**: copy button (📋) next to Node Address in the connected status card.
+- **ReceiveTab**: copy button per packet row — copies the decoded text or raw hex depending
+  on the current "Show raw hex" toggle. Shows ✅ briefly on copy.
+
+### Changed
+
+- `update_lora_settings` Tauri command return type: `Result<(), String>` → `Result<bool, String>`
+  (boolean indicates round-trip verification result; `false` when not connected = stored locally).
+- `ConnectionStatusEvent` struct now has a `firmware_version: Option<String>` field.
+- `ConnectionStatusType` now includes `'reconnecting'` status.
+- Version bumped to `0.3.0` across all crates, `tauri.conf.json`, and `package.json`.
+- Footer version string updated to `RadioDoge v0.3.0`.
+
+### Fixed
+
+- Node address auto-update from read loop: the serial read loop now correctly updates
+  `node_address` in `SerialManager` when a `CMD_GET_NODE_ADDR` (0x00) response is received,
+  rather than always returning the default `10.0.1`.
+
+---
+
 ## [0.2.4] — 2026-03-07 — 🔧 Build Fix: Bad Icon Removed, Versions Stabilised
 
 > **MSI was broken by a JPEG-disguised-as-PNG icon. Reverted to working defaults.**

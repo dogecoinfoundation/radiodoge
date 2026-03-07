@@ -77,13 +77,14 @@ export interface IncomingPacket {
   rssi: number;
 }
 
-export type ConnectionStatusType = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionStatusType = 'disconnected' | 'connecting' | 'connected' | 'error' | 'reconnecting';
 
 export interface ConnectionStatusEvent {
   status: ConnectionStatusType;
   port?: string;
   nodeAddress?: NodeAddress;
   message?: string;
+  firmwareVersion?: string;
 }
 
 /**
@@ -117,6 +118,7 @@ export function commandName(cmd: number): string {
     0x05: 'MULTIPART',
     0x10: 'DOGE TX',
     0x11: 'BALANCE',
+    0x20: 'FW VERSION',
   };
   return map[cmd] ?? `CMD(0x${cmd.toString(16).toUpperCase()})`;
 }
