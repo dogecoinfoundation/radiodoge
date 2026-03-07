@@ -7,7 +7,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.2.0] — 2024-XX-XX — 🐕 Rust Tauri GUI Rewrite
+## [1.0.0] — 2026-03-07 — 🚀 Rust GUI Launch – Much Wow, Very Installable!
 
 ### Added — Beautiful Windows + Android-Ready Desktop App
 
