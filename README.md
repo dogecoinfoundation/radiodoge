@@ -165,8 +165,8 @@ Node addresses use the `Region.Community.Node` format (e.g., `10.0.2`).
 GitHub Actions automatically builds the MSI when you push a `v*` tag:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
 To set up signing keys (recommended for production):

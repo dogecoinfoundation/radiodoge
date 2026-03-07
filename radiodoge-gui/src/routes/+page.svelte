@@ -146,7 +146,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.2.0</span>
+    <span>RadioDoge v0.2.3</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">
