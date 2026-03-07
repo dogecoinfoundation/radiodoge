@@ -7,7 +7,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.0.0] — 2026-03-07 — 🚀 Rust GUI Launch – Much Wow, Very Installable!
+## [0.2.2] — 2026-03-07 — 🐕 Rust GUI Launch – Much Wow, Very Installable!
 
 ### Added — Beautiful Windows + Android-Ready Desktop App
 
