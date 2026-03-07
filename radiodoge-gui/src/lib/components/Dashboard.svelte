@@ -27,8 +27,22 @@
 <div style="padding: 24px; max-width: 1000px; margin: 0 auto;">
   {#if !connection.isConnected}
     <div style="text-align: center; padding: 60px 20px; color: var(--doge-muted);">
-      <div style="font-size: 3rem; margin-bottom: 16px;">📡</div>
-      <p>Connect to a Heltec device first to see the dashboard.</p>
+      <div style="
+        margin-bottom: 24px;
+        display: inline-block;
+        opacity: 0.7;
+        filter: drop-shadow(0 0 20px rgba(245, 197, 24, 0.3));
+        animation: bounce-doge 3s ease-in-out infinite;
+      ">
+        <img
+          src="/doge-radio.png"
+          alt="Doge Radio — waiting for connection"
+          width="160"
+          height="160"
+          style="border-radius: 20px; display: block;"
+        />
+      </div>
+      <p style="font-size: 1rem; margin-bottom: 6px;">Connect to a Heltec device first to see the dashboard.</p>
       <p style="font-size: 0.85rem; font-style: italic;">Such empty. Very disconnect. Wow.</p>
     </div>
   {:else}

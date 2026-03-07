@@ -47,6 +47,26 @@ export interface TransactionRequest {
   fromPrivateKeyWif?: string;
 }
 
+/** Rich information about a serial port, including USB device details. */
+export interface PortInfo {
+  /** OS port name, e.g. "COM3" or "/dev/ttyUSB0" */
+  name: string;
+  /** True if this is a USB serial adapter */
+  isUsb: boolean;
+  /** USB manufacturer string (if reported) */
+  manufacturer?: string;
+  /** USB product string (if reported), e.g. "CP2102 USB to UART Bridge" */
+  product?: string;
+  /** USB Vendor ID */
+  vid?: number;
+  /** USB Product ID */
+  pid?: number;
+  /** Short human-readable label for display, e.g. "COM3 — CP2102 USB to UART Bridge" */
+  description: string;
+  /** True if the VID/PID matches a known Heltec / ESP32 USB adapter */
+  isLikelyHeltec: boolean;
+}
+
 export interface IncomingPacket {
   timestamp: number;
   source: NodeAddress;

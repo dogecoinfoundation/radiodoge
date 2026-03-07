@@ -22,7 +22,7 @@ mod tray;
 use radiodoge_core::{radio, wallet};
 use radiodoge_core::serial::SerialManager;
 use radiodoge_core::types::{
-    ConnectionStatusEvent, IncomingPacket, LoraSettings, NodeAddress, RadioStats,
+    ConnectionStatusEvent, IncomingPacket, LoraSettings, NodeAddress, PortInfo, RadioStats,
     TransactionRequest, WalletInfo,
 };
 
@@ -47,9 +47,20 @@ impl AppState {
 
 /// List all available serial ports on this system.
 /// Returns port names like "COM3" (Windows) or "/dev/ttyUSB0" (Linux).
+/// USB serial devices (CP210x / CH340 / CH9102 etc.) are sorted first.
 #[tauri::command]
 async fn list_ports() -> Result<Vec<String>, String> {
     Ok(SerialManager::list_ports())
+}
+
+/// List all available serial ports with rich USB device information.
+///
+/// Returns [`PortInfo`] structs including USB VID/PID, manufacturer, product
+/// string, and whether the port matches a known Heltec/ESP32 adapter.
+/// Likely-Heltec ports are sorted first so the UI can auto-select them.
+#[tauri::command]
+async fn list_ports_detailed() -> Result<Vec<PortInfo>, String> {
+    Ok(SerialManager::list_ports_with_info())
 }
 
 /// Open a serial connection to the Heltec device on the given port.
@@ -73,7 +84,39 @@ async fn connect_port(
         .serial
         .connect(&port, on_packet)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let raw = e.to_string();
+            // Surface actionable hints for the most common Windows serial failures.
+            if raw.contains("Access is denied") || raw.contains("Permission denied") {
+                format!(
+                    "Access denied on {}.\n\
+                     Hint: Another program (Arduino IDE, PuTTY, device manager) may \
+                     already have this port open. Close it and try again.",
+                    port
+                )
+            } else if raw.contains("could not open")
+                || raw.contains("No such file")
+                || raw.contains("The system cannot find")
+            {
+                format!(
+                    "Could not open {}.\n\
+                     Hint: Install the CP210x or CH340 USB driver for your Heltec board.\n\
+                     CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers\n\
+                     CH340: https://www.wch-ic.com/products/CH340.html",
+                    port
+                )
+            } else if raw.contains("The device is not connected")
+                || raw.contains("device has been removed")
+            {
+                format!(
+                    "Device disconnected unexpectedly on {}.\n\
+                     Hint: Check the USB cable — some USB-C cables are power-only.",
+                    port
+                )
+            } else {
+                raw
+            }
+        })?;
 
     *state.current_port.lock().await = Some(port.clone());
 
@@ -260,6 +303,7 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             list_ports,
+            list_ports_detailed,
             connect_port,
             disconnect_port,
             is_connected,

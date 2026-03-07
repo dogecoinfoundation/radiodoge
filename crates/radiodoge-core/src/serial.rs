@@ -22,7 +22,41 @@ use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::radio;
-use crate::types::{IncomingPacket, NodeAddress, RadioStats};
+use crate::types::{IncomingPacket, NodeAddress, PortInfo, RadioStats};
+
+// ─── USB VID/PID tables for common ESP32 / Heltec serial adapters ────────────
+
+/// Silicon Labs CP210x (CP2102, CP2104 etc.) — the most common adapter on
+/// Heltec WiFi LoRa 32 V2 boards.
+const CP210X_VID: u16 = 0x10C4;
+const CP210X_PID: u16 = 0xEA60;
+
+/// Jiangsu Qinheng CH340 / CH341 — common on cheap ESP32 dev boards.
+const CH340_VID: u16 = 0x1A86;
+const CH340_PID: u16 = 0x7523;
+
+/// CH9102 — newer Qinheng chip found on some Heltec V3 boards.
+const CH9102_VID: u16 = 0x1A86;
+const CH9102_PID: u16 = 0x55D4;
+
+/// Espressif built-in USB-CDC (ESP32-S2, S3, C3 native USB).
+const ESP_NATIVE_VID: u16 = 0x303A;
+
+/// FTDI FT232 — less common on Heltec but used by some breakout boards.
+const FTDI_VID: u16 = 0x0403;
+
+/// Returns `true` if the VID/PID matches a USB serial adapter commonly found
+/// on Heltec ESP32 LoRa boards.
+fn is_likely_heltec_vid_pid(vid: u16, pid: u16) -> bool {
+    matches!(
+        (vid, pid),
+        (CP210X_VID, CP210X_PID)
+            | (CH340_VID, CH340_PID)
+            | (CH9102_VID, CH9102_PID)
+            | (ESP_NATIVE_VID, _)
+            | (FTDI_VID, _)
+    )
+}
 
 /// Baud rate for Heltec LoRa module serial communication
 const BAUD_RATE: u32 = 115_200;
@@ -76,15 +110,84 @@ impl SerialManager {
         }
     }
 
-    /// List all serial ports visible to the OS.
+    /// List all serial ports visible to the OS (names only, for backward compat).
+    ///
+    /// USB serial devices (CP210x, CH340, etc.) are sorted first.
+    /// Prefer [`list_ports_with_info`] for the rich UI representation.
     pub fn list_ports() -> Vec<String> {
-        match serialport::available_ports() {
-            Ok(ports) => ports.iter().map(|p| p.port_name.clone()).collect(),
+        Self::list_ports_with_info()
+            .into_iter()
+            .map(|p| p.name)
+            .collect()
+    }
+
+    /// List all serial ports with rich USB device information.
+    ///
+    /// - USB serial adapters (CP210x, CH340, CH9102, FTDI, Espressif native) appear first.
+    /// - Known Heltec/ESP32 adapters are flagged with `is_likely_heltec = true`.
+    /// - Ports are sorted: likely-Heltec first, then other USB, then non-USB.
+    pub fn list_ports_with_info() -> Vec<PortInfo> {
+        let raw = match serialport::available_ports() {
+            Ok(p) => p,
             Err(e) => {
                 log::warn!("Failed to list serial ports: {}", e);
-                vec![]
+                return vec![];
             }
-        }
+        };
+
+        let mut ports: Vec<PortInfo> = raw
+            .into_iter()
+            .map(|p| {
+                let name = p.port_name.clone();
+
+                match p.port_type {
+                    serialport::SerialPortType::UsbPort(usb) => {
+                        let vid = usb.vid;
+                        let pid = usb.pid;
+                        let likely = is_likely_heltec_vid_pid(vid, pid);
+
+                        let mfr = usb.manufacturer.clone();
+                        let prod = usb.product.clone();
+
+                        // Build a short human-readable label: "COM3 — CP2102 USB to UART"
+                        let adapter_label = prod
+                            .clone()
+                            .or_else(|| mfr.clone())
+                            .unwrap_or_else(|| format!("USB VID:{:04X} PID:{:04X}", vid, pid));
+
+                        let description = format!("{} — {}", name, adapter_label);
+
+                        PortInfo {
+                            name,
+                            is_usb: true,
+                            manufacturer: mfr,
+                            product: prod,
+                            vid: Some(vid),
+                            pid: Some(pid),
+                            description,
+                            is_likely_heltec: likely,
+                        }
+                    }
+                    _ => PortInfo {
+                        description: name.clone(),
+                        name,
+                        is_usb: false,
+                        manufacturer: None,
+                        product: None,
+                        vid: None,
+                        pid: None,
+                        is_likely_heltec: false,
+                    },
+                }
+            })
+            .collect();
+
+        // Sort: likely-Heltec USB ports first, then other USB, then non-USB.
+        ports.sort_by_key(|p| {
+            if p.is_likely_heltec { 0u8 } else if p.is_usb { 1 } else { 2 }
+        });
+
+        ports
     }
 
     /// `true` if a port is open and the read loop is running.

@@ -1,7 +1,7 @@
-//! Shared types for RadioDoge GUI.
+//! Shared types for RadioDoge.
 //!
 //! All types derive Serialize/Deserialize so they can be sent
-//! over Tauri IPC to the Svelte frontend.
+//! over Tauri IPC to the Svelte frontend or printed from the CLI.
 
 use serde::{Deserialize, Serialize};
 
@@ -152,6 +152,31 @@ pub struct IncomingPacket {
     pub decoded: Option<String>,
     /// RSSI of this packet in dBm
     pub rssi: i16,
+}
+
+/// Information about a serial port visible to the OS.
+///
+/// Returned by `list_ports_with_info()` so the UI can display friendly names,
+/// prioritise USB serial devices, and flag ports that match known Heltec/ESP32 adapters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortInfo {
+    /// OS-level port name (e.g. "COM3" on Windows, "/dev/ttyUSB0" on Linux)
+    pub name: String,
+    /// True if this is a USB serial adapter (vs. a native COM/PCI port)
+    pub is_usb: bool,
+    /// USB manufacturer string, if reported by the adapter
+    pub manufacturer: Option<String>,
+    /// USB product string, if reported by the adapter (e.g. "CP2102 USB to UART Bridge")
+    pub product: Option<String>,
+    /// USB Vendor ID in decimal (Silicon Labs = 4292, Jiangsu Qinheng = 6790)
+    pub vid: Option<u16>,
+    /// USB Product ID in decimal
+    pub pid: Option<u16>,
+    /// Short human-readable label for display (e.g. "COM3 — CP2102 USB to UART Bridge")
+    pub description: String,
+    /// True if this port matches a USB VID/PID known to be used by Heltec / ESP32 boards
+    pub is_likely_heltec: bool,
 }
 
 /// Connection status — emitted as a Tauri event.

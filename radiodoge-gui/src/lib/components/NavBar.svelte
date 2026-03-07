@@ -44,18 +44,23 @@
     style="
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       margin-right: 24px;
       flex-shrink: 0;
     "
   >
-    <span
+    <img
+      src="/doge-radio.png"
+      alt="RadioDoge logo"
+      width="32"
+      height="32"
       style="
-        font-size: 1.5rem;
+        border-radius: 8px;
         animation: bounce-doge 2s ease-in-out infinite;
         display: inline-block;
+        filter: drop-shadow(0 0 6px rgba(245, 197, 24, 0.5));
       "
-    >🐕</span>
+    />
     <div>
       <div
         style="
@@ -70,7 +75,7 @@
         "
       >DOGE RADIO</div>
       <div style="font-size: 0.6rem; color: var(--doge-subtle); letter-spacing: 0.1em;">
-        WIRELESS P2P
+        v0.3.0 · WIRELESS P2P
       </div>
     </div>
   </div>
