@@ -4,7 +4,8 @@
 [![Rust](https://img.shields.io/badge/Built%20with-Rust%20🦀-orange)](https://rustlang.org)
 [![Tauri 2](https://img.shields.io/badge/Tauri-v2-blue)](https://tauri.app)
 [![Dogecoin](https://img.shields.io/badge/Powered%20by-Dogecoin-f7d02c?logo=dogecoin)](https://dogecoin.com)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20(soon)-informational)]()
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-informational)]()
+[![CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml/badge.svg)](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
 
 > **Much wireless. Very transaction. Wow.** 🌙
 
@@ -12,21 +13,42 @@ Send and receive Dogecoin over **LoRa radio waves** — completely offline, no i
 
 ---
 
-## 🚀 One-Click Install (Windows)
+## 🚀 Get the MSI — Two Ways, Both Easy
 
-Download the latest `.msi` installer from the [**Releases page**](https://github.com/jnowat/RadioDoge/releases) and double-click to install.
+> **MSI auto-builds on every push — grab it from Actions artifacts instantly, or download a polished build from Releases!**
 
-No dependencies, no command line, just Dogecoin over the airwaves. 🐕📡
+### ⚡ Option A: Instant Download (Every Push → Actions Artifacts)
+
+No waiting for a tagged release. Every commit to `master` triggers a full MSI build:
+
+1. Go to the [**Actions tab**](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
+2. Click the latest **"🐕 Build Windows MSI"** run
+3. Scroll to **Artifacts** at the bottom of the page
+4. Click **`RadioDoge-x.x.x-windows-x64-msi`** → download the `.zip`
+5. Unzip → double-click the `.msi` → done! 🐕
+
+Artifacts are kept for **30 days** after each build.
+
+### 🏷️ Option B: Tagged Release (Permanent, GitHub Releases Page)
+
+Polished builds with release notes live on the [**Releases page**](https://github.com/jnowat/RadioDoge/releases):
+
+1. Go to [Releases](https://github.com/jnowat/RadioDoge/releases)
+2. Download `RadioDoge_x.x.x_x64_en-US.msi`
+3. Install and launch — done! 🐕
+
+The MSI automatically attaches to any GitHub Release you create.
 
 ---
 
 ## ✨ What Makes RadioDoge Special?
 
-- **No internet required** — transactions travel over LoRa radio (up to 15km range!)
+- **No internet required** — transactions travel over LoRa radio (up to 15 km range!)
 - **Mesh networking** — packets hop between nodes to reach the nearest gateway
 - **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti on every transaction 🎉
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
+- **Instant MSI builds** — every push to master compiles a fresh installer, no tag needed
 
 ---
 
@@ -59,14 +81,14 @@ Your PC / Phone
 ## ⚡ Getting Started in 5 Minutes
 
 ### Prerequisites
-- Windows 10/11 (x64) or Linux
+- Windows 10/11 (x64)
 - [Heltec ESP32 LoRa V3](https://heltec.org/project/wifi-lora-32-v3/) board
 - USB cable (USB-C)
-- [Node.js 20+](https://nodejs.org) and [Rust](https://rustup.rs) (for development)
+- [Node.js 20+](https://nodejs.org) and [Rust](https://rustup.rs) (for development only)
 
 ### Option A: Download the MSI (Windows, easiest)
 
-1. Go to [Releases](https://github.com/jnowat/RadioDoge/releases)
+1. Go to [Actions](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml) for the latest push build, **or** [Releases](https://github.com/jnowat/RadioDoge/releases) for tagged builds
 2. Download `RadioDoge_x.x.x_x64_en-US.msi`
 3. Install and launch — done! 🐕
 
@@ -103,6 +125,8 @@ cargo tauri dev
 
 ```
 radiodoge/
+├── .github/workflows/
+│   └── build-windows.yml    🆕 Push-triggered MSI builds (every push to master!)
 ├── radiodoge-gui/           🆕 Rust + Tauri 2 desktop GUI (PRIMARY)
 │   ├── src/                 Svelte 5 + TypeScript frontend
 │   └── src-tauri/           Rust backend (serial, wallet, radio protocol)
@@ -114,9 +138,9 @@ radiodoge/
 └── docs/                    Documentation
 ```
 
-### The New GUI (`radiodoge-gui/`)
+### The GUI (`radiodoge-gui/`)
 
-The Rust + Tauri 2 GUI is the **primary official client** going forward. It features:
+The Rust + Tauri 2 GUI is the **primary official client**. It features:
 
 - **Svelte 5** frontend with reactive runes
 - **TailwindCSS v4** with a custom Doge yellow/orange dark theme
@@ -136,7 +160,7 @@ The Rust + Tauri 2 GUI is the **primary official client** going forward. It feat
 | Rust Runtime | Tokio (async) |
 | Serial Comms | `serialport` crate |
 | Dogecoin Crypto | `secp256k1` + `sha2` + `ripemd` + `bs58` |
-| CI/CD | GitHub Actions → Windows MSI |
+| CI/CD | GitHub Actions → Windows MSI on every push |
 
 ---
 
@@ -160,25 +184,28 @@ Node addresses use the `Region.Community.Node` format (e.g., `10.0.2`).
 
 ---
 
-## 🏗️ Building the MSI Installer
+## 🏗️ CI/CD — MSI Auto-Builds on Every Push
 
-GitHub Actions automatically builds the MSI when you push a `v*` tag:
+The GitHub Actions workflow (`.github/workflows/build-windows.yml`) triggers automatically:
 
-```bash
-git tag v0.2.3
-git push origin v0.2.3
-```
+| Event | What Happens |
+|---|---|
+| **Push to `master`** | Builds MSI → uploads as Actions artifact (download immediately!) |
+| **GitHub Release created** | Builds MSI → attaches to the release permanently |
+| **Manual dispatch** | Builds MSI → uploads as artifact (handy for debugging) |
 
-To set up signing keys (recommended for production):
+### Optional: Code Signing (for production)
 
 ```bash
 # Generate a signing keypair
 cargo tauri signer generate -w ~/.tauri/radiodoge.key
 
-# Add these as GitHub repository secrets:
-#   TAURI_SIGNING_PRIVATE_KEY         (contents of the .key file, base64)
+# Add these as GitHub repository secrets (Settings → Secrets → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          (base64 contents of .key file)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD (your passphrase)
 ```
+
+Unsigned builds work fine for development and testing — Windows may show a SmartScreen warning on first run, which you can bypass with "More info → Run anyway".
 
 ---
 
@@ -190,7 +217,7 @@ The Rust core in `radiodoge-gui/src-tauri/src/` is intentionally written with **
 
 ## 🏛️ Legacy: RadioDogeSharp
 
-The `RadioDogeSharp/` directory contains the original Windows C# .NET 6.0 console application. It remains in the repository as a **reference implementation** showing the serial protocol and SPV wallet logic in C#. New development happens in `radiodoge-gui/`.
+The `RadioDogeSharp/` directory contains the original Windows C# .NET 6.0 console application. It remains as a **reference implementation** showing the serial protocol and SPV wallet logic in C#. New development happens in `radiodoge-gui/`.
 
 ---
 
@@ -210,4 +237,4 @@ MIT © RadioDoge Contributors
 
 ---
 
-*Much open source. Very community. Wow. 🐕🌙*
+*Much open source. Very community. Such LoRa. Wow. 🐕🌙*
