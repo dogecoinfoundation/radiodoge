@@ -1,36 +1,27 @@
-# RadioDoge — Tauri 2 Release Builder
+# RadioDoge — Tauri 2 Automated Release Builder
 #
-# Triggers on Git tags matching v* (e.g. v0.2.3, v0.3.0)
-# Also triggerable manually from the Actions tab (workflow_dispatch).
+# Triggers automatically on every push to master.
+# Reads the version from radiodoge-gui/package.json, creates (or updates)
+# a GitHub Release tagged v<version>, and uploads the Windows x64 MSI.
 #
-# Builds a Windows x64 MSI installer using Tauri's WiX bundler.
-# Uploads the .msi as a GitHub Release artifact automatically.
+# To release a new version:
+#   1. Bump "version" in radiodoge-gui/package.json (and Cargo.toml / tauri.conf.json)
+#   2. Push to master — the MSI builds and uploads automatically. That's it.
 #
-# Required repository secrets (Settings → Secrets → Actions):
-#   TAURI_SIGNING_PRIVATE_KEY         — base64-encoded updater signing key (optional)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — passphrase for the signing key (optional)
-#
-# Generate signing keys (run locally, one-time setup):
-#   cargo tauri signer generate -w ~/.tauri/radiodoge.key
-#   # The output shows the key — add it as TAURI_SIGNING_PRIVATE_KEY secret
-#   # Add your chosen passphrase as TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret
+# Optional repository secrets (Settings → Secrets → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY         — base64-encoded updater signing key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — passphrase for the signing key
+#   Generate with: cargo tauri signer generate -w ~/.tauri/radiodoge.key
 
-name: 🐕 Tauri Release (Windows MSI)
+name: 🐕 Build & Release Windows MSI
 
 on:
-  # Auto-trigger on any v* tag push (e.g. git tag v0.2.3 && git push --tags)
   push:
-    tags:
-      - 'v*'
-  # Manual trigger from the GitHub Actions tab — great for testing
-  workflow_dispatch:
-    inputs:
-      tag_override:
-        description: 'Version tag for this build (e.g. v0.2.3)'
-        required: false
-        default: 'v0.2.3-dev'
+    branches:
+      - master        # fires on every push to master — fully automated
+  workflow_dispatch:  # also manually triggerable from the Actions tab
 
-# Only one release build at a time — cancel older runs if a new tag is pushed
+# Cancel any in-progress build for the same branch so only the latest commit wins
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -41,23 +32,31 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # ── Checkout ──────────────────────────────────────────────────────────
-      - name: 🔍 Checkout repository (with submodules)
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: 🔍 Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          fetch-depth: 0   # Full history needed for tauri-action release creation
+          fetch-depth: 0   # full history required for tauri-action to create releases
 
-      # ── Node.js ───────────────────────────────────────────────────────────
-      # Note: We use `npm install` (not `npm ci`) because there is no
-      # package-lock.json committed. If you add one later, switch to `npm ci`
-      # and restore `cache-dependency-path: radiodoge-gui/package-lock.json`.
+      # ── Read app version from package.json ──────────────────────────────────
+      # This is the single source of truth for the release tag and name.
+      # Update "version" in radiodoge-gui/package.json to cut a new release.
+      - name: 📋 Read app version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION"  >> $GITHUB_OUTPUT
+          echo "Building RadioDoge v$VERSION"
+
+      # ── Node.js ─────────────────────────────────────────────────────────────
       - name: 📦 Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # ── Rust ──────────────────────────────────────────────────────────────
+      # ── Rust ────────────────────────────────────────────────────────────────
       - name: 🦀 Install Rust stable (Windows MSVC target)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,33 +68,29 @@ jobs:
           workspaces: radiodoge-gui/src-tauri -> target
           cache-on-failure: true
 
-      # ── Frontend ──────────────────────────────────────────────────────────
+      # ── Frontend ─────────────────────────────────────────────────────────────
       - name: 📥 Install frontend dependencies
         working-directory: radiodoge-gui
-        # `npm install` works without a committed lockfile.
-        # For reproducible builds, commit package-lock.json and switch to `npm ci`.
         run: npm install
 
-      # ── Tauri Build + GitHub Release ──────────────────────────────────────
-      - name: 🚀 Build Tauri app and publish GitHub Release
+      # ── Tauri Build + GitHub Release ─────────────────────────────────────────
+      - name: 🚀 Build MSI and publish GitHub Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tauri updater signing — leave secrets empty to skip signing (unsigned MSI still works)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: radiodoge-gui
-          # For tag pushes use the tag; for manual runs use the input or a dev label
-          tagName: ${{ github.ref_name != 'HEAD' && github.ref_name || inputs.tag_override }}
-          releaseName: '🐕 RadioDoge ${{ github.ref_name != ''HEAD'' && github.ref_name || inputs.tag_override }}'
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: '🐕 RadioDoge ${{ steps.version.outputs.tag }}'
           releaseBody: |
-            ## RadioDoge — Wireless P2P Dogecoin Over LoRa
+            ## RadioDoge ${{ steps.version.outputs.tag }} — Wireless P2P Dogecoin Over LoRa
 
             ### 🚀 Quick Install (Windows 10/11 x64)
 
-            1. Download **RadioDoge_x64_en-US.msi** below
-            2. Double-click to install (no admin required for per-user install)
+            1. Download **RadioDoge_${{ steps.version.outputs.value }}_x64_en-US.msi** below
+            2. Double-click to install
             3. Plug in your Heltec ESP32 LoRa board via USB
             4. Click **Connect**, select your COM port, and start sending DOGE! 🐕🌙
 
@@ -104,24 +99,10 @@ jobs:
 
             ### Requirements
             - Windows 10 or 11, 64-bit
-            - Heltec WiFi LoRa 32 V3 board flashed with RadioDoge firmware
-            - USB-C cable
+            - Heltec WiFi LoRa 32 V3 board with RadioDoge firmware
 
             ---
             *Much wireless. Very transaction. Such LoRa. Wow. 🐕*
           releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, 'dev') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-          # WiX MSI only — add `nsis` to bundles for an NSIS .exe installer alternative
+          prerelease: false
           args: --target x86_64-pc-windows-msvc --bundles msi
-
-  # ── Success notification ───────────────────────────────────────────────────
-  notify-success:
-    name: 🎉 Release Complete
-    runs-on: ubuntu-latest
-    needs: build-windows
-    if: success()
-    steps:
-      - name: Print success message
-        run: |
-          echo "🐕 RadioDoge ${{ github.ref_name }} MSI published to GitHub Releases!"
-          echo "Much build. Very CI. Wow."
