@@ -1,0 +1,21 @@
+[package]
+name = "radiodoge-cli"
+version = "0.2.4"
+description = "RadioDoge CLI — Rust replacement for RadioDogeSharp (C#) and serdog (C)"
+authors = ["RadioDoge Contributors"]
+license = "MIT"
+repository = "https://github.com/jnowat/RadioDoge"
+edition = "2021"
+rust-version = "1.77.2"
+
+[[bin]]
+name = "radiodoge-cli"
+path = "src/main.rs"
+
+[dependencies]
+radiodoge-core = { workspace = true }
+clap           = { workspace = true }
+tokio          = { workspace = true }
+anyhow         = { workspace = true }
+log            = { workspace = true }
+env_logger     = { workspace = true }
