@@ -350,3 +350,6 @@ MigrationBackup/
 .ionide/
 /serdog/out
 /CMakePresets.json
+
+# Rust build artifacts
+/target/
