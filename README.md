@@ -307,9 +307,85 @@ Unsigned builds work fine for development and testing — Windows may show a Sma
 
 ---
 
-## 📱 Future: Android App
+## 🗺️ Development Roadmap
 
-The Rust core in `radiodoge-gui/src-tauri/src/` is intentionally written with **no platform-specific code**. The serial communication will be adapted to use `serialport-android` for USB-OTG connectivity. Watch this space for a Tauri Mobile Android port! 🤖
+> **Much ambition. Very phases. Such plan. Wow. 🐕**
+
+---
+
+### ✅ v0.2.x — Windows Foundation (Complete)
+
+The bedrock. Everything that makes a production-ready installable app:
+
+- ✅ Tauri 2 + Svelte 5 GUI with full Dogecoin yellow/orange dark theme
+- ✅ Pure Rust Dogecoin wallet generation (`secp256k1` + `sha2` + `ripemd` + `bs58`) — real mainnet `D...` addresses, no FFI
+- ✅ Real serial communication with Heltec ESP32 at 115,200 baud (`serialport` crate)
+- ✅ RadioDoge binary packet protocol: `PING`, `GET_ADDR`, `SET_ADDR`, `DOGE_TX`, `MULTIPART`
+- ✅ Async Tokio I/O with `spawn_blocking` (blocking reads never stall the Tokio thread pool)
+- ✅ Multipart packets for payloads > 192 bytes (was silently truncated — fixed in v0.2.4)
+- ✅ Live RSSI/SNR stats polling + 5-bar signal widget updated every 2 s
+- ✅ Live packet monitor (Receive tab) with decoded payload display
+- ✅ Windows x64 MSI produced by GitHub Actions on every push to `master`
+- ✅ Cargo workspace: three crates (`radiodoge-core`, `radiodoge-cli`, GUI backend)
+- ✅ `radiodoge-cli` — headless Rust CLI (ports, wallet, send, receive, ping, daemon)
+
+---
+
+### 🔄 v0.3.x — Heltec Polish + Real-World UX (Current)
+
+Making it rock-solid when you plug in a real Heltec board:
+
+- ✅ Epic Doge-boombox hero image throughout the app (NavBar, Connect, Dashboard, MSI icon)
+- ✅ Smart USB port detection — CP210x, CH340, CH9102, FTDI, Espressif native flagged with `🟢 Heltec` badge
+- ✅ Ports sorted: likely-Heltec first → other USB → native COM; auto-selected on refresh
+- ✅ **Ping Device** button with millisecond round-trip readout
+- ✅ Actionable error messages: access-denied, driver-missing, and cable-failure each give specific fix instructions with driver download URLs
+- ✅ Non-USB port selection warning (prevents confusing connection attempts on native COM ports)
+- 🔜 Device firmware version query on connect (show `v1.x.x` badge in status card)
+- 🔜 Auto-reconnect on USB re-plug (detect port-closed → retry with exponential backoff)
+- 🔜 LoRa settings save-to-device round-trip verification (send → read back → confirm match)
+- 🔜 Desktop toast notification on incoming transaction packet (native OS notification)
+- 🔜 Copy-to-clipboard on all address/key/packet fields
+
+---
+
+### 🚀 v0.4.x — Full Dogecoin Transactions Over LoRa
+
+End-to-end on-chain transactions — no internet required on your device:
+
+- 🔜 **UTXO fetching via gateway** — broadcast `REQUEST_BALANCE`; gateway queries Dogecoin RPC and relays UTXO set back over LoRa mesh
+- 🔜 **BIP32/BIP44 HD wallet** — derive multiple addresses from a single mnemonic seed (m/44'/3'/0'/0/n)
+- 🔜 **Full raw transaction signing** — construct + sign a valid Dogecoin transaction in pure Rust; no internet touched
+- 🔜 **Transaction confirmation feedback** — gateway ACKs broadcast and reports `txid` back over LoRa
+- 🔜 **SPV verification** — lightweight header chain validation; app can verify inclusion without a full node
+- 🔜 **Multi-hop relay status** — show hop count and intermediate node addresses in the packet log
+- 🔜 **Address book** — save labelled Dogecoin addresses in encrypted local storage
+- 🔜 **QR code scanning** — camera/image input for recipient field (no hand-typing long addresses)
+- 🔜 **Fee estimation** — gateway reports current mempool fee rate; app sets appropriate sat/byte fee
+
+---
+
+### 📡 v0.5.x — Meshtastic Mesh Interoperability
+
+Bridge RadioDoge with the existing Meshtastic community:
+
+- 🔜 **Meshtastic packet encoding** — wrap RadioDoge payloads in Meshtastic protobuf so standard Meshtastic nodes can relay them
+- 🔜 **Detect Meshtastic nodes** — scan for nodes on the same LoRa channel; display in a network map view
+- 🔜 **Bridge mode** — `radiodoge-cli daemon` bridges between RadioDoge and Meshtastic protocols transparently
+- 🔜 **Multi-channel scanning** — hop between frequencies/SFs to reach nodes on different Meshtastic presets
+- 🔜 **GPS location embedding** — include sender coordinates in packets for disaster-response positioning
+- 🔜 **Store-and-forward** — nodes cache undelivered packets and retry when destination node is seen
+
+---
+
+### 📱 Future Horizons
+
+- 🔜 **Android app via Tauri Mobile** — USB-OTG serial; the Rust core is already platform-agnostic
+- 🔜 **iOS** — Bluetooth LE to Heltec via BLE-serial bridge firmware
+- 🔜 **Linux AppImage + macOS .dmg** in CI — Tauri supports these targets already
+- 🔜 **WebAssembly packet inspector** — browser tool to decode RadioDoge packets from hex
+- 🔜 **Gateway dashboard** — monitor multiple gateway nodes, relay stats, mesh health at a glance
+- 🔜 **Lightning over LoRa** — forward BOLT-11 invoices + HTLC state through the mesh for instant DOGE
 
 ---
 

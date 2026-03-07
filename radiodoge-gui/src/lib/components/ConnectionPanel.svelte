@@ -2,26 +2,46 @@
   /**
    * Connection panel — the first tab the user sees.
    * Handles COM port selection and connecting to the Heltec device.
+   *
+   * v0.3.0: Uses list_ports_detailed for rich USB device info (CP210x/CH340
+   * detection), auto-selects the most likely Heltec port, adds a Ping button
+   * with latency readout, and shows actionable driver-hint error messages.
    */
 
   import { invoke } from '@tauri-apps/api/core';
   import { connection, setAvailablePorts, setConnecting, setDisconnected, setError } from '$lib/stores/connection.svelte';
   import SignalBars from './SignalBars.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
-  import { nodeAddressToString } from '$lib/types';
+  import { nodeAddressToString, type PortInfo } from '$lib/types';
 
   let selectedPort = $state('');
   let isRefreshing = $state(false);
+  let ports = $state<PortInfo[]>([]);
 
+  // Ping state
+  let isPinging = $state(false);
+  let pingResult = $state<{ success: boolean; message: string } | null>(null);
+
+  /** Refresh the port list using the detailed IPC command. */
   async function refreshPorts() {
     isRefreshing = true;
+    pingResult = null;
     try {
-      const ports = await invoke<string[]>('list_ports');
-      setAvailablePorts(ports);
-      if (ports.length > 0 && !selectedPort) {
-        selectedPort = ports[0];
-      }
-      if (ports.length === 0) {
+      ports = await invoke<PortInfo[]>('list_ports_detailed');
+      // Keep the simple string array in the store (for compatibility)
+      setAvailablePorts(ports.map(p => p.name));
+
+      // Auto-select: prefer a likely-Heltec port, else first USB port, else first
+      if (ports.length > 0) {
+        const heltec = ports.find(p => p.isLikelyHeltec);
+        const usb    = ports.find(p => p.isUsb);
+        const auto   = heltec ?? usb ?? ports[0];
+        // Only auto-select if user hasn't already chosen something still present
+        const currentStillPresent = ports.some(p => p.name === selectedPort);
+        if (!currentStillPresent) {
+          selectedPort = auto.name;
+        }
+      } else {
         selectedPort = '';
       }
     } catch (e) {
@@ -34,6 +54,7 @@
   async function connect() {
     if (!selectedPort) return;
     setConnecting(selectedPort);
+    pingResult = null;
     try {
       await invoke('connect_port', { port: selectedPort });
       // Status update comes via the "connection-status" event in +page.svelte
@@ -44,6 +65,7 @@
   }
 
   async function disconnect() {
+    pingResult = null;
     try {
       await invoke('disconnect_port');
     } catch (e) {
@@ -52,14 +74,46 @@
     }
   }
 
+  /** Send a PING to the Heltec and show the round-trip result. */
+  async function pingDevice() {
+    isPinging = true;
+    pingResult = null;
+    const start = performance.now();
+    try {
+      const ok = await invoke<boolean>('ping_device');
+      const ms = Math.round(performance.now() - start);
+      pingResult = ok
+        ? { success: true, message: `Pong! Device responded in ~${ms} ms 🐕` }
+        : { success: false, message: `No response within 500 ms. Is the firmware running?` };
+    } catch (e) {
+      pingResult = { success: false, message: String(e) };
+    } finally {
+      isPinging = false;
+    }
+  }
+
   // Refresh ports on mount
   $effect(() => {
     refreshPorts();
   });
+
+  /** Helper: pick the right badge label for a port. */
+  function portBadge(p: PortInfo): string {
+    if (p.isLikelyHeltec) return '🟢 Heltec';
+    if (p.isUsb) return '🔵 USB';
+    return '⚪ COM';
+  }
+
+  /** The selected PortInfo object (or null). */
+  const selectedPortInfo = $derived(ports.find(p => p.name === selectedPort) ?? null);
+
+  /** True if selected port is not a recognized USB serial device. */
+  const selectedIsNonUsb = $derived(selectedPort !== '' && selectedPortInfo !== null && !selectedPortInfo.isUsb);
 </script>
 
-<div style="max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-  <!-- Hero section -->
+<div style="max-width: 620px; margin: 0 auto; padding: 32px 24px;">
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
   <div style="text-align: center; margin-bottom: 40px;">
     <div style="
       margin-bottom: 20px;
@@ -94,7 +148,7 @@
     </p>
   </div>
 
-  <!-- Connection Card -->
+  <!-- ── Connection card ──────────────────────────────────────────────────── -->
   <div class="card-doge {connection.isConnected ? 'card-connected' : ''}">
     <h2 style="margin: 0 0 20px 0; font-size: 1.1rem; font-weight: 600; color: var(--doge-text);">
       🔌 Connect to Heltec Device
@@ -123,12 +177,14 @@
             cursor: pointer;
           "
         >
-          {#if connection.availablePorts.length === 0}
+          {#if ports.length === 0}
             <option value="">No ports found — plug in Heltec!</option>
           {:else}
             <option value="" disabled>Select a port...</option>
-            {#each connection.availablePorts as port}
-              <option value={port}>{port}</option>
+            {#each ports as p}
+              <option value={p.name}>
+                {portBadge(p)} {p.description}
+              </option>
             {/each}
           {/if}
         </select>
@@ -149,14 +205,64 @@
         </button>
       </div>
 
-      {#if connection.availablePorts.length === 0 && !isRefreshing}
-        <p style="color: var(--doge-muted); font-size: 0.78rem; margin: 8px 0 0 0;">
-          💡 Connect your Heltec ESP32 via USB, then click ⟳ to refresh
+      <!-- Selected port detail badge -->
+      {#if selectedPortInfo}
+        <div style="
+          margin-top: 8px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.76rem;
+          color: var(--doge-muted);
+        ">
+          {#if selectedPortInfo.isLikelyHeltec}
+            <span style="color: var(--doge-neon);">✅ Heltec-compatible USB adapter detected</span>
+          {:else if selectedPortInfo.isUsb}
+            <span style="color: var(--doge-yellow);">🔵 USB serial adapter</span>
+          {:else}
+            <span style="color: var(--doge-subtle);">⚪ Native COM port — may not be your Heltec</span>
+          {/if}
+          {#if selectedPortInfo.product}
+            <span class="mono">({selectedPortInfo.product})</span>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- No ports found: helpful message with driver links -->
+      {#if ports.length === 0 && !isRefreshing}
+        <div style="
+          margin-top: 10px;
+          padding: 12px 14px;
+          background: rgba(245, 197, 24, 0.05);
+          border: 1px solid rgba(245, 197, 24, 0.15);
+          border-radius: 8px;
+          font-size: 0.8rem;
+          color: var(--doge-muted);
+          line-height: 1.7;
+        ">
+          💡 <strong>No serial ports detected.</strong> Try these steps:
+          <ol style="margin: 6px 0 0 0; padding-left: 20px;">
+            <li>Plug the Heltec into a USB port and click ⟳</li>
+            <li>If still empty, install the <strong>CP210x driver</strong> (most Heltec boards):
+              <br><span class="mono" style="font-size: 0.72rem;">silabs.com/developers/usb-to-uart-bridge-vcp-drivers</span>
+            </li>
+            <li>Or the <strong>CH340 driver</strong> for some boards:
+              <br><span class="mono" style="font-size: 0.72rem;">wch-ic.com/products/CH340.html</span>
+            </li>
+            <li>Check Device Manager for a ⚠️ yellow warning on the port</li>
+          </ol>
+        </div>
+      {/if}
+
+      <!-- Non-USB port selected: warn user -->
+      {#if selectedIsNonUsb}
+        <p style="color: var(--doge-orange); font-size: 0.76rem; margin: 6px 0 0 0;">
+          ⚠️ This doesn't look like a USB serial port. Your Heltec should appear as a USB device (CP210x / CH340).
         </p>
       {/if}
     </div>
 
-    <!-- Connect / Disconnect button -->
+    <!-- Connect / Disconnect / Connecting buttons -->
     {#if connection.isConnected}
       <button
         onclick={disconnect}
@@ -195,19 +301,21 @@
     {#if connection.error}
       <div style="
         margin-top: 12px;
-        padding: 10px 14px;
-        background: rgba(255, 68, 68, 0.1);
+        padding: 12px 16px;
+        background: rgba(255, 68, 68, 0.08);
         border: 1px solid rgba(255, 68, 68, 0.3);
         border-radius: 8px;
         color: var(--doge-red);
-        font-size: 0.85rem;
+        font-size: 0.82rem;
+        line-height: 1.6;
+        white-space: pre-line;
       ">
         ❌ {connection.error}
       </div>
     {/if}
   </div>
 
-  <!-- Connected status card -->
+  <!-- ── Connected status card ─────────────────────────────────────────────── -->
   {#if connection.isConnected}
     <div class="card-doge card-connected" style="margin-top: 16px; animation: slide-up 0.3s ease;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
@@ -215,7 +323,7 @@
         <SignalBars rssi={connection.stats?.rssi ?? -120} connected={true} size="md" />
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
         <div>
           <div class="stat-label">Port</div>
           <div style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 600;">
@@ -246,8 +354,37 @@
         {/if}
       </div>
 
+      <!-- Ping Device button -->
+      <button
+        onclick={pingDevice}
+        disabled={isPinging}
+        class="btn-ghost"
+        style="width: 100%; padding: 10px; font-size: 0.9rem; margin-bottom: {pingResult ? '10px' : '0'};"
+      >
+        {#if isPinging}
+          <span style="animation: spin-doge 1s linear infinite; display: inline-block;">📡</span>
+          Pinging...
+        {:else}
+          📡 Ping Device
+        {/if}
+      </button>
+
+      <!-- Ping result -->
+      {#if pingResult}
+        <div style="
+          padding: 10px 14px;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          {pingResult.success
+            ? 'background: rgba(0,255,136,0.07); border: 1px solid rgba(0,255,136,0.25); color: var(--doge-neon);'
+            : 'background: rgba(255,68,68,0.07); border: 1px solid rgba(255,68,68,0.25); color: var(--doge-red);'}
+        ">
+          {pingResult.success ? '✅' : '❌'} {pingResult.message}
+        </div>
+      {/if}
+
       <p style="
-        margin: 16px 0 0 0;
+        margin: 14px 0 0 0;
         padding: 10px 14px;
         background: rgba(0, 255, 136, 0.05);
         border-radius: 8px;
@@ -260,7 +397,7 @@
     </div>
   {/if}
 
-  <!-- How it works section -->
+  <!-- ── How it works (disconnected only) ─────────────────────────────────── -->
   {#if !connection.isConnected}
     <div style="margin-top: 32px;">
       <h3 style="color: var(--doge-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px;">
@@ -268,8 +405,8 @@
       </h3>
       <div style="display: flex; flex-direction: column; gap: 12px;">
         {#each [
-          { icon: '1️⃣', text: 'Flash Heltec firmware (see docs/), connect via USB' },
-          { icon: '2️⃣', text: 'Select the COM port above and click Connect' },
+          { icon: '1️⃣', text: 'Flash Heltec firmware (see docs/), connect via USB-C' },
+          { icon: '2️⃣', text: 'Select the COM port above (🟢 green = Heltec detected!) and click Connect' },
           { icon: '3️⃣', text: 'Generate a Dogecoin wallet in the Wallet tab' },
           { icon: '4️⃣', text: 'Send DOGE over LoRa radio — no internet needed! 🚀' },
         ] as step}
