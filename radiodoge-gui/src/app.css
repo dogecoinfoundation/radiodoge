@@ -1,0 +1,267 @@
+/* RadioDoge — TailwindCSS v4 + Doge Theme */
+@import "tailwindcss";
+
+/* ── Doge Theme Custom Properties ─────────────────────────────────────────── */
+:root {
+  /* Brand colors */
+  --doge-yellow:  #F5C518;
+  --doge-yellow-light: #FFD740;
+  --doge-orange:  #FF8C00;
+  --doge-orange-light: #FFA333;
+
+  /* Dark backgrounds */
+  --doge-dark:    #0A0A0A;
+  --doge-card:    #141414;
+  --doge-card-hover: #1E1E1E;
+  --doge-border:  #2A2A2A;
+  --doge-border-active: #3A3A3A;
+
+  /* Accent / status */
+  --doge-neon:    #00FF88;
+  --doge-neon-dim: #00CC6A;
+  --doge-red:     #FF4444;
+  --doge-blue:    #4488FF;
+
+  /* Text */
+  --doge-text:    #FFFFFF;
+  --doge-muted:   #888888;
+  --doge-subtle:  #555555;
+
+  /* Glow effects */
+  --glow-yellow: 0 0 20px rgba(245, 197, 24, 0.3);
+  --glow-neon:   0 0 20px rgba(0, 255, 136, 0.3);
+  --glow-orange: 0 0 20px rgba(255, 140, 0, 0.3);
+}
+
+/* ── Tailwind v4 Theme Extension ──────────────────────────────────────────── */
+@theme {
+  --color-doge-yellow:       var(--doge-yellow);
+  --color-doge-yellow-light: var(--doge-yellow-light);
+  --color-doge-orange:       var(--doge-orange);
+  --color-doge-orange-light: var(--doge-orange-light);
+  --color-doge-dark:         var(--doge-dark);
+  --color-doge-card:         var(--doge-card);
+  --color-doge-card-hover:   var(--doge-card-hover);
+  --color-doge-border:       var(--doge-border);
+  --color-doge-neon:         var(--doge-neon);
+  --color-doge-neon-dim:     var(--doge-neon-dim);
+  --color-doge-red:          var(--doge-red);
+  --color-doge-muted:        var(--doge-muted);
+  --color-doge-subtle:       var(--doge-subtle);
+
+  --font-doge: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ── Global Base Styles ───────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--doge-dark);
+  color: var(--doge-text);
+  font-family: var(--font-doge);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent text selection on UI elements (feels more native) */
+  user-select: none;
+}
+
+/* Allow text selection in inputs and content areas */
+input, textarea, [data-selectable] {
+  user-select: text;
+}
+
+/* Custom scrollbar — Doge themed */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--doge-card);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--doge-border-active);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--doge-yellow);
+}
+
+/* ── Utility Animations ────────────────────────────────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: var(--glow-yellow); }
+  50%       { box-shadow: 0 0 30px rgba(245, 197, 24, 0.6); }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+@keyframes spin-doge {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes bounce-doge {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes bar-grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* ── Reusable Component Styles ─────────────────────────────────────────────── */
+
+/* Primary action button — big, yellow, friendly */
+.btn-doge {
+  background: linear-gradient(135deg, var(--doge-yellow), var(--doge-orange));
+  color: #000;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+.btn-doge:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glow-yellow);
+  filter: brightness(1.1);
+}
+.btn-doge:active {
+  transform: translateY(0);
+}
+.btn-doge:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Secondary (ghost) button */
+.btn-ghost {
+  background: transparent;
+  color: var(--doge-yellow);
+  border: 1px solid var(--doge-border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-ghost:hover {
+  border-color: var(--doge-yellow);
+  background: rgba(245, 197, 24, 0.08);
+}
+
+/* Card container */
+.card-doge {
+  background: var(--doge-card);
+  border: 1px solid var(--doge-border);
+  border-radius: 16px;
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+.card-doge:hover {
+  border-color: var(--doge-border-active);
+}
+
+/* Connected state card glow */
+.card-connected {
+  border-color: var(--doge-neon);
+  box-shadow: var(--glow-neon);
+}
+
+/* Input field */
+.input-doge {
+  background: var(--doge-dark);
+  border: 1px solid var(--doge-border);
+  border-radius: 8px;
+  color: var(--doge-text);
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  width: 100%;
+  transition: border-color 0.2s;
+  outline: none;
+  font-family: var(--font-mono);
+}
+.input-doge:focus {
+  border-color: var(--doge-yellow);
+  box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.15);
+}
+.input-doge::placeholder {
+  color: var(--doge-subtle);
+}
+
+/* Status badge */
+.badge-connected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--doge-neon);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-disconnected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 68, 68, 0.1);
+  color: var(--doge-red);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Stat value (large numbers in dashboard) */
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--doge-yellow);
+  font-family: var(--font-mono);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--doge-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Mono text for addresses */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+/* Slide-up animation for new items */
+.slide-up {
+  animation: slide-up 0.2s ease forwards;
+}
+
+/* Pulsing connecting indicator */
+.pulse-connecting {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
