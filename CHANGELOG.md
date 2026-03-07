@@ -7,6 +7,48 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.3] — 2026-03-07 — 🚀 Push-Triggered MSI Builds — No Tag Required!
+
+> **MSI auto-builds on every push to master — download instantly from the Actions tab!**
+> Much automation. Very CI. Such instant installer. Wow. 🐕
+
+### Fixed — CI/CD: Instant MSI on Every Push (Like SteloPTC)
+
+The old workflow (`tauri-release.yml`) used `tauri-apps/tauri-action@v0` to create GitHub
+Releases automatically. This **failed on every push after the first** because the action
+tried to create a tag (`v0.2.3`) that already existed — producing a 422 error before the
+MSI was ever compiled. No MSI was produced. No artifact was uploaded. 😢
+
+The new workflow (`build-windows.yml`) fixes this completely:
+
+#### What Changed
+
+- **Renamed** `.github/workflows/tauri-release.yml` → `.github/workflows/build-windows.yml`
+- **Trigger on push** to `master` / `main` — builds MSI and uploads as an Actions artifact
+  immediately, with zero need for a release tag (modeled after SteloPTC's build-windows.yml)
+- **Trigger on release created** — builds MSI and attaches it to the GitHub Release
+- **Removed `tauri-actions`** — replaced with `cargo tauri build --bundles msi` directly,
+  eliminating the "tag already exists" failure mode entirely
+- **Added `actions/upload-artifact@v4`** — MSI is now available for download from the
+  Actions tab on every push; retained for 30 days
+- **Added `softprops/action-gh-release@v2`** — attaches MSI to GitHub Releases when you
+  create one
+- **Added retry logic** (3 attempts, exponential backoff) for transient WiX toolset
+  download failures (a known CI flakiness source)
+- **Added job summary** — each build prints clear download instructions directly in the
+  GitHub Actions UI
+- **Added `workflow_dispatch`** — manually trigger a build any time from the Actions tab
+
+#### How to Get Your MSI Now
+
+```
+Push to master → Actions tab → latest "🐕 Build Windows MSI" run → Artifacts → download
+```
+
+No tags. No releases. Just push and grab the installer. 🐕
+
+---
+
 ## [0.2.2] — 2026-03-07 — 🐕 Rust GUI Launch – Much Wow, Very Installable!
 
 ### Added — Beautiful Windows + Android-Ready Desktop App
@@ -40,10 +82,9 @@ app (`RadioDogeSharp/`) remains in the repository as a legacy reference.
 - **Tauri events** for real-time packet and stats updates (`radio-packet`, `radio-stats-update`, `connection-status`, `transaction-sent`)
 - **RadioDoge packet protocol** fully implemented in Rust matching the existing C# and C implementations
 
-#### CI/CD
+#### CI/CD (superseded by v0.2.3 fix above)
 
-- **GitHub Actions** workflow (`.github/workflows/tauri-release.yml`) — triggers on `v*` tags, builds Windows x64 MSI via WiX bundler, uploads to GitHub Releases
-- Rust build cache (`swatinem/rust-cache`) for fast CI
+- Initial GitHub Actions workflow (`tauri-release.yml`) — triggered on `v*` tags, built Windows x64 MSI via WiX bundler, uploaded to GitHub Releases
 
 ### Unchanged (legacy preserved)
 
@@ -72,4 +113,4 @@ app (`RadioDogeSharp/`) remains in the repository as a legacy reference.
 
 ---
 
-*Such changelog. Very version. Wow. 🐕*
+*Such changelog. Very version. Much automation. Wow. 🐕*

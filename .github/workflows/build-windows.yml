@@ -1,0 +1,173 @@
+# RadioDoge — Windows MSI Build Workflow
+#
+# Modeled after SteloPTC's build-windows.yml for instant, push-triggered MSI builds.
+#
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │  HOW TO GET YOUR MSI                                                │
+# │                                                                     │
+# │  Option A (push — instant, no tag needed):                          │
+# │    1. Push any commit to master                                      │
+# │    2. Go to Actions tab → "🐕 Build Windows MSI" → latest run       │
+# │    3. Scroll to "Artifacts" at the bottom → download the .zip       │
+# │    4. Unzip → double-click the .msi. Done! 🐕                       │
+# │                                                                     │
+# │  Option B (release — polished, permanent):                          │
+# │    1. Create a GitHub Release (any tag)                             │
+# │    2. MSI auto-attaches to the Release within ~10 min               │
+# │    3. Download from the Releases page forever                       │
+# └─────────────────────────────────────────────────────────────────────┘
+#
+# Signing (optional — skip for dev builds):
+#   Generate:  cargo tauri signer generate -w ~/.tauri/radiodoge.key
+#   Add secrets to repo (Settings → Secrets → Actions):
+#     TAURI_SIGNING_PRIVATE_KEY          ← base64 contents of .key file
+#     TAURI_SIGNING_PRIVATE_KEY_PASSWORD ← passphrase
+#
+# Much CI. Very automation. Wow. 🐕
+
+name: 🐕 Build Windows MSI
+
+on:
+  # ── Fires on every push to master → MSI artifact in Actions tab (no tag needed!)
+  push:
+    branches:
+      - master
+      - main   # also catch repos using "main" as default
+
+  # ── Fires when a GitHub Release is created → MSI attaches to the release
+  release:
+    types: [created]
+
+  # ── Manual trigger from the Actions tab → useful for debugging
+  workflow_dispatch:
+
+# Cancel in-progress builds for the same branch so only the latest commit wins.
+# This prevents queue pile-ups when you push rapid commits.
+concurrency:
+  group: msi-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: 🪟 Windows x64 MSI
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: 🔍 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so any version-reading scripts work correctly
+          fetch-depth: 0
+
+      # ── 2. Read version (single source of truth: package.json) ───────────
+      - name: 📋 Read app version from package.json
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+          echo "::notice::Building RadioDoge v$VERSION"
+
+      # ── 3. Node.js ──────────────────────────────────────────────────────────
+      - name: 📦 Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: radiodoge-gui/package-lock.json
+
+      # ── 4. Rust (stable MSVC toolchain for Windows .msi) ────────────────────
+      - name: 🦀 Install Rust stable (x86_64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # ── 5. Rust build cache ─────────────────────────────────────────────────
+      # Dramatically reduces compile time on subsequent runs (~5 min → ~1 min).
+      - name: 🗃️ Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: radiodoge-gui/src-tauri -> target
+          cache-on-failure: true   # save cache even if build fails (helps debug)
+
+      # ── 6. Install frontend dependencies ────────────────────────────────────
+      - name: 📥 Install frontend dependencies (npm install)
+        working-directory: radiodoge-gui
+        run: npm install
+
+      # ── 7. Build the MSI ─────────────────────────────────────────────────────
+      # Uses cargo-tauri from devDependencies (no separate cargo install needed).
+      # --bundles msi  → WiX-based MSI only (skips NSIS which 502s on CI regularly)
+      # --target       → explicit Windows x64 MSVC target
+      #
+      # Retry logic (up to 3 attempts) handles transient WiX toolset download 502s.
+      - name: 🚀 Build Windows x64 MSI (with retry for WiX download flakiness)
+        working-directory: radiodoge-gui
+        shell: pwsh
+        env:
+          # Signing keys — leave unset for unsigned dev builds; set in repo Secrets for prod
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $maxAttempts = 3
+          $attempt = 0
+          $delay = 15  # seconds between retries (exponential: 15 → 30)
+
+          while ($attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "🐕 Build attempt $attempt of $maxAttempts..."
+            npx tauri build --target x86_64-pc-windows-msvc --bundles msi
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Build succeeded on attempt $attempt! Such compile. Wow."
+              break
+            }
+            if ($attempt -lt $maxAttempts) {
+              Write-Host "⚠️  Build failed (exit $LASTEXITCODE). Retrying in ${delay}s..."
+              Start-Sleep -Seconds $delay
+              $delay = $delay * 2  # exponential backoff
+            } else {
+              Write-Host "❌ All $maxAttempts attempts failed. Very sad. No MSI. 😢"
+              exit 1
+            }
+          }
+
+      # ── 8a. ON PUSH: Upload MSI as a downloadable Actions artifact ──────────
+      # This is the SteloPTC magic — instant MSI on every push, zero release needed.
+      # Find it at: Actions tab → this run → scroll to "Artifacts" section.
+      - name: 📤 Upload MSI as Actions artifact (push builds)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioDoge-${{ steps.version.outputs.value }}-windows-x64-msi
+          path: radiodoge-gui/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          retention-days: 30   # keep for 30 days — plenty of time to grab and flash
+          if-no-files-found: error   # fail loudly if the MSI wasn't produced
+
+      # ── 8b. ON RELEASE: Attach MSI to the GitHub Release ───────────────────
+      # When you create a GitHub Release, the MSI is automatically attached so
+      # users can download it from the Releases page forever.
+      - name: 📎 Attach MSI to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: radiodoge-gui/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 9. Print download instructions in the job summary ─────────────────
+      - name: 📋 Print artifact download instructions
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "## 🐕 RadioDoge MSI Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ steps.version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⬇️ Download Your MSI" >> $GITHUB_STEP_SUMMARY
+          echo "1. Scroll to the **Artifacts** section at the bottom of this page" >> $GITHUB_STEP_SUMMARY
+          echo "2. Click \`RadioDoge-${{ steps.version.outputs.value }}-windows-x64-msi\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Unzip and double-click the \`.msi\` to install" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Much wireless. Very Dogecoin. Such LoRa. Wow. 🐕🌙*" >> $GITHUB_STEP_SUMMARY
