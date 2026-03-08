@@ -47,7 +47,7 @@ The MSI automatically attaches to any GitHub Release you create.
 
 - **No internet required** — transactions travel over LoRa radio (up to 15 km range!)
 - **Mesh networking** — packets hop between nodes to reach the nearest gateway
-- **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti, TX/RX live log, Konami Easter egg 🎉
+- **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti, TX/RX live log, with fun Easter egg 🎉
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
 - **Instant MSI builds** — every push to master compiles a fresh installer, no tag needed
@@ -352,7 +352,7 @@ Rock-solid when you plug in a real Heltec board:
 - ✅ **Tooltips everywhere** — all cards, sliders, buttons, and fields have helpful + funny titles
 - ✅ **Branding fix** — NavBar now consistently shows "RadioDoge" (was "DOGE RADIO")
 - ✅ **Accessibility** — ARIA labels, focus rings, role attributes, live regions
-- ✅ **Konami code Easter egg** 🎮 — ↑↑↓↓←→←→BA triggers confetti + "such wow" toast
+- ✅ **Easter egg** 🎮 — "such wow" toast (use the ultimate [read "uber-nostalgic"] cheat code!)
 
 ---
 
