@@ -38,6 +38,10 @@
   let copiedIdx = $state<number | null>(null);
   let scrollContainer: HTMLDivElement | undefined = $state();
 
+  /** Toast shown after a successful export: the saved filename. */
+  let exportToast = $state<string | null>(null);
+  let exportToastTimer: ReturnType<typeof setTimeout> | null = null;
+
   const MAX_ENTRIES = 500;
 
   // ── Auto-scroll effect ──────────────────────────────────────────────────
@@ -83,18 +87,23 @@
   }
 
   function exportToTxt() {
+    const filename = `radiodoge-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
     const header = `RadioDoge Debug Console Export\nGenerated: ${new Date().toISOString()}\n${'─'.repeat(72)}\n\n`;
     const text = header + entries.map(entryToText).join('\n');
     const blob = new Blob([text], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `radiodoge-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    a.download = filename;
     // Must be in the DOM for Tauri's WebView to honour the download attribute
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    // Show a friendly toast with the filename so the user knows where it went
+    if (exportToastTimer) clearTimeout(exportToastTimer);
+    exportToast = `Downloads/${filename}`;
+    exportToastTimer = setTimeout(() => { exportToast = null; }, 4000);
   }
 
   /** Format hex into spaced byte groups for readability */
@@ -262,6 +271,36 @@
         {/each}
       {/if}
     </div>
+  </div>
+{/if}
+
+<!-- Export toast — floats above the debug console -->
+{#if exportToast}
+  <div
+    style="
+      position: fixed;
+      bottom: 300px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a1a;
+      border: 1px solid var(--doge-neon);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--doge-neon);
+      z-index: 9000;
+      white-space: nowrap;
+      box-shadow: 0 4px 24px rgba(0,255,136,0.15);
+      animation: slide-up 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    "
+    role="status"
+    aria-live="polite"
+  >
+    💾 Saved to <strong>{exportToast}</strong>
   </div>
 {/if}
 

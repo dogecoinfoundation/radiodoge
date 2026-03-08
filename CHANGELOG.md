@@ -7,6 +7,40 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.5] — 2026-03-08 — ✨ Export Toast + Send Tab Validation — Much Safety. Very Feedback. Wow.
+
+> **Two targeted additions on top of v0.3.4 — zero behavior regressions.
+> All changes additive and backward-compatible.** 🐕
+
+### Added
+
+#### Debug Console Export Toast — You Know Exactly Where the File Went
+- **Previous behavior**: `exportToTxt()` triggered the browser download silently.
+  The user had no confirmation that anything happened or what the file was named.
+- **Now**: A green `💾 Saved to Downloads/radiodoge-debug-2026-03-08T06-50-05.txt`
+  toast slides up above the debug console immediately after the download fires,
+  auto-dismisses after 4 seconds, uses the same `slide-up` animation, and is
+  announced to screen-readers via `role="status" aria-live="polite"`.
+
+#### Send Tab — Hard "From Wallet" Gate
+- **Previous behavior**: `canSend()` did NOT require `wallet.isGenerated`.
+  Pressing Send with no wallet loaded would pass `fromPrivateKeyWif: undefined`
+  to the backend — a broken or unsigned packet.
+- **Now**: `canSend()` includes `wallet.isGenerated`. `sendTransaction()` also
+  has an explicit early-return guard with a clear inline error message before
+  the `invoke()` — belt-and-suspenders.
+- **From wallet row**: orange "optional for MVP" hint → red actionable block
+  that links users to the Wallet tab. Turns green ✅ when a wallet is loaded.
+- **Send button**: context-sensitive `title` tooltip explains exactly why it is
+  disabled at each stage (no device → no wallet → bad address → bad amount → ready).
+
+### Changed
+
+- Version bumped to `0.3.5` in `package.json`, all `Cargo.toml` files,
+  `tauri.conf.json`, and app footer (`+page.svelte`).
+
+---
+
 ## [0.3.4] — 2026-03-08 — ✨ Polish Pass + Clean Connect Tab — Much Pretty. Very Fix. Wow.
 
 > **Five targeted fixes with zero behavior changes. Everything that was broken in the UI
