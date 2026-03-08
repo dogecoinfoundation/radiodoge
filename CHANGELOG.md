@@ -7,6 +7,97 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-03-08 — 🐛 Critical Fixes + Debug Console — Much Debug. Very Fix. Wow.
+
+> **Three critical bugs squashed, a professional Debug Console added, and more UX polish.**
+> Such reliable. Very firmware. Much debug. Wow. 🐕🐛
+
+### Summary
+
+v0.3.2 fixes three bugs reported from v0.3.1 testing: firmware version query was unreliable
+(single attempt with 500ms wasn't enough), node address save didn't update the UI after a
+verified write, and there was no way to inspect raw serial traffic. This release adds a
+Meshtastic-inspired Debug Console and several quality-of-life improvements.
+
+---
+
+### Fixed
+
+#### Firmware Version Query — Reliable 3-Attempt Retry
+- **Bug**: On connect, a single `CMD_GET_FIRMWARE_VERSION` with 500ms wait often failed.
+  The Heltec device can be slow to respond on first boot — result was "FW v?.?.?" forever.
+- **Fix**: Now retries up to **3 times** with 400ms between each attempt. All attempts are
+  logged to the Debug Console. Firmware version populates reliably on first connect.
+- Added `query_firmware_version` Tauri command for manual re-query from the UI.
+
+#### Node Address Save — Now Actually Updates the UI
+- **Bug**: After clicking "Save to Device" in Settings and getting "Verified ✓", the
+  ConnectionPanel and footer still showed the old address (10.0.1). The Rust backend
+  verified the address round-trip but never emitted a `connection-status` event with
+  the updated address.
+- **Fix**: `update_lora_settings` now emits `connection-status` with the new node address
+  after a successful round-trip verification. The ConnectionPanel, footer status bar, and
+  all dependent components update immediately.
+
+### Added
+
+#### Debug Console (Ctrl+Shift+D)
+- **New `DebugConsole.svelte` component** — hidden by default, toggled via:
+  - `Ctrl+Shift+D` keyboard shortcut (global)
+  - 🐛 button in the status bar footer
+- Shows **real-time raw serial traffic** with:
+  - Timestamps (HH:MM:SS.mmm)
+  - TX/RX direction badges (↑TX green, ↓RX blue)
+  - Raw hex bytes (spaced for readability)
+  - Parsed command labels (e.g. `CMD_GET_FIRMWARE_VERSION`, `CMD_DOGE_TX`)
+- **Professional dark terminal styling** inspired by Meshtastic's web flasher
+- **Auto-scroll** (toggleable) to newest entry
+- **Clear** button to reset the log
+- **Export to .txt** — downloads the full debug log as a timestamped text file
+- **Copy line-by-line** — clipboard button on each entry
+- Fixed at the bottom of the window, 280px tall, slides up with animation
+- Capped at 500 entries to prevent memory bloat
+- Rust backend now emits `debug-serial-traffic` events on every serial TX/RX operation
+
+#### Firmware Re-Query Button
+- ConnectionPanel now shows a "⟳ Query FW" button next to the "FW v?.?.?" badge
+- Sends a manual `CMD_GET_FIRMWARE_VERSION` to the device and updates the badge on success
+
+#### Remember Last COM Port
+- On successful connection, the selected port name is saved to `localStorage`
+- On next app launch, the last-used port is auto-selected if still present
+- Falls back to Heltec auto-detection → USB → first port if the saved port is gone
+
+#### Breathing Animation on Signal Bars
+- Connected signal bars now have a subtle breathing/pulsing glow animation
+- New `signal-breathe` CSS keyframes and `.signal-bars-breathing` class in `app.css`
+
+#### Debug Traffic Events in Rust Backend
+- New `emit_debug_traffic()` helper function in `lib.rs`
+- Emits `debug-serial-traffic` events for:
+  - All `CMD_GET_FIRMWARE_VERSION` queries (with attempt number)
+  - `CMD_SET_NODE_ADDRS` writes (with target address)
+  - Node address verification results
+  - `CMD_DOGE_TX` sends (single + multipart)
+  - All incoming RX packets (raw hex + parsed content)
+
+### Changed
+
+- Combined Konami code + Debug Console keyboard handler into single `handleKeydown` function
+- Footer status bar now includes 🐛 debug toggle button (active state highlighted in yellow)
+
+### Version Bumps
+
+| File | Before | After |
+|------|--------|-------|
+| `radiodoge-gui/package.json` | `0.3.1` | `0.3.2` |
+| `radiodoge-gui/src-tauri/Cargo.toml` | `0.3.1` | `0.3.2` |
+| `crates/radiodoge-core/Cargo.toml` | `0.3.1` | `0.3.2` |
+| `crates/radiodoge-cli/Cargo.toml` | `0.3.1` | `0.3.2` |
+| `+page.svelte` footer | `v0.3.1` | `v0.3.2` |
+
+---
+
 ## [0.3.1] — 2026-03-08 — ✨ Full Polish Release — Much Wow Delivered
 
 > **The most delightful RadioDoge release yet. Every feature sharpened, every interaction refined.**

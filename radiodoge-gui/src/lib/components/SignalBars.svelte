@@ -47,7 +47,7 @@
 </script>
 
 <div
-  class="signal-bars"
+  class="signal-bars {connected ? 'signal-bars-breathing' : ''}"
   title={connected ? `RSSI: ${rssi} dBm (${activeBars()} bars)` : 'Not connected'}
   style="display: flex; align-items: flex-end; gap: {dims().gap}px;"
 >

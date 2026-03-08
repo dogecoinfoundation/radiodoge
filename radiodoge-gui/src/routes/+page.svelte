@@ -19,6 +19,7 @@
   import SendTab from '$lib/components/SendTab.svelte';
   import ReceiveTab from '$lib/components/ReceiveTab.svelte';
   import SettingsTab from '$lib/components/SettingsTab.svelte';
+  import DebugConsole from '$lib/components/DebugConsole.svelte';
   import Confetti from '$lib/components/Confetti.svelte';
 
   import {
@@ -46,6 +47,13 @@
     activeTab = tab;
   }
 
+  // ── Debug Console ─────────────────────────────────────────────────────────
+  let debugVisible = $state(false);
+
+  function toggleDebugConsole() {
+    debugVisible = !debugVisible;
+  }
+
   // ── Confetti ───────────────────────────────────────────────────────────────
   let confetti: Confetti;
 
@@ -61,7 +69,15 @@
   let konamiActivated = $state(false);
   let konamiMessage = $state('');
 
-  function handleKonamiKey(e: KeyboardEvent) {
+  function handleKeydown(e: KeyboardEvent) {
+    // Ctrl+Shift+D → toggle Debug Console
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      e.preventDefault();
+      toggleDebugConsole();
+      return;
+    }
+
+    // Konami code detection
     konamiBuffer = [...konamiBuffer, e.key].slice(-KONAMI.length);
     if (konamiBuffer.join(',') === KONAMI.join(',')) {
       konamiActivated = true;
@@ -129,19 +145,22 @@
       triggerConfetti();
     }).then(fn => unlisteners.push(fn));
 
-    // Konami code keyboard listener
-    window.addEventListener('keydown', handleKonamiKey);
+    // Keyboard listener (Ctrl+Shift+D + Konami code)
+    window.addEventListener('keydown', handleKeydown);
 
     // Cleanup all listeners on component destroy
     return () => {
       unlisteners.forEach(fn => fn());
-      window.removeEventListener('keydown', handleKonamiKey);
+      window.removeEventListener('keydown', handleKeydown);
     };
   });
 </script>
 
 <!-- Confetti overlay (renders above everything else) -->
 <Confetti bind:this={confetti} />
+
+<!-- Debug Console (hidden by default, toggle via Ctrl+Shift+D or footer button) -->
+<DebugConsole bind:visible={debugVisible} />
 
 <!-- Konami code Easter egg toast 🐕 -->
 {#if konamiActivated}
@@ -211,7 +230,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.3.1</span>
+    <span>RadioDoge v0.3.2</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">
@@ -228,6 +247,23 @@
       <span>🔴 Not connected</span>
     {/if}
     <span style="flex: 1;"></span>
+    <button
+      onclick={toggleDebugConsole}
+      title="Toggle Debug Console (Ctrl+Shift+D)"
+      style="
+        background: {debugVisible ? 'rgba(245, 197, 24, 0.15)' : 'transparent'};
+        border: 1px solid {debugVisible ? 'var(--doge-yellow)' : 'transparent'};
+        border-radius: 4px;
+        color: {debugVisible ? 'var(--doge-yellow)' : 'var(--doge-subtle)'};
+        cursor: pointer;
+        font-size: 0.68rem;
+        padding: 1px 6px;
+        font-family: var(--font-mono);
+        transition: all 0.15s;
+      "
+    >
+      🐛
+    </button>
     <span style="color: var(--doge-yellow); font-style: italic;">
       such decentralize. very LoRa. wow 🐕
     </span>
