@@ -44,6 +44,7 @@ pub const CMD_MULTIPART: u8 = 0x05;
 pub const CMD_DOGE_TX: u8 = 0x10;     // Dogecoin transaction
 pub const CMD_REQUEST_BALANCE: u8 = 0x11; // Balance request
 pub const CMD_GET_FIRMWARE_VERSION: u8 = 0x20; // Query firmware version string
+pub const CMD_SET_LORA_PARAMS: u8 = 0x21;      // Set SF/BW/CR/frequency/TX-power (v0.3.3)
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -91,6 +92,31 @@ pub fn build_doge_tx(src: &NodeAddress, dst: &NodeAddress, tx_payload: &[u8]) ->
     let mut packet = build_header(CMD_DOGE_TX, FLAG_STANDARD, src, dst);
     let clamped = &tx_payload[..tx_payload.len().min(MAX_SINGLE_PAYLOAD_LEN)];
     packet.extend_from_slice(clamped);
+    packet
+}
+
+/// Build a SET_LORA_PARAMS packet (CMD 0x21) — v0.3.3 additive.
+///
+/// Payload format (8 bytes):
+///   [0]  Spreading factor (7–12)
+///   [1]  Bandwidth index (0=125kHz, 1=250kHz, 2=500kHz)
+///   [2]  Coding rate denominator (5–8, meaning 4/5 .. 4/8)
+///   [3]  Frequency high byte  (freq_khz >> 8)
+///   [4]  Frequency low byte   (freq_khz & 0xFF)  — freq in kHz, e.g. 915000
+///   [5]  TX power in dBm (2–22)
+///   [6-7] Reserved (0x00)
+pub fn build_set_lora_params(
+    src: &NodeAddress,
+    sf: u8,
+    bw_idx: u8,
+    cr: u8,
+    freq_khz: u32,
+    tx_power: u8,
+) -> Vec<u8> {
+    let mut packet = build_header(CMD_SET_LORA_PARAMS, FLAG_STANDARD, src, &NodeAddress::broadcast());
+    let freq_hi = ((freq_khz >> 8) & 0xFF) as u8;
+    let freq_lo = (freq_khz & 0xFF) as u8;
+    packet.extend_from_slice(&[sf, bw_idx, cr, freq_hi, freq_lo, tx_power, 0x00, 0x00]);
     packet
 }
 

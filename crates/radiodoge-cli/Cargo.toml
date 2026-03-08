@@ -1,6 +1,6 @@
 [package]
 name = "radiodoge-cli"
-version = "0.3.2"
+version = "0.3.3"
 description = "RadioDoge CLI — Rust replacement for RadioDogeSharp (C#) and serdog (C)"
 authors = ["RadioDoge Contributors"]
 license = "MIT"

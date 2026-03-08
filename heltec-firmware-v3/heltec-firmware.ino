@@ -606,6 +606,20 @@ void saveLoRaConfiguration(uint8_t region, uint8_t community, uint8_t node) {
   Serial.println("LoRa configuration saved to NVS: " + String(region) + "." + String(community) + "." + String(node));
 }
 
+// OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+// Saves node address to NVS without Serial.println() output.
+// Use this instead of saveLoRaConfiguration() inside HostSerialRead() context
+// where Serial.println() would pollute the binary protocol stream.
+void saveLoRaConfigurationQuiet(uint8_t region, uint8_t community, uint8_t node) {
+  nvs_handle_t nvs_handle;
+  if (nvs_open("lora_config", NVS_READWRITE, &nvs_handle) != ESP_OK) return;
+  nvs_set_u8(nvs_handle, "region", region);
+  nvs_set_u8(nvs_handle, "community", community);
+  nvs_set_u8(nvs_handle, "node", node);
+  nvs_commit(nvs_handle);
+  nvs_close(nvs_handle);
+}
+
 bool loadLoRaConfiguration() {
   nvs_handle_t nvs_handle;
   esp_err_t err;
@@ -2534,7 +2548,71 @@ bool ReadSerialPayload(uint8_t payloadSize) {
   return true;
 }
 
-// Read serial data from the host and perform the specified command/control function. 
+// OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+// Handles desktop-app command IDs that are not present in the firmware's serialCommand enum.
+// The desktop uses an 8-byte packet header: [cmd, flags=0x00, src_r, src_c, src_n, dst_r, dst_c, dst_n, ...payload...]
+// HostSerialRead() consumes the first 2 bytes as [cmd, payloadSize=0x00=flags] and reads 0 payload bytes.
+// After delay(500), the remaining 6 header bytes plus any actual payload sit in the Serial buffer.
+// This function drains those bytes and sends responses in the same 8-byte desktop format.
+//
+// Handled desktop commands (all additive — existing firmware command IDs unchanged):
+//   0x10  CMD_DOGE_TX             — forward payload bytes over LoRa, reply ACK
+//   0x11  CMD_REQUEST_BALANCE     — ACK (balance fulfillment happens via LoRa network)
+//   0x20  CMD_GET_FIRMWARE_VERSION — reply with version string in payload
+//   0x21  CMD_SET_LORA_PARAMS     — ACK (RF reconfiguration reserved for future revision)
+void HandleDesktopCommand(uint8_t cmdByte) {
+  // Drain the 6 remaining desktop header bytes: [src_r, src_c, src_n, dst_r, dst_c, dst_n]
+  uint8_t hdrRest[6] = {0};
+  Serial.readBytes(hdrRest, 6);
+
+  // Collect any additional payload bytes (all waiting in buffer after delay(500))
+  uint8_t extraPayload[BUFFER_SIZE];
+  memset(extraPayload, 0, sizeof(extraPayload));
+  uint8_t extraLen = 0;
+  while (Serial.available() > 0 && extraLen < (uint8_t)(BUFFER_SIZE - 1)) {
+    extraPayload[extraLen++] = (uint8_t)Serial.read();
+  }
+
+  switch (cmdByte) {
+    case 0x10: { // CMD_DOGE_TX — forward payload over LoRa
+      if (extraLen > 0) {
+        Radio.Send(extraPayload, extraLen);
+        DisplayTXMessage("DOGE TX", dest);
+      }
+      uint8_t reply[8] = {0x10, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+      Serial.write(reply, 8);
+      break;
+    }
+    case 0x11: { // CMD_REQUEST_BALANCE — ACK only
+      uint8_t reply[8] = {0x11, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+      Serial.write(reply, 8);
+      break;
+    }
+    case 0x20: { // CMD_GET_FIRMWARE_VERSION — reply with version string as payload
+      char vStr[32];
+      snprintf(vStr, sizeof(vStr), "RadioDoge NV%dFW%02d", HELTEC_BOARD_VERSION, FIRMWARE_VERSION);
+      uint8_t vLen = (uint8_t)strlen(vStr);
+      uint8_t reply[8 + 32];
+      reply[0] = 0x20; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      memcpy(reply + 8, vStr, vLen);
+      Serial.write(reply, 8 + vLen);
+      break;
+    }
+    case 0x21: { // CMD_SET_LORA_PARAMS — payload: [sf, bw_idx, cr, freq_hi, freq_lo, power, ...]
+      // Parameters received; RF reconfiguration deferred to safe idle window in future revision.
+      uint8_t reply[8] = {0x21, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+      Serial.write(reply, 8);
+      break;
+    }
+    default:
+      Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
+      break;
+  }
+}
+
+// Read serial data from the host and perform the specified command/control function.
 // This function expects the host to send a header that is 8 bytes in length and then a payload that can range from 0-255 bytes.
 // The header contains the command type and payload size information (see ReadSerialHeader for more info on the header)
 void HostSerialRead() {
@@ -2555,18 +2633,67 @@ void HostSerialRead() {
     return;
   }
   delay(500);
+
+  // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+  // Intercept desktop-only command IDs (0x10, 0x11, 0x20, 0x21) before the switch.
+  // These have no corresponding serialCommand enum value and would fall through to default (NACK).
+  uint8_t cmdByte = (uint8_t)commandVal;
+  if (cmdByte == 0x10 || cmdByte == 0x11 || cmdByte == 0x20 || cmdByte == 0x21) {
+    HandleDesktopCommand(cmdByte);
+    return;
+  }
+
   switch (commandVal) {
-    case ADDRESS_GET:
-      GetLocalAddress();
-      DisplayLocalAddress(local);
+    case NONE: // 0x00 = desktop CMD_GET_NODE_ADDR
+      // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+      // Drain 6 remaining desktop header bytes; reply with local address in 8-byte format.
+      // Desktop serial.rs checks: cmd==0x00 && src!=broadcast → updates displayed node address.
+      {
+        uint8_t hdrRest[6] = {0};
+        Serial.readBytes(hdrRest, 6);
+        uint8_t reply[8] = {0x00, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+        Serial.write(reply, 8);
+      }
       break;
-    case ADDRESS_SET:
-      SetLocalAddressFromSerialBuffer(0);
-      InitControlMessages();
-      DisplayLocalAddress(local);
-      // Save LoRa configuration to NVS
-      saveLoRaConfiguration(local.region, local.community, local.node);
-      Serial.write(hostACK, HOST_ACK_NACK_SIZE);
+    case ADDRESS_GET: // 0x01 = desktop CMD_SET_NODE_ADDRS when payloadSize==0
+      // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+      // Desktop packet: [0x01, 0x00, src_r, src_c, src_n, 0xFF, 0xFF, 0xFF, new_r, new_c, new_n]
+      // After delay(500), 9 remaining bytes are in the buffer.
+      // If payloadSize>0, fall back to legacy firmware ADDRESS_GET behavior.
+      if (payloadSize == 0 && Serial.available() >= 9) {
+        uint8_t hdrRest[9] = {0};
+        Serial.readBytes(hdrRest, 9);
+        // hdrRest[0..2]=src, hdrRest[3..5]=dst, hdrRest[6..8]=new node address
+        local.region    = hdrRest[6];
+        local.community = hdrRest[7];
+        local.node      = hdrRest[8];
+        InitControlMessages();
+        DisplayLocalAddress(local);
+        saveLoRaConfigurationQuiet(local.region, local.community, local.node);
+        uint8_t reply[8] = {0x01, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+        Serial.write(reply, 8);
+      } else {
+        GetLocalAddress();
+        DisplayLocalAddress(local);
+      }
+      break;
+    case ADDRESS_SET: // 0x02 = desktop CMD_PING when payloadSize==0 (flags byte)
+      // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+      // Desktop CMD_PING: [0x02, 0x00, src_r, src_c, src_n, dst_r, dst_c, dst_n]
+      // payloadSize==0 means it came from desktop (flags byte); drain 6 header bytes and ACK.
+      // payloadSize>0 means legacy firmware ADDRESS_SET; apply as before.
+      if (payloadSize == 0) {
+        uint8_t hdrRest[6] = {0};
+        Serial.readBytes(hdrRest, 6);
+        uint8_t reply[8] = {0x02, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
+        Serial.write(reply, 8);
+      } else {
+        SetLocalAddressFromSerialBuffer(0);
+        InitControlMessages();
+        DisplayLocalAddress(local);
+        saveLoRaConfigurationQuiet(local.region, local.community, local.node);
+        Serial.write(hostACK, HOST_ACK_NACK_SIZE);
+      }
       break;
     case PING_REQUEST:
       SetDestinationFromSerialBuffer(0);
