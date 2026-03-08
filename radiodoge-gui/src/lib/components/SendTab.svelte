@@ -31,14 +31,26 @@
     return !isNaN(n) && n > 0;
   });
 
+  /** True only when ALL conditions are met — including a loaded wallet. */
   const canSend = $derived(() =>
     connection.isConnected &&
+    wallet.isGenerated &&
     isValidAddress() &&
     isValidAmount() &&
     !isSending
   );
 
   async function sendTransaction() {
+    // Hard gate: never invoke the backend without a "From" wallet.
+    // The button is already disabled, but guard here too in case of keyboard/script triggers.
+    if (!connection.isConnected) {
+      error = '🔌 Not connected — plug in your Heltec device first.';
+      return;
+    }
+    if (!wallet.isGenerated) {
+      error = '👛 No sender wallet loaded — go to the Wallet tab to generate or import one first.';
+      return;
+    }
     if (!canSend()) return;
 
     isSending = true;
@@ -185,33 +197,44 @@
       />
     </div>
 
-    <!-- From wallet indicator -->
+    <!-- From wallet indicator — required; blocks send if missing -->
     {#if wallet.isGenerated}
+      <div
+        title="This address will sign the transaction"
+        style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 14px;
+          background: rgba(245, 197, 24, 0.05);
+          border: 1px solid rgba(245, 197, 24, 0.2);
+          border-radius: 8px;
+          font-size: 0.8rem;
+        "
+      >
+        <span style="color: var(--doge-muted); flex-shrink: 0;">From:</span>
+        <span class="mono" style="color: var(--doge-yellow); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          {wallet.address}
+        </span>
+        <span style="color: var(--doge-neon); font-size: 0.7rem; flex-shrink: 0;" title="Wallet loaded ✅">✅</span>
+      </div>
+    {:else}
       <div style="
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 10px 14px;
-        background: rgba(245, 197, 24, 0.05);
-        border: 1px solid rgba(245, 197, 24, 0.2);
+        background: rgba(255, 68, 68, 0.06);
+        border: 1px solid rgba(255, 68, 68, 0.25);
         border-radius: 8px;
         font-size: 0.8rem;
+        color: var(--doge-red);
       ">
-        <span style="color: var(--doge-muted);">From:</span>
-        <span class="mono" style="color: var(--doge-yellow); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          {wallet.address}
+        <span style="flex-shrink: 0;">❌</span>
+        <span style="flex: 1;">
+          No sender wallet — <strong>required to sign transactions</strong>.
+          Go to the <em>Wallet</em> tab to generate or import one.
         </span>
-      </div>
-    {:else}
-      <div style="
-        padding: 10px 14px;
-        background: rgba(255, 140, 0, 0.05);
-        border: 1px solid rgba(255, 140, 0, 0.2);
-        border-radius: 8px;
-        font-size: 0.8rem;
-        color: var(--doge-orange);
-      ">
-        💡 Go to Wallet tab to generate a sender address (optional for MVP broadcast)
       </div>
     {/if}
 
@@ -220,6 +243,13 @@
       onclick={sendTransaction}
       disabled={!canSend()}
       class="btn-doge"
+      title={
+        !connection.isConnected ? 'Connect to a Heltec device first' :
+        !wallet.isGenerated    ? 'Generate or import a wallet in the Wallet tab first' :
+        !isValidAddress()      ? 'Enter a valid Dogecoin recipient address' :
+        !isValidAmount()       ? 'Enter an amount greater than 0' :
+        'Sign & broadcast this transaction over LoRa 🚀'
+      }
       style="
         width: 100%;
         padding: 16px;
