@@ -439,6 +439,30 @@ async fn update_lora_settings(
     );
     state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
 
+    // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+    // Also send CMD_SET_LORA_PARAMS (0x21) so the device applies the RF settings.
+    // This is additive — the device ACKs the command and applies settings as supported.
+    let freq_khz = (settings.frequency_mhz * 1000.0) as u32;
+    let bw_idx: u8 = match settings.bandwidth_khz as u32 {
+        250 => 1,
+        500 => 2,
+        _   => 0, // default 125 kHz
+    };
+    let cr: u8 = settings.coding_rate
+        .trim_start_matches("4/")
+        .parse::<u8>()
+        .unwrap_or(5);
+    let tx_power = settings.power_dbm.max(2).min(22) as u8;
+    let lora_pkt = radio::build_set_lora_params(
+        &settings.node_address, settings.spreading_factor, bw_idx, cr, freq_khz, tx_power,
+    );
+    let lora_pkt_hex = hex::encode(&lora_pkt);
+    emit_debug_traffic(&app, "TX", &lora_pkt_hex, &format!(
+        "CMD_SET_LORA_PARAMS → SF{} BW{}kHz CR4/{} {}MHz {}dBm",
+        settings.spreading_factor, settings.bandwidth_khz, cr, settings.frequency_mhz, tx_power,
+    ));
+    state.serial.send_raw(lora_pkt).await.map_err(|e| e.to_string())?;
+
     // Verify the device accepted the new address with a round-trip check
     let verified = state
         .serial

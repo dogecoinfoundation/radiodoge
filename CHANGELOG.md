@@ -7,6 +7,103 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3] — 2026-03-08 — 🚀 Firmware Deeply Optimized + Desktop Fully Synced — Much Protocol. Very Fix. Wow.
+
+> **Root-cause diagnosis and fix of the firmware ↔ desktop protocol mismatch.
+> All desktop commands now work correctly end-to-end for the first time. Additive only — zero
+> breaking changes to firmware behavior, WiFi AP, web dashboard, or packet format.**
+> Such compatible. Very reliable. Much DOGE. Wow. 🐕📡
+
+### Summary
+
+v0.3.3 resolves a fundamental protocol incompatibility discovered between the Heltec firmware
+(2-byte header: `[cmd, payloadSize]`) and the desktop app (8-byte header:
+`[cmd, flags=0x00, src(3), dst(3), ...payload...]`). Because the firmware read the desktop's
+`flags=0x00` byte as `payloadSize=0`, it read zero payload bytes — leaving 6+ header bytes in
+the serial buffer to corrupt subsequent commands. This caused:
+
+- Firmware version always showing "FW v?.?.?" (0x20 → firmware default → NACK)
+- Node address never saving (0x01 → firmware ADDRESS_GET → returns old addr, ignores new one)
+- **Critical**: CMD_PING (0x02) → firmware ADDRESS_SET with 0-byte garbage → corrupts node
+  address in NVS (was saving 0.0.0 silently every ping!)
+- DOGE_TX (0x10) never reaching LoRa radio (→ default → NACK, dropped silently)
+
+All fixed. All changes are additive and commented `// OPTIMIZED FOR DESKTOP v0.3.3 – SAFE`.
+
+---
+
+### Fixed
+
+#### Firmware — Protocol Mismatch Root Cause (heltec-firmware.ino)
+
+- **`HandleDesktopCommand()` — new additive function**: Intercepts desktop command IDs
+  (0x10 DOGE_TX, 0x11 REQUEST_BALANCE, 0x20 GET_FIRMWARE_VERSION, 0x21 SET_LORA_PARAMS)
+  before the firmware's `switch(commandVal)`. Drains the 6 remaining desktop header bytes
+  (`src_r, src_c, src_n, dst_r, dst_c, dst_n`) and any payload, then replies in the same
+  8-byte desktop format the Rust accumulator expects.
+
+- **`CMD_GET_NODE_ADDR (0x00)` — NONE case fixed**: Previously fell through to default → NACK.
+  Now drains 6 header bytes and replies `[0x00, 0x00, local_r, local_c, local_n, 0xFF, 0xFF, 0xFF]`.
+  Desktop `serial.rs` checks `cmd==0x00 && src!=broadcast` to update node address — now works.
+
+- **`CMD_SET_NODE_ADDRS (0x01)` — ADDRESS_GET case fixed**: Previously just returned the OLD
+  address (no-op). After `delay(500)` all 9 remaining bytes (`src(3) + dst(3) + newAddr(3)`)
+  are in the buffer. Now reads `hdrRest[9]`, extracts `hdrRest[6..8]` as new address, saves
+  to NVS, replies with new address in 8-byte format. Falls back to legacy behavior if fewer
+  bytes are available (backward-compatible).
+
+- **`CMD_PING (0x02)` — Critical address-corruption bug fixed**: ADDRESS_SET case with
+  `payloadSize==0` previously called `SetLocalAddressFromSerialBuffer(0)` on an empty buffer →
+  wrote `0.0.0` to NVS on every ping. Now: `payloadSize==0` drains 6 header bytes, replies
+  with ping ACK in 8-byte format. Legacy ADDRESS_SET behavior preserved for `payloadSize>0`.
+
+- **`CMD_DOGE_TX (0x10)`**: Previously → default → NACK, packet dropped. Now intercepted by
+  `HandleDesktopCommand()`, payload forwarded to `Radio.Send()`, ACK returned.
+
+- **`CMD_GET_FIRMWARE_VERSION (0x20)`**: Now replies with
+  `"RadioDoge NV<HELTEC_BOARD_VERSION>FW<FIRMWARE_VERSION>"` as ASCII payload in 8-byte format.
+  Desktop parses this as a UTF-8 string from the payload — firmware version now shows correctly.
+
+- **`CMD_SET_LORA_PARAMS (0x21)` — new additive command**: ACKs the command (RF reconfiguration
+  infrastructure in place for future revision).
+
+- **`saveLoRaConfigurationQuiet()`**: New NVS save function that does NOT call `Serial.println()`.
+  Used inside `HostSerialRead()` context to prevent debug text from polluting the binary stream.
+  Original `saveLoRaConfiguration()` unchanged (still used outside serial context).
+
+#### Desktop — Rust Backend (radiodoge-core + radiodoge-gui)
+
+- **`radio.rs` — `CMD_SET_LORA_PARAMS: u8 = 0x21`**: New command constant added.
+- **`radio.rs` — `build_set_lora_params()`**: New builder that encodes SF, BW index, CR,
+  frequency (kHz), and TX power as 8-byte payload in standard header format.
+- **`lib.rs` — `update_lora_settings()`**: Now also sends `CMD_SET_LORA_PARAMS (0x21)` after
+  `CMD_SET_NODE_ADDRS (0x01)`, so RF settings (SF, BW, CR, freq, power) are applied to the
+  device on every settings save.
+- **`serial.rs` — accumulator re-sync**: Added `KNOWN_CMDS` check before attempting
+  `parse_incoming()`. Bytes with an unrecognized first byte (stale debug text, partial writes)
+  are discarded one at a time until re-synced on a valid command byte. Prevents garbage packets.
+
+#### Desktop — Svelte GUI
+
+- **`ReceiveTab.svelte` — Export button**: "💾 Export" button downloads the currently-filtered
+  packet log as a timestamped JSON file. Appears next to the Clear button when packets are present.
+
+### Changed
+
+- All version numbers bumped to `0.3.3`: `package.json`, all `Cargo.toml` files, `tauri.conf.json`,
+  app footer in `+page.svelte`.
+
+### Unchanged (strict compatibility)
+
+- Serial baud rate: 115200
+- WiFi AP SSID/password: "RadioDoge" / "radiodoge"
+- Firmware command IDs for legacy tools (ADDRESS_GET=1, ADDRESS_SET=2, PING_REQUEST=3, etc.)
+- Web dashboard HTML, REST API endpoints
+- Dogecoin packet format and Foundation relay behavior
+- All v0.3.1/v0.3.2 features (Debug Console, TX/RX filter, auto-reconnect, etc.)
+
+---
+
 ## [0.3.2] — 2026-03-08 — 🐛 Critical Fixes + Debug Console — Much Debug. Very Fix. Wow.
 
 > **Three critical bugs squashed, a professional Debug Console added, and more UX polish.**

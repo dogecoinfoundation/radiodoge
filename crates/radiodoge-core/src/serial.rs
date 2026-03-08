@@ -307,8 +307,24 @@ impl SerialManager {
                     Ok(Ok(bytes)) => {
                         accumulator.extend_from_slice(&bytes);
 
-                        // Extract complete packets from the accumulator
-                        while accumulator.len() >= radio::SINGLE_HDR_LEN {
+                        // Extract complete packets from the accumulator.
+                        // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+                        // If the first byte is not a known command, discard it and re-sync.
+                        // This prevents stale firmware text output (e.g. Serial.println debug)
+                        // from being misinterpreted as packet headers.
+                        const KNOWN_CMDS: &[u8] = &[
+                            0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+                            0x10, 0x11, 0x20, 0x21,
+                            0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE, // firmware-side IDs
+                        ];
+                        while !accumulator.is_empty() {
+                            if !KNOWN_CMDS.contains(&accumulator[0]) {
+                                accumulator.remove(0);
+                                continue;
+                            }
+                            if accumulator.len() < radio::SINGLE_HDR_LEN {
+                                break;
+                            }
                             if let Some(packet) = radio::parse_incoming(&accumulator, 0) {
                                 // Update stats
                                 {
@@ -347,7 +363,7 @@ impl SerialManager {
                                         .min(radio::MAX_SINGLE_PAYLOAD_LEN);
                                 accumulator.drain(..consumed);
                             } else {
-                                // Incomplete packet — wait for more data
+                                // parse_incoming returned None (buffer too short) — wait for more data
                                 break;
                             }
                         }

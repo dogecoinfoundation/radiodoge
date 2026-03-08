@@ -63,6 +63,27 @@
     return map[cmd] ?? `Unknown command 0x${cmd.toString(16).toUpperCase()}`;
   }
 
+  // ── Export packet log ─────────────────────────────────────────────────────
+  // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
+  function exportPackets() {
+    const rows = filteredPackets().map(p => ({
+      timestamp:   new Date(p.timestamp * 1000).toISOString(),
+      direction:   p.direction,
+      command:     `0x${p.command.toString(16).toUpperCase().padStart(2, '0')} (${commandName(p.command)})`,
+      source:      `${p.source.region}.${p.source.community}.${p.source.node}`,
+      destination: `${p.destination.region}.${p.destination.community}.${p.destination.node}`,
+      decoded:     p.decoded ?? '',
+      payload_hex: p.payloadHex,
+    }));
+    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `radiodoge-packets-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Copy state ───────────────────────────────────────────────────────────
   let copiedIndex = $state<number | null>(null);
   async function copyPacket(text: string, idx: number) {
@@ -128,6 +149,19 @@
         />
         Hex
       </label>
+
+      <!-- Export button -->
+      {#if radio.packets.length > 0}
+        <button
+          onclick={exportPackets}
+          class="btn-ghost"
+          title="Export visible packet log as JSON (includes all filtered packets)"
+          style="padding: 5px 14px; font-size: 0.8rem;"
+          aria-label="Export packet log"
+        >
+          💾 Export
+        </button>
+      {/if}
 
       <!-- Clear button -->
       {#if radio.packets.length > 0}
