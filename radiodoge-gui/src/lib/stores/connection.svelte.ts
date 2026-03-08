@@ -49,7 +49,11 @@ export function setConnected(port: string, nodeAddress: NodeAddress | null, firm
   connection.nodeAddress = nodeAddress;
   connection.status = 'connected';
   connection.error = null;
-  connection.firmwareVersion = firmwareVersion ?? null;
+  // Strip redundant "RadioDoge " prefix that the firmware prepends to version strings
+  // e.g. "RadioDoge NV3FW01" → "NV3FW01", "RadioDoge NV55" → "NV55"
+  connection.firmwareVersion = firmwareVersion
+    ? firmwareVersion.replace(/^RadioDoge\s+/i, '').trim() || firmwareVersion
+    : null;
 }
 
 /** Set connecting state */

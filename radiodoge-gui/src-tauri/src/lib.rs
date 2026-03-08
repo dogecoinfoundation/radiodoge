@@ -326,10 +326,24 @@ async fn query_firmware_version(
     Ok(state.serial.get_firmware_version().await)
 }
 
-/// Send a PING to the connected device.
+/// Send a PING to the connected device and emit Debug Console events.
 #[tauri::command]
-async fn ping_device(state: State<'_, AppState>) -> Result<bool, String> {
-    Ok(state.serial.ping().await)
+async fn ping_device(state: State<'_, AppState>, app: AppHandle) -> Result<bool, String> {
+    if !state.serial.is_connected() {
+        emit_debug_traffic(&app, "TX", "", "CMD_PING — not connected, skipped");
+        return Ok(false);
+    }
+    // Build the same packet serial::ping() sends — for debug hex display only (not re-sent)
+    let local = state.serial.get_node_address().await;
+    let pkt_hex = hex::encode(radio::build_ping(&local, &local));
+    emit_debug_traffic(&app, "TX", &pkt_hex, "CMD_PING → device health check");
+    let ok = state.serial.ping().await;
+    emit_debug_traffic(
+        &app, "RX", "",
+        if ok { "✅ PONG — device responded within 500 ms 🐕" }
+        else  { "❌ No PONG within 500 ms — firmware may be busy" },
+    );
+    Ok(ok)
 }
 
 /// Generate a new Dogecoin keypair (address + keys).

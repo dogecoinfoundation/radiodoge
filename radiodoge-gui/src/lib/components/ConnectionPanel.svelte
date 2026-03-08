@@ -138,11 +138,28 @@
     return '⚪ COM';
   }
 
+  /** Truncate long port descriptions so the <select> never overflows the card. */
+  function portLabel(p: PortInfo): string {
+    const badge = portBadge(p);
+    const desc  = p.description.length > 42
+      ? p.description.slice(0, 39) + '…'
+      : p.description;
+    return `${badge} ${desc}`;
+  }
+
   /** The selected PortInfo object (or null). */
   const selectedPortInfo = $derived(ports.find(p => p.name === selectedPort) ?? null);
 
   /** True if selected port is not a recognized USB serial device. */
   const selectedIsNonUsb = $derived(selectedPort !== '' && selectedPortInfo !== null && !selectedPortInfo.isUsb);
+
+  /** True when error looks like a soft timeout vs a hard access/driver failure. */
+  const errorIsSoft = $derived(
+    !!connection.error &&
+    !connection.error.includes('Access') &&
+    !connection.error.includes('driver') &&
+    !connection.error.includes('Permission')
+  );
 </script>
 
 <div style="max-width: 620px; margin: 0 auto; padding: 32px 24px;">
@@ -193,22 +210,28 @@
       <label for="serial-port-select" style="display: block; font-size: 0.8rem; color: var(--doge-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
         Serial Port
       </label>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; min-width: 0;">
         <select
           id="serial-port-select"
           bind:value={selectedPort}
           disabled={connection.isConnected || connection.isConnecting}
+          title={selectedPortInfo ? `${selectedPortInfo.description} (${selectedPortInfo.name})` : 'Select a serial port'}
           style="
             flex: 1;
+            min-width: 0;
             background: var(--doge-dark);
             border: 1px solid var(--doge-border);
             border-radius: 8px;
             color: {selectedPort ? 'var(--doge-text)' : 'var(--doge-subtle)'};
-            padding: 10px 14px;
-            font-size: 0.9rem;
+            padding: 10px 12px;
+            font-size: 0.85rem;
             outline: none;
             font-family: var(--font-mono);
             cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
           "
         >
           {#if ports.length === 0}
@@ -216,8 +239,8 @@
           {:else}
             <option value="" disabled>Select a port...</option>
             {#each ports as p}
-              <option value={p.name}>
-                {portBadge(p)} {p.description}
+              <option value={p.name} title={p.description}>
+                {portLabel(p)}
               </option>
             {/each}
           {/if}
@@ -350,20 +373,29 @@
       </button>
     {/if}
 
-    <!-- Error message -->
+    <!-- Error message — compact yellow for soft errors, red for hard failures -->
     {#if connection.error}
       <div style="
-        margin-top: 12px;
-        padding: 12px 16px;
-        background: rgba(255, 68, 68, 0.08);
-        border: 1px solid rgba(255, 68, 68, 0.3);
+        margin-top: 10px;
+        padding: {errorIsSoft ? '7px 12px' : '10px 14px'};
+        background: {errorIsSoft ? 'rgba(245,197,24,0.07)' : 'rgba(255,68,68,0.08)'};
+        border: 1px solid {errorIsSoft ? 'rgba(245,197,24,0.25)' : 'rgba(255,68,68,0.3)'};
         border-radius: 8px;
-        color: var(--doge-red);
-        font-size: 0.82rem;
-        line-height: 1.6;
+        color: {errorIsSoft ? 'var(--doge-yellow)' : 'var(--doge-red)'};
+        font-size: {errorIsSoft ? '0.76rem' : '0.8rem'};
+        line-height: 1.55;
         white-space: pre-line;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
       ">
-        ❌ {connection.error}
+        <span style="flex-shrink:0;">{errorIsSoft ? '⚠️' : '❌'}</span>
+        <span style="flex:1; word-break: break-word;">{connection.error}</span>
+        <button
+          onclick={() => { connection.error = null; }}
+          title="Dismiss"
+          style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.5;font-size:0.85rem;padding:0;flex-shrink:0;line-height:1;"
+        >✕</button>
       </div>
     {/if}
   </div>
@@ -375,28 +407,34 @@
         <div style="display: flex; align-items: center; gap: 10px;">
           <h3 style="margin: 0; font-size: 1rem; color: var(--doge-neon);">✅ Connected!</h3>
           {#if connection.firmwareVersion}
-            <span style="
-              background: rgba(0,255,136,0.1);
-              border: 1px solid rgba(0,255,136,0.3);
-              border-radius: 12px;
-              padding: 2px 10px;
-              font-size: 0.72rem;
-              font-family: var(--font-mono);
-              color: var(--doge-neon);
-            ">
-              FW {connection.firmwareVersion}
+            <span
+              title="Firmware version reported by the Heltec device"
+              style="
+                background: rgba(0,255,136,0.1);
+                border: 1px solid rgba(0,255,136,0.3);
+                border-radius: 12px;
+                padding: 2px 10px;
+                font-size: 0.72rem;
+                font-family: var(--font-mono);
+                color: var(--doge-neon);
+              "
+            >
+              {connection.firmwareVersion}
             </span>
           {:else}
-            <span style="
-              background: rgba(136,136,136,0.1);
-              border: 1px solid rgba(136,136,136,0.2);
-              border-radius: 12px;
-              padding: 2px 10px;
-              font-size: 0.72rem;
-              font-family: var(--font-mono);
-              color: var(--doge-subtle);
-            ">
-              FW v?.?.?
+            <span
+              title="Firmware version not yet received — click ⟳ Query FW to retry"
+              style="
+                background: rgba(245,197,24,0.07);
+                border: 1px solid rgba(245,197,24,0.2);
+                border-radius: 12px;
+                padding: 2px 10px;
+                font-size: 0.72rem;
+                font-family: var(--font-mono);
+                color: var(--doge-subtle);
+              "
+            >
+              FW …
             </span>
             <button
               onclick={queryFirmware}

@@ -7,6 +7,59 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-03-08 — ✨ Polish Pass + Clean Connect Tab — Much Pretty. Very Fix. Wow.
+
+> **Five targeted fixes with zero behavior changes. Everything that was broken in the UI
+> now works exactly as designed. All changes additive and backward-compatible.** 🐕
+
+### Fixed
+
+#### COM Port Dropdown — No Longer Overflows the Card
+- **Bug**: `<select flex:1>` had no `min-width: 0`, letting a long description like
+  `"🟢 Heltec CP2102 USB-to-UART Bridge Controller (COM3)"` blow past the card edge.
+- **Fix**: Added `min-width: 0` to both the flex row and the `<select>` itself. Added
+  `portLabel()` helper that truncates descriptions longer than 42 chars to `"…"`.
+  Hover `title` on the `<select>` shows the full untruncated description.
+
+#### Debug Console Export — Downloads Correctly
+- **Bug**: `a.click()` on a detached anchor element is a no-op in Tauri's WebView.
+  The button appeared to work but produced no file.
+- **Fix**: `document.body.appendChild(a)` before `a.click()`, then `removeChild(a)`
+  afterward. Export now produces a proper timestamped `.txt` file with a header banner.
+
+#### Ping Device — Now Shows Debug Console Feedback
+- **Bug**: `ping_device` Tauri command called `serial.ping()` silently — nothing appeared
+  in the Debug Console before or after the ping.
+- **Fix**: Command now accepts `AppHandle`, builds the same ping packet for hex display,
+  emits `TX` with hex bytes before sending and `RX` with `✅ PONG` / `❌ No PONG` after.
+
+#### Firmware Version Badge — Clean Display
+- **Bug**: Firmware sends `"RadioDoge NV3FW01"` → badge showed `"FW RadioDoge NV3FW01"`.
+  The word "RadioDoge" appeared twice; looked broken.
+- **Fix**: `setConnected()` in `connection.svelte.ts` strips the `"RadioDoge "` prefix
+  via regex before storing. Badge now shows `"NV3FW01"` / `"NV55"` cleanly. Backward
+  compatible — non-prefixed strings (e.g. legacy `"v1.2.3"`) pass through unchanged.
+  Pending badge changed from `"FW v?.?.?"` (red/grey) to `"FW …"` (subtle yellow).
+
+#### Error Banner — Compact + Context-Aware
+- **Bug**: Connection errors rendered as a large red block regardless of severity.
+  A soft "no response" timeout looked as alarming as "Access denied".
+- **Fix**: Banner is now compact, has a dismiss `✕` button, and is **yellow** for soft
+  errors (timeouts, "No response") vs **red** only for hard failures (Access denied,
+  missing driver). Classified via the new `errorIsSoft` derived boolean.
+
+### Added
+
+- **README.md**: Dogecoin Core RPC bridge line added to v0.4.x roadmap section.
+- **README.md**: Version badge updated to v0.3.4 in the hero description.
+
+### Changed
+
+- Version bumped to `0.3.4` in `package.json`, all `Cargo.toml` files, `tauri.conf.json`,
+  and app footer (`+page.svelte`).
+
+---
+
 ## [0.3.3] — 2026-03-08 — 🚀 Firmware Deeply Optimized + Desktop Fully Synced — Much Protocol. Very Fix. Wow.
 
 > **Root-cause diagnosis and fix of the firmware ↔ desktop protocol mismatch.
