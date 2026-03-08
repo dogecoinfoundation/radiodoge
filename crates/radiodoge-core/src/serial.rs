@@ -22,7 +22,7 @@ use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::radio;
-use crate::types::{IncomingPacket, NodeAddress, PortInfo, RadioStats};
+use crate::types::{BoardSettings, IncomingPacket, NodeAddress, PortInfo, RadioStats};
 
 // ─── USB VID/PID tables for common ESP32 / Heltec serial adapters ────────────
 
@@ -98,6 +98,10 @@ pub struct SerialManager {
 
     /// Firmware version string, populated after CMD_GET_FIRMWARE_VERSION response.
     firmware_version: Arc<TokioMutex<Option<String>>>,
+
+    /// v0.3.6 — Board settings, populated after CMD_GET_SETTINGS (0x22) response.
+    /// Board is source of truth — app queries on connect and syncs UI.
+    board_settings: Arc<TokioMutex<Option<BoardSettings>>>,
 }
 
 impl SerialManager {
@@ -111,6 +115,7 @@ impl SerialManager {
             stats: Arc::new(TokioMutex::new(RadioStats::default())),
             node_address: Arc::new(TokioMutex::new(NodeAddress::default_local())),
             firmware_version: Arc::new(TokioMutex::new(None)),
+            board_settings: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -252,6 +257,7 @@ impl SerialManager {
         let stats_clone = Arc::clone(&self.stats);
         let node_address_clone = Arc::clone(&self.node_address);
         let firmware_version_clone = Arc::clone(&self.firmware_version);
+        let board_settings_clone = Arc::clone(&self.board_settings);
         let packet_tx_clone = self.packet_tx.clone();
 
         tokio::spawn(async move {
@@ -314,7 +320,7 @@ impl SerialManager {
                         // from being misinterpreted as packet headers.
                         const KNOWN_CMDS: &[u8] = &[
                             0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-                            0x10, 0x11, 0x20, 0x21,
+                            0x10, 0x11, 0x20, 0x21, 0x22, 0x23,  // 0x22/0x23 = v0.3.6
                             0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE, // firmware-side IDs
                         ];
                         while !accumulator.is_empty() {
@@ -347,6 +353,30 @@ impl SerialManager {
                                             if !ver.is_empty() {
                                                 *firmware_version_clone.lock().await = Some(ver);
                                             }
+                                        }
+                                    }
+                                }
+
+                                // v0.3.6 — Parse CMD_GET_SETTINGS (0x22) responses.
+                                // Payload: [region, community, node, gateway_mode_byte]
+                                // Board is source of truth — update local state from board.
+                                if packet.command == radio::CMD_GET_SETTINGS {
+                                    if let Ok(payload_bytes) = hex::decode(&packet.payload_hex) {
+                                        if payload_bytes.len() >= 4 {
+                                            let addr = NodeAddress::new(
+                                                payload_bytes[0],
+                                                payload_bytes[1],
+                                                payload_bytes[2],
+                                            );
+                                            let gw = payload_bytes[3] != 0;
+                                            // Board address is authoritative
+                                            if addr != NodeAddress::broadcast() {
+                                                *node_address_clone.lock().await = addr.clone();
+                                            }
+                                            *board_settings_clone.lock().await = Some(BoardSettings {
+                                                node_address: addr,
+                                                gateway_mode: gw,
+                                            });
                                         }
                                     }
                                 }
@@ -396,9 +426,10 @@ impl SerialManager {
         *self.port.lock().expect("port mutex poisoned") = None;
         self.connected.store(false, Ordering::Relaxed);
 
-        // Reset stats and firmware version
+        // Reset stats, firmware version, and board settings
         *self.stats.lock().await = RadioStats::default();
         *self.firmware_version.lock().await = None;
+        *self.board_settings.lock().await = None;
 
         Ok(())
     }
@@ -456,6 +487,12 @@ impl SerialManager {
     /// The firmware version string reported by the connected device, if available.
     pub async fn get_firmware_version(&self) -> Option<String> {
         self.firmware_version.lock().await.clone()
+    }
+
+    /// v0.3.6 — Board settings (node address + gateway_mode) as last reported by the device.
+    /// Populated after CMD_GET_SETTINGS (0x22) response. Board is source of truth.
+    pub async fn get_board_settings(&self) -> Option<BoardSettings> {
+        self.board_settings.lock().await.clone()
     }
 
     /// After sending SET_NODE_ADDR, verify the device accepted it by querying

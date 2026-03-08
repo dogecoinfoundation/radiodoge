@@ -6,7 +6,7 @@
  * `import { connection } from '$lib/stores/connection.svelte'`.
  */
 
-import type { ConnectionStatusType, NodeAddress, RadioStats } from '$lib/types';
+import type { BoardSettings, ConnectionStatusType, NodeAddress, RadioStats } from '$lib/types';
 
 /**
  * Reactive connection state — use $state() (Svelte 5 rune).
@@ -33,6 +33,12 @@ export const connection = $state({
   isReconnecting: false,
   /** Firmware version string reported by the Heltec device, e.g. "v1.2.3" */
   firmwareVersion: null as string | null,
+  /** v0.3.6 — Whether board is in gateway mode (synced from board on connect) */
+  gatewayMode: false,
+  /** v0.3.6 — Connection type selected by user: "usb" or "ble" */
+  connectionType: 'usb' as 'usb' | 'ble',
+  /** v0.3.6 — Whether a gateway daemon process is running */
+  gatewayOnline: false,
 });
 
 /** Update available ports list */
@@ -75,6 +81,17 @@ export function setReconnecting(port: string) {
   connection.error = null;
 }
 
+/** v0.3.6 — Sync board settings from board-sync event (board is source of truth) */
+export function applyBoardSync(bs: BoardSettings) {
+  connection.nodeAddress = bs.nodeAddress;
+  connection.gatewayMode = bs.gatewayMode;
+}
+
+/** v0.3.6 — Update gateway online status from gateway-status event */
+export function setGatewayOnline(online: boolean) {
+  connection.gatewayOnline = online;
+}
+
 /** Set disconnected state */
 export function setDisconnected() {
   connection.isConnected = false;
@@ -85,6 +102,8 @@ export function setDisconnected() {
   connection.status = 'disconnected';
   connection.stats = null;
   connection.firmwareVersion = null;
+  connection.gatewayMode = false;
+  connection.gatewayOnline = false;
 }
 
 /** Set error state */

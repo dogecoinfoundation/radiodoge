@@ -86,6 +86,44 @@ fn secret_key_to_wif(secret_key: &SecretKey) -> Result<String> {
     Ok(bs58::encode(payload).with_check().into_string())
 }
 
+/// v0.3.6 — Import an existing wallet from a WIF-encoded private key.
+///
+/// Validates version byte, length, and compression flag.
+/// Returns a `WalletInfo` with derived address + public key.
+pub fn import_wif(wif: &str) -> Result<WalletInfo> {
+    let decoded = bs58::decode(wif)
+        .with_check(None)
+        .into_vec()
+        .map_err(|e| anyhow::anyhow!("Invalid WIF encoding: {}", e))?;
+
+    if decoded.len() != 34 {
+        anyhow::bail!(
+            "Invalid WIF length: expected 34 bytes, got {}. Only compressed Dogecoin keys (starting with 'Q') are supported.",
+            decoded.len()
+        );
+    }
+    if decoded[0] != DOGE_MAINNET_WIF_VERSION {
+        anyhow::bail!(
+            "Not a Dogecoin mainnet WIF key (expected version 0x{:02X}, got 0x{:02X}). Keys should start with 'Q'.",
+            DOGE_MAINNET_WIF_VERSION, decoded[0]
+        );
+    }
+    if decoded[33] != 0x01 {
+        anyhow::bail!("Only compressed keys are supported (compression flag must be 0x01).");
+    }
+
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&decoded[1..33])
+        .map_err(|e| anyhow::anyhow!("Invalid secret key bytes: {}", e))?;
+    let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+    let address = pubkey_to_address(&public_key)?;
+    let public_key_hex = hex::encode(public_key.serialize());
+    let private_key_wif = secret_key_to_wif(&secret_key)?;
+
+    Ok(WalletInfo { address, public_key_hex, private_key_wif })
+}
+
 /// Validate that a string is a valid Dogecoin address.
 ///
 /// Checks:

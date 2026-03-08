@@ -6,6 +6,8 @@
    */
 
   import { connection } from '$lib/stores/connection.svelte';
+
+  // History tab is always accessible (even disconnected — you have past history)
   import SignalBars from './SignalBars.svelte';
 
   interface Props {
@@ -16,12 +18,13 @@
   let { activeTab, onTabChange }: Props = $props();
 
   const tabs = [
-    { id: 'connect',   icon: '🔌', label: 'Connect',   tooltip: 'Connect to your Heltec LoRa device via USB serial' },
+    { id: 'connect',   icon: '🔌', label: 'Connect',   tooltip: 'Connect to your Heltec LoRa device via USB serial or BLE' },
     { id: 'dashboard', icon: '📡', label: 'Dashboard',  tooltip: 'Live radio stats: RSSI, SNR, packets sent/received. Much data!' },
-    { id: 'wallet',    icon: '👛', label: 'Wallet',     tooltip: 'Generate a Dogecoin keypair — pure Rust crypto, no cloud. Very secure.' },
+    { id: 'wallet',    icon: '👛', label: 'Wallet',     tooltip: 'Generate or import a Dogecoin keypair — pure Rust crypto, no cloud. Very secure.' },
     { id: 'send',      icon: '📤', label: 'Send',       tooltip: 'Broadcast a Dogecoin transaction over LoRa radio. Such transaction!' },
     { id: 'receive',   icon: '📥', label: 'Receive',    tooltip: 'Live TX/RX packet log — see all incoming and outgoing LoRa traffic.' },
-    { id: 'settings',  icon: '⚙️', label: 'Settings',   tooltip: 'Configure LoRa parameters: frequency, power, spreading factor, bandwidth.' },
+    { id: 'history',   icon: '📜', label: 'History',    tooltip: 'Transaction history — last 50 sends. Much records. Very blockchain.' },
+    { id: 'settings',  icon: '⚙️', label: 'Settings',   tooltip: 'Configure LoRa parameters, gateway mode, BLE toggle. Such configure.' },
   ];
 </script>
 
@@ -83,7 +86,7 @@
   <!-- Tab buttons -->
   {#each tabs as tab}
     {@const isActive = activeTab === tab.id}
-    {@const isDisabled = tab.id !== 'connect' && tab.id !== 'settings' && !connection.isConnected}
+    {@const isDisabled = tab.id !== 'connect' && tab.id !== 'settings' && tab.id !== 'history' && !connection.isConnected}
     <button
       onclick={() => !isDisabled && onTabChange(tab.id)}
       style="
@@ -129,8 +132,43 @@
           white-space: nowrap;
         "
       >
-        🟢 {connection.portName}
+        {connection.connectionType === 'ble' ? '📶' : '🟢'} {connection.portName}
       </span>
+      {#if connection.gatewayMode}
+        <span
+          style="
+            background: rgba(0, 255, 136, 0.08);
+            color: var(--doge-neon);
+            border: 1px solid rgba(0, 255, 136, 0.25);
+            border-radius: 20px;
+            padding: 3px 10px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            white-space: nowrap;
+            letter-spacing: 0.05em;
+          "
+          title="Board is in gateway mode (stored in NVS)"
+        >
+          🌐 GATEWAY
+        </span>
+      {/if}
+      {#if connection.gatewayOnline}
+        <span
+          style="
+            background: rgba(245, 197, 24, 0.08);
+            color: var(--doge-yellow);
+            border: 1px solid rgba(245, 197, 24, 0.25);
+            border-radius: 20px;
+            padding: 3px 10px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            white-space: nowrap;
+          "
+          title="radiodoge-cli daemon is running"
+        >
+          ▶ Daemon
+        </span>
+      {/if}
     {:else if connection.isConnecting}
       <span
         style="

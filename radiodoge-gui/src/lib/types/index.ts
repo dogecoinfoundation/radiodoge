@@ -87,6 +87,21 @@ export interface ConnectionStatusEvent {
   firmwareVersion?: string;
 }
 
+/** v0.3.6 — Board live state, reported by CMD_GET_SETTINGS (0x22). Board is source of truth. */
+export interface BoardSettings {
+  nodeAddress: NodeAddress;
+  gatewayMode: boolean;
+}
+
+/** v0.3.6 — Transaction history entry (last 50, persisted to local JSON). */
+export interface TxHistoryEntry {
+  timestamp: number;
+  toAddress: string;
+  amountDoge: number;
+  memo?: string;
+  status: 'sent' | 'failed' | string;
+}
+
 /**
  * Map RSSI (dBm) to a signal bar count (1-5).
  */
@@ -119,6 +134,9 @@ export function commandName(cmd: number): string {
     0x10: 'DOGE TX',
     0x11: 'BALANCE',
     0x20: 'FW VERSION',
+    0x21: 'SET LORA',
+    0x22: 'GET SETTINGS',
+    0x23: 'SET GATEWAY',
   };
   return map[cmd] ?? `CMD(0x${cmd.toString(16).toUpperCase()})`;
 }

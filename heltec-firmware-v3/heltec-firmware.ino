@@ -1,4 +1,6 @@
 // Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
+// v0.3.6 — Board-is-source-of-truth: NVS-persisted settings, 0x22/0x23 protocol,
+//           OLED status cycle, BLE Nordic UART service.
 #include <Wire.h>
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
@@ -14,6 +16,67 @@
 #include "Images/doge.h"
 #include "Images/sendingDogeCoin.h"
 #include "Images/receivingDogeCoin.h"
+
+// v0.3.6 — BLE Nordic UART Service (requires ESP32 BLE Arduino library)
+// To disable BLE, set ENABLE_BLE to false below.
+#define ENABLE_BLE true
+#if ENABLE_BLE
+  #include <BLEDevice.h>
+  #include <BLEServer.h>
+  #include <BLEUtils.h>
+  #include <BLE2902.h>
+  #define BLE_DEVICE_NAME_PREFIX "RadioDoge"
+  // Nordic UART Service UUIDs
+  #define NORDIC_UART_SERVICE_UUID    "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+  #define NORDIC_UART_CHAR_RX_UUID    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+  #define NORDIC_UART_CHAR_TX_UUID    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+  BLEServer *pBleServer = NULL;
+  BLECharacteristic *pBleTxChar = NULL;
+  class BleServerCallbacks : public BLEServerCallbacks {
+    void onConnect(BLEServer* s)    { bleDeviceConnected = true;  }
+    void onDisconnect(BLEServer* s) { bleDeviceConnected = false; BLEDevice::startAdvertising(); }
+  };
+  class BleRxCallbacks : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pChar) {
+      std::string v = pChar->getValue();
+      for (size_t i = 0; i < v.length() && bleRxLen < 255; i++)
+        bleRxBuffer[bleRxLen++] = (uint8_t)v[i];
+      blePendingData = true;
+    }
+  };
+  // Send a response packet over BLE TX characteristic (notify)
+  void bleSend(uint8_t* data, size_t len) {
+    if (bleDeviceConnected && pBleTxChar) {
+      pBleTxChar->setValue(data, len);
+      pBleTxChar->notify();
+    }
+  }
+  void setupBLE() {
+    // Build device name: "RadioDoge-AB" (last 2 addr bytes for uniqueness)
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_BT);
+    char bleName[24];
+    snprintf(bleName, sizeof(bleName), "%s-%02X%02X", BLE_DEVICE_NAME_PREFIX, mac[4], mac[5]);
+    BLEDevice::init(bleName);
+    pBleServer = BLEDevice::createServer();
+    pBleServer->setCallbacks(new BleServerCallbacks());
+    BLEService *pSvc = pBleServer->createService(NORDIC_UART_SERVICE_UUID);
+    pBleTxChar = pSvc->createCharacteristic(NORDIC_UART_CHAR_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+    pBleTxChar->addDescriptor(new BLE2902());
+    BLECharacteristic *pRxChar = pSvc->createCharacteristic(NORDIC_UART_CHAR_RX_UUID, BLECharacteristic::PROPERTY_WRITE);
+    pRxChar->setCallbacks(new BleRxCallbacks());
+    pSvc->start();
+    BLEAdvertising *pAdv = BLEDevice::getAdvertising();
+    pAdv->addServiceUUID(NORDIC_UART_SERVICE_UUID);
+    pAdv->setScanResponse(false);
+    pAdv->setMinPreferred(0x06);
+    BLEDevice::startAdvertising();
+    Serial.println("BLE started: " + String(bleName));
+  }
+#else
+  void bleSend(uint8_t*, size_t) {}
+  void setupBLE() {}
+#endif
 
 // V3 Display Configuration
 #define SCREEN_WIDTH 128
@@ -65,6 +128,9 @@ String gateway_port = "";
 String gateway_endpoint = "";
 String gateway_username = "";
 String gateway_password = "";
+
+// v0.3.6 — Board-is-source-of-truth gateway mode flag (persisted to NVS)
+bool gateway_mode = false;
 
 // Password requirements
 const int MIN_PASSWORD_LENGTH = 8;
@@ -221,8 +287,23 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
 
 int16_t rssi;
 int16_t rxSize;
+int8_t lastSnr = 0;      // v0.3.6 — for OLED status cycle
 bool isLoRaIdle = true;
 bool needToSendACK = false;
+
+// v0.3.6 — OLED status cycle state
+unsigned long lastStatusCycle = 0;
+int statusPage = 0;
+bool showTxOk = false;
+unsigned long txOkTimestamp = 0;
+uint32_t pktRxCount = 0;
+uint32_t pktTxCount = 0;
+
+// v0.3.6 — BLE Nordic UART state
+bool bleDeviceConnected = false;
+uint8_t bleRxBuffer[256];
+int bleRxLen = 0;
+bool blePendingData = false;
 
 nodeAddress local;
 nodeAddress dest;
@@ -291,9 +372,17 @@ void setup() {
   } else {
     Serial.println("No gateway credentials found");
   }
-  
+
+  // v0.3.6 — Load gateway_mode from NVS (board is source of truth)
+  if (loadGatewayMode()) {
+    Serial.println("Gateway mode restored: " + String(gateway_mode ? "ON" : "OFF"));
+  }
+
   // Initialize control messages with loaded/default address
   InitControlMessages();
+
+  // v0.3.6 — Start BLE Nordic UART service
+  setupBLE();
   
   // Setup WiFi in dual mode (AP + Station)
   setupDualWiFi();
@@ -315,17 +404,19 @@ void setup() {
 void loop() {
   // Handle web server requests
   server.handleClient();
-  
+
   // Handle internet bridge (DNS requests)
   handleInternetBridge();
-  
+
   // Cleanup expired multipart sessions
   CleanupExpiredMultipartSessions();
-  
+
   // Check request timeouts
   CheckRequestTimeouts();
-  
-  //RawSerialMessageSendAndReceive()
+
+  // v0.3.6 — Cycle OLED status pages every 3 seconds
+  updateStatusDisplay();
+
   CommandAndControlLoop();
 }
 
@@ -380,13 +471,77 @@ void DisplayBroadcastMessage(String message, nodeAddress sender) {
   addDisplayLog("BROADCAST: " + message + " from " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
 }
 
-void DisplayCommandAndControl(uint8_t command) {
+// v0.3.6 — DisplayCommandAndControl removed (was printing raw cmd bytes; replaced by status cycle)
+// void DisplayCommandAndControl(uint8_t command) { ... }
+
+// v0.3.6 — OLED status cycle: nodeID → RSSI/SNR → packets RX/TX → (TX OK after 0x10)
+// Called from loop() every iteration; only redraws when 3 s have elapsed.
+void updateStatusDisplay() {
+  unsigned long now = millis();
+
+  // Show "TX OK!" for 3 s after a successful DOGE TX (0x10)
+  if (showTxOk) {
+    if (now - txOkTimestamp < 3000) {
+      radioDogeDisplay.clearDisplay();
+      radioDogeDisplay.setTextSize(1);
+      radioDogeDisplay.setTextColor(SSD1306_WHITE);
+      radioDogeDisplay.setCursor(20, 8);
+      radioDogeDisplay.println("TX OK!");
+      radioDogeDisplay.setCursor(8, 26);
+      radioDogeDisplay.println("Such DOGE. Wow.");
+      radioDogeDisplay.setCursor(12, 44);
+      radioDogeDisplay.println("To the moon! ");
+      radioDogeDisplay.display();
+      return;
+    } else {
+      showTxOk = false;
+    }
+  }
+
+  if (now - lastStatusCycle < 3000) return;
+  lastStatusCycle = now;
+
   radioDogeDisplay.clearDisplay();
   radioDogeDisplay.setTextSize(1);
   radioDogeDisplay.setTextColor(SSD1306_WHITE);
-  radioDogeDisplay.setCursor(0, 0);
-  radioDogeDisplay.println("Command: " + String(command));
+
+  switch (statusPage) {
+    case 0: // Node address
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("RadioDoge Node");
+      radioDogeDisplay.setTextSize(2);
+      radioDogeDisplay.setCursor(0, 18);
+      radioDogeDisplay.println(String(local.region) + "." + String(local.community) + "." + String(local.node));
+      radioDogeDisplay.setTextSize(1);
+      if (gateway_mode) {
+        radioDogeDisplay.setCursor(0, 50);
+        radioDogeDisplay.println(">> GATEWAY MODE <<");
+      }
+      if (bleDeviceConnected) {
+        radioDogeDisplay.setCursor(90, 0);
+        radioDogeDisplay.println("BLE");
+      }
+      break;
+    case 1: // RSSI / SNR
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Signal Quality");
+      radioDogeDisplay.setCursor(0, 20);
+      radioDogeDisplay.println("RSSI: " + String(rssi) + " dBm");
+      radioDogeDisplay.setCursor(0, 36);
+      radioDogeDisplay.println("SNR:  " + String(lastSnr) + " dB");
+      break;
+    case 2: // Packet counters
+      radioDogeDisplay.setCursor(0, 0);
+      radioDogeDisplay.println("Packets");
+      radioDogeDisplay.setCursor(0, 18);
+      radioDogeDisplay.println("RX: " + String(pktRxCount));
+      radioDogeDisplay.setCursor(0, 34);
+      radioDogeDisplay.println("TX: " + String(pktTxCount));
+      break;
+  }
+
   radioDogeDisplay.display();
+  statusPage = (statusPage + 1) % 3;
 }
 
 void DisplayLocalAddress(nodeAddress addr) {
@@ -618,6 +773,27 @@ void saveLoRaConfigurationQuiet(uint8_t region, uint8_t community, uint8_t node)
   nvs_set_u8(nvs_handle, "node", node);
   nvs_commit(nvs_handle);
   nvs_close(nvs_handle);
+}
+
+// v0.3.6 — gateway_mode NVS persistence
+// Saves silently (no Serial.println) — safe inside binary protocol handlers.
+void saveGatewayModeQuiet(bool mode) {
+  nvs_handle_t h;
+  if (nvs_open("rd_settings", NVS_READWRITE, &h) != ESP_OK) return;
+  nvs_set_u8(h, "gw_mode", mode ? 1 : 0);
+  nvs_commit(h);
+  nvs_close(h);
+}
+
+bool loadGatewayMode() {
+  nvs_handle_t h;
+  uint8_t val = 0;
+  if (nvs_open("rd_settings", NVS_READONLY, &h) != ESP_OK) return false;
+  esp_err_t err = nvs_get_u8(h, "gw_mode", &val);
+  nvs_close(h);
+  if (err != ESP_OK) return false;
+  gateway_mode = (val != 0);
+  return true;
 }
 
 bool loadLoRaConfiguration() {
@@ -1355,8 +1531,8 @@ void CommandAndControlLoop() {
 }
 
 void OnTxDone(void) {
-  // Indicate that TX is done (debug)
-  //Serial.println("WOW MUCH TX");
+  // v0.3.6 — pktTxCount tracked for OLED status display
+  pktTxCount++;
   addLog("[LoRa] TX completed successfully");
   isLoRaIdle = true;
 }
@@ -1381,13 +1557,12 @@ void OnRxTimeout(void) {
 // Callback function run when a packet is received by the LoRa module
 void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8_t snr) {
   rssi = rssiMeasured;
+  lastSnr = snr;   // v0.3.6 — track for OLED status cycle
+  pktRxCount++;    // v0.3.6 — track for OLED status cycle
   rxSize = messageSize;
   memcpy(rxPacket, payload, messageSize);
   rxPacket[messageSize] = '\0';
   Radio.Sleep();
-  // Indicate we received a packet (debug)
-  //Serial.println("WOW MUCH RX");
-  //Serial.printf("\r\nReceived packet! Rssi %d , Length %d\r\n", rssi, rxSize);
   addLog("[LoRa] RX packet received - RSSI: " + String(rssi) + " dBm, Length: " + String(messageSize) + " bytes, SNR: " + String(snr) + " dB");
   ParseReceivedMessage();
   isLoRaIdle = true;
@@ -2577,10 +2752,14 @@ void HandleDesktopCommand(uint8_t cmdByte) {
     case 0x10: { // CMD_DOGE_TX — forward payload over LoRa
       if (extraLen > 0) {
         Radio.Send(extraPayload, extraLen);
-        DisplayTXMessage("DOGE TX", dest);
+        pktTxCount++;
+        // v0.3.6 — trigger "TX OK!" OLED page after successful send
+        showTxOk = true;
+        txOkTimestamp = millis();
       }
       uint8_t reply[8] = {0x10, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
       Serial.write(reply, 8);
+      bleSend(reply, 8);
       break;
     }
     case 0x11: { // CMD_REQUEST_BALANCE — ACK only
@@ -2604,10 +2783,46 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       // Parameters received; RF reconfiguration deferred to safe idle window in future revision.
       uint8_t reply[8] = {0x21, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
       Serial.write(reply, 8);
+      bleSend(reply, 8);
       break;
     }
+
+    // v0.3.6 — CMD_GET_SETTINGS: board reports live state to app on connect.
+    // Response payload (4 bytes): [node_region, node_community, node_node, gateway_mode]
+    // App parses this and syncs UI — board is source of truth.
+    case 0x22: {
+      uint8_t payload[4] = {local.region, local.community, local.node, gateway_mode ? 1u : 0u};
+      uint8_t reply[12];
+      reply[0] = 0x22; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      memcpy(reply + 8, payload, 4);
+      Serial.write(reply, 12);
+      bleSend(reply, 12);
+      break;
+    }
+
+    // v0.3.6 — CMD_SET_GATEWAY: persist gateway_mode to NVS; reply with current state.
+    // Payload byte 0: 1 = enable, 0 = disable.
+    case 0x23: {
+      if (extraLen > 0) {
+        gateway_mode = (extraPayload[0] != 0);
+        saveGatewayModeQuiet(gateway_mode);
+      }
+      uint8_t payload[1] = {gateway_mode ? 1u : 0u};
+      uint8_t reply[9];
+      reply[0] = 0x23; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      reply[8] = gateway_mode ? 1 : 0;
+      Serial.write(reply, 9);
+      bleSend(reply, 9);
+      break;
+    }
+
     default:
       Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
+      bleSend(hostNACK, HOST_ACK_NACK_SIZE);
       break;
   }
 }
@@ -2623,9 +2838,7 @@ void HostSerialRead() {
     return;
   }
   hostCommandReply[0] = commandVal;
-  //Serial.printf("Command From Host Received: %d\n", commandVal);
-  // Display the command on the module screen for now and wait for debug purposes
-  DisplayCommandAndControl(commandVal);
+  // v0.3.6 — removed DisplayCommandAndControl; status display now cycles independently
   // Now we will read in the host's payload
   bool payloadSuccess = ReadSerialPayload(payloadSize);
   if (!payloadSuccess) {
@@ -2635,10 +2848,11 @@ void HostSerialRead() {
   delay(500);
 
   // OPTIMIZED FOR DESKTOP v0.3.3 – SAFE
-  // Intercept desktop-only command IDs (0x10, 0x11, 0x20, 0x21) before the switch.
-  // These have no corresponding serialCommand enum value and would fall through to default (NACK).
+  // v0.3.6 — extended with 0x22 (GET_SETTINGS) and 0x23 (SET_GATEWAY)
+  // Intercept desktop-only command IDs before the switch (no matching serialCommand enum).
   uint8_t cmdByte = (uint8_t)commandVal;
-  if (cmdByte == 0x10 || cmdByte == 0x11 || cmdByte == 0x20 || cmdByte == 0x21) {
+  if (cmdByte == 0x10 || cmdByte == 0x11 || cmdByte == 0x20 || cmdByte == 0x21
+      || cmdByte == 0x22 || cmdByte == 0x23) {
     HandleDesktopCommand(cmdByte);
     return;
   }

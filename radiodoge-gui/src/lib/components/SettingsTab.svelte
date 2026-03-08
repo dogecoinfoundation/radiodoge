@@ -20,6 +20,75 @@
   let saveVerified = $state<boolean | null>(null);
   let saveError = $state<string | null>(null);
 
+  // ── v0.3.6 — Connection type (USB / BLE) ─────────────────────────────────
+  let connType = $state<'usb' | 'ble'>(connection.connectionType);
+  async function applyConnType(type: 'usb' | 'ble') {
+    connType = type;
+    connection.connectionType = type;
+    await invoke('set_connection_type', { connType: type }).catch(() => {});
+  }
+
+  // ── v0.3.6 — Gateway mode (board-persistent) ─────────────────────────────
+  let isSettingGateway = $state(false);
+  let gatewayError = $state<string | null>(null);
+  let isStartingDaemon = $state(false);
+  let daemonError = $state<string | null>(null);
+
+  async function toggleGatewayMode() {
+    if (!connection.isConnected) return;
+    isSettingGateway = true;
+    gatewayError = null;
+    try {
+      const nextState = !connection.gatewayMode;
+      await invoke<boolean>('set_gateway_mode', { enable: nextState });
+      // board-sync event updates connection.gatewayMode via +page.svelte
+    } catch (e: unknown) {
+      gatewayError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isSettingGateway = false;
+    }
+  }
+
+  async function startGatewayDaemon() {
+    const port = connection.portName;
+    if (!port) return;
+    isStartingDaemon = true;
+    daemonError = null;
+    try {
+      await invoke('start_gateway', { port });
+    } catch (e: unknown) {
+      daemonError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isStartingDaemon = false;
+    }
+  }
+
+  async function stopGatewayDaemon() {
+    try { await invoke('stop_gateway'); } catch (_) {}
+  }
+
+  // ── v0.3.6 — Manual board sync ───────────────────────────────────────────
+  let isSyncing = $state(false);
+  let syncResult = $state<string | null>(null);
+  async function syncFromBoard() {
+    if (!connection.isConnected) return;
+    isSyncing = true;
+    syncResult = null;
+    try {
+      const bs = await invoke<{ nodeAddress: { region: number; community: number; node: number }; gatewayMode: boolean } | null>('get_board_settings');
+      if (bs) {
+        syncResult = `✅ Board: ${bs.nodeAddress.region}.${bs.nodeAddress.community}.${bs.nodeAddress.node} | GW: ${bs.gatewayMode ? 'ON' : 'OFF'}`;
+      } else {
+        syncResult = '⚠️ No response from board — try again.';
+      }
+    } catch (e: unknown) {
+      syncResult = '❌ ' + (e instanceof Error ? e.message : String(e));
+    } finally {
+      isSyncing = false;
+      setTimeout(() => { syncResult = null; }, 5000);
+    }
+  }
+
   // Local copy for editing
   let settings = $state({ ...radio.settings });
   let nodeAddr = $state({ ...radio.settings.nodeAddress });
@@ -326,6 +395,211 @@
           = {nodeAddr.region}.{nodeAddr.community}.{nodeAddr.node}
         </div>
       </div>
+    </div>
+
+    <!-- ── v0.3.6 — Connection Type (USB / BLE) ─────────────────────────── -->
+    <div class="card-doge" aria-label="Connection type">
+      <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 12px 0;"
+         title="Choose how to connect to your Heltec board. USB = wired serial (default). BLE = wireless Bluetooth LE (Heltec V3 only)."
+      >
+        🔌 Connection Type
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" role="group" aria-label="Connection type">
+        {#each [
+          { id: 'usb' as const, label: '🔌 USB Serial', desc: 'Wired via USB cable (default, recommended)' },
+          { id: 'ble' as const, label: '📶 Bluetooth LE', desc: 'Wireless BLE — Heltec V3 with BLE firmware required' },
+        ] as opt}
+          <button
+            onclick={() => applyConnType(opt.id)}
+            aria-pressed={connType === opt.id}
+            title={opt.desc}
+            style="
+              padding: 12px 8px;
+              border: 1px solid {connType === opt.id ? 'var(--doge-yellow)' : 'var(--doge-border)'};
+              background: {connType === opt.id ? 'rgba(245, 197, 24, 0.15)' : 'transparent'};
+              color: {connType === opt.id ? 'var(--doge-yellow)' : 'var(--doge-muted)'};
+              border-radius: 8px;
+              cursor: pointer;
+              font-weight: {connType === opt.id ? 700 : 400};
+              font-size: 0.85rem;
+              transition: all 0.15s;
+              display: flex; flex-direction: column; align-items: center; gap: 4px;
+            "
+          >
+            <span>{opt.label}</span>
+            {#if connType === opt.id && opt.id === 'ble'}
+              <span style="font-size: 0.65rem; color: var(--doge-yellow); opacity: 0.8;">
+                Scan for "RadioDoge-XX" devices
+              </span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+      {#if connType === 'ble'}
+        <p style="margin: 8px 0 0 0; font-size: 0.75rem; color: var(--doge-muted);">
+          📶 BLE mode requires Heltec firmware v0.3.6+. Connect tab will scan for "RadioDoge-XX" devices.
+          Such wireless. Very Bluetooth. Wow.
+        </p>
+      {/if}
+    </div>
+
+    <!-- ── v0.3.6 — Gateway Mode (board-persistent) ───────────────────────── -->
+    <div class="card-doge" aria-label="Gateway mode">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;"
+             title="Gateway mode routes LoRa traffic to the internet. Setting is stored on the board — survives power cycles. Such persist. Very NVS."
+          >
+            🌐 Gateway Mode
+          </p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">
+            Stored in board NVS — persists across power cycles. Board is source of truth.
+          </p>
+        </div>
+
+        <!-- Gateway mode badge -->
+        {#if connection.isConnected}
+          <span style="
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: {connection.gatewayMode ? 'rgba(0,255,136,0.12)' : 'rgba(100,100,100,0.1)'};
+            color: {connection.gatewayMode ? 'var(--doge-neon)' : 'var(--doge-subtle)'};
+            border: 1px solid {connection.gatewayMode ? 'rgba(0,255,136,0.35)' : 'var(--doge-border)'};
+            flex-shrink: 0;
+          ">
+            {connection.gatewayMode ? '🟢 Gateway ON' : '⚫ Gateway OFF'}
+          </span>
+        {/if}
+      </div>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+        <!-- Toggle gateway_mode on board -->
+        <button
+          onclick={toggleGatewayMode}
+          disabled={!connection.isConnected || isSettingGateway}
+          title="{connection.isConnected
+            ? (connection.gatewayMode ? 'Disable gateway mode — saves to board NVS' : 'Enable gateway mode — saves to board NVS')
+            : 'Connect to board first to change gateway mode'}"
+          style="
+            padding: 9px 18px;
+            border: 1px solid {connection.gatewayMode ? 'var(--doge-neon)' : 'var(--doge-border)'};
+            background: {connection.gatewayMode ? 'rgba(0,255,136,0.1)' : 'transparent'};
+            color: {connection.gatewayMode ? 'var(--doge-neon)' : 'var(--doge-muted)'};
+            border-radius: 8px;
+            cursor: {connection.isConnected ? 'pointer' : 'not-allowed'};
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.15s;
+            display: flex; align-items: center; gap: 6px;
+          "
+        >
+          {#if isSettingGateway}
+            <DogeSpinner size="sm" message="" />
+            Saving...
+          {:else if connection.gatewayMode}
+            🟢 Stop Gateway
+          {:else}
+            🌐 Start Gateway
+          {/if}
+        </button>
+
+        <!-- Spawn daemon process -->
+        {#if !connection.gatewayOnline}
+          <button
+            onclick={startGatewayDaemon}
+            disabled={!connection.portName || isStartingDaemon}
+            title="Spawn radiodoge-cli daemon process for this port. Routes LoRa packets to internet. Such bridge. Very daemon."
+            style="
+              padding: 9px 18px;
+              border: 1px solid var(--doge-border);
+              background: transparent;
+              color: var(--doge-muted);
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 0.85rem;
+              transition: all 0.15s;
+              display: flex; align-items: center; gap: 6px;
+            "
+          >
+            {#if isStartingDaemon}
+              <DogeSpinner size="sm" message="" />
+              Starting...
+            {:else}
+              ▶ Spawn Daemon
+            {/if}
+          </button>
+        {:else}
+          <button
+            onclick={stopGatewayDaemon}
+            title="Stop the background gateway daemon process"
+            style="
+              padding: 9px 18px;
+              border: 1px solid rgba(0,255,136,0.35);
+              background: rgba(0,255,136,0.08);
+              color: var(--doge-neon);
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 0.85rem;
+              font-weight: 600;
+              transition: all 0.15s;
+            "
+          >
+            🟢 Gateway Online — Stop
+          </button>
+        {/if}
+      </div>
+
+      {#if gatewayError}
+        <div style="margin-top: 8px; color: var(--doge-red); font-size: 0.78rem;" role="alert">❌ {gatewayError}</div>
+      {/if}
+      {#if daemonError}
+        <div style="margin-top: 8px; color: var(--doge-red); font-size: 0.78rem;" role="alert">❌ Daemon: {daemonError}</div>
+      {/if}
+    </div>
+
+    <!-- ── v0.3.6 — Board Sync ────────────────────────────────────────────── -->
+    <div class="card-doge" aria-label="Board state sync">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">
+            🔄 Board State Sync
+          </p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">
+            Board is source of truth. Query live state — if mismatch, board wins.
+          </p>
+        </div>
+        <button
+          onclick={syncFromBoard}
+          disabled={!connection.isConnected || isSyncing}
+          class="btn-ghost"
+          title="Query CMD_GET_SETTINGS (0x22) from board — read live node address + gateway mode. Board state is authoritative."
+          style="font-size: 0.8rem; display: flex; align-items: center; gap: 6px;"
+        >
+          {#if isSyncing}
+            <DogeSpinner size="sm" message="" />
+            Syncing...
+          {:else}
+            🔄 Sync from Board
+          {/if}
+        </button>
+      </div>
+      {#if syncResult}
+        <div
+          class="slide-up"
+          style="
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-family: var(--font-mono);
+            background: {syncResult.startsWith('✅') ? 'rgba(0,255,136,0.08)' : 'rgba(255,140,0,0.08)'};
+            border: 1px solid {syncResult.startsWith('✅') ? 'rgba(0,255,136,0.25)' : 'rgba(255,140,0,0.25)'};
+            color: {syncResult.startsWith('✅') ? 'var(--doge-neon)' : 'var(--doge-orange)'};
+          "
+        >{syncResult}</div>
+      {/if}
     </div>
 
     <!-- ── Save to Device button ──────────────────────────────────────────── -->

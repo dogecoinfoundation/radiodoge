@@ -18,6 +18,7 @@
   import WalletTab from '$lib/components/WalletTab.svelte';
   import SendTab from '$lib/components/SendTab.svelte';
   import ReceiveTab from '$lib/components/ReceiveTab.svelte';
+  import HistoryTab from '$lib/components/HistoryTab.svelte';
   import SettingsTab from '$lib/components/SettingsTab.svelte';
   import DebugConsole from '$lib/components/DebugConsole.svelte';
   import Confetti from '$lib/components/Confetti.svelte';
@@ -30,11 +31,14 @@
     setDisconnected,
     setError,
     updateStats,
+    applyBoardSync,
+    setGatewayOnline,
   } from '$lib/stores/connection.svelte';
 
   import { radio, addPacket, addSentPacket } from '$lib/stores/radio.svelte';
 
   import type {
+    BoardSettings,
     ConnectionStatusEvent,
     IncomingPacket,
     RadioStats,
@@ -145,6 +149,17 @@
       triggerConfetti();
     }).then(fn => unlisteners.push(fn));
 
+    // v0.3.6 — Board-sync: board is source of truth.
+    // App queries CMD_GET_SETTINGS (0x22) on connect; board replies with node addr + gateway_mode.
+    listen<BoardSettings>('board-sync', (event) => {
+      applyBoardSync(event.payload);
+    }).then(fn => unlisteners.push(fn));
+
+    // v0.3.6 — Gateway daemon status (radiodoge-cli daemon spawned/stopped)
+    listen<{ online: boolean }>('gateway-status', (event) => {
+      setGatewayOnline(event.payload.online);
+    }).then(fn => unlisteners.push(fn));
+
     // Keyboard listener (Ctrl+Shift+D + Konami code)
     window.addEventListener('keydown', handleKeydown);
 
@@ -212,6 +227,8 @@
       <SendTab onTriggerConfetti={triggerConfetti} />
     {:else if activeTab === 'receive'}
       <ReceiveTab />
+    {:else if activeTab === 'history'}
+      <HistoryTab />
     {:else if activeTab === 'settings'}
       <SettingsTab />
     {/if}
@@ -230,7 +247,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.3.5</span>
+    <span>RadioDoge v0.3.6</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">

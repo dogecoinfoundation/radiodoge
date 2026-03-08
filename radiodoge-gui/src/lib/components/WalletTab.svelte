@@ -22,6 +22,33 @@
   /** Whether the Address QR modal/panel is visible. */
   let showQR = $state(false);
 
+  // ── v0.3.6 — WIF Import ────────────────────────────────────────────────
+  let showImport = $state(false);
+  let importWif = $state('');
+  let isImporting = $state(false);
+  let importError = $state<string | null>(null);
+
+  async function importWallet() {
+    if (!importWif.trim()) {
+      importError = 'Enter a WIF private key (starts with "Q" for Dogecoin mainnet).';
+      return;
+    }
+    isImporting = true;
+    importError = null;
+    wallet.error = null;
+    showQR = false;
+    try {
+      const info = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string }>('import_wif', { wif: importWif.trim() });
+      loadWallet(info);
+      importWif = '';
+      showImport = false;
+    } catch (e: unknown) {
+      importError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isImporting = false;
+    }
+  }
+
   async function generateWallet() {
     isGenerating = true;
     wallet.error = null;
@@ -58,22 +85,111 @@
       </p>
     </div>
 
-    <button
-      onclick={generateWallet}
-      disabled={isGenerating}
-      class="btn-doge"
-      title="Generate a new Dogecoin keypair using cryptographically secure randomness. Much entropy, very secp256k1."
-      aria-label="{wallet.isGenerated ? 'Generate a new Dogecoin wallet (replaces current)' : 'Generate a new Dogecoin wallet'}"
-      style="display: flex; align-items: center; gap: 8px;"
-    >
-      {#if isGenerating}
-        <DogeSpinner size="sm" message="" />
-        Generating...
-      {:else}
-        🎲 {wallet.isGenerated ? 'New Wallet' : 'Generate Wallet'}
-      {/if}
-    </button>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button
+        onclick={generateWallet}
+        disabled={isGenerating}
+        class="btn-doge"
+        title="Generate a new Dogecoin keypair using cryptographically secure randomness. Much entropy, very secp256k1."
+        aria-label="{wallet.isGenerated ? 'Generate a new Dogecoin wallet (replaces current)' : 'Generate a new Dogecoin wallet'}"
+        style="display: flex; align-items: center; gap: 8px;"
+      >
+        {#if isGenerating}
+          <DogeSpinner size="sm" message="" />
+          Generating...
+        {:else}
+          🎲 {wallet.isGenerated ? 'New Wallet' : 'Generate Wallet'}
+        {/if}
+      </button>
+      <button
+        onclick={() => { showImport = !showImport; importError = null; }}
+        class="btn-ghost"
+        title="Import an existing wallet from a WIF private key (starts with 'Q'). Hot wallet — test amounts only!"
+        style="display: flex; align-items: center; gap: 6px;"
+      >
+        📥 Import WIF
+      </button>
+    </div>
   </div>
+
+  <!-- ── v0.3.6 — Import WIF panel ─────────────────────────────────────────── -->
+  {#if showImport}
+    <div
+      class="card-doge slide-up"
+      style="
+        margin-bottom: 20px;
+        border-color: rgba(255, 68, 68, 0.4);
+        background: rgba(255, 68, 68, 0.04);
+      "
+      role="region"
+      aria-label="Import WIF private key"
+    >
+      <div style="margin-bottom: 12px;">
+        <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 6px;">📥 Import WIF Private Key</div>
+        <!-- Prominent hot-wallet warning -->
+        <div style="
+          padding: 10px 14px;
+          background: rgba(255, 68, 68, 0.12);
+          border: 1px solid rgba(255, 68, 68, 0.5);
+          border-radius: 8px;
+          font-size: 0.8rem;
+          color: var(--doge-red);
+          line-height: 1.6;
+          margin-bottom: 12px;
+        " role="alert">
+          🔥 <strong>Hot wallet warning!</strong> Only use test amounts — never reuse this key on mainnet.
+          Never share your WIF key. If exposed, funds are gone. Such danger. Very caution. Wow.
+        </div>
+        <textarea
+          bind:value={importWif}
+          placeholder="Paste your Dogecoin WIF private key here (starts with 'Q')..."
+          rows="3"
+          class="input-doge"
+          style="width: 100%; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem;"
+          aria-label="WIF private key input"
+          spellcheck="false"
+          autocomplete="off"
+          autocorrect="off"
+        ></textarea>
+        {#if importError}
+          <div style="
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-radius: 6px;
+            color: var(--doge-red);
+            font-size: 0.78rem;
+          " role="alert">
+            ❌ {importError}
+          </div>
+        {/if}
+        <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+          <button
+            onclick={importWallet}
+            disabled={isImporting || !importWif.trim()}
+            class="btn-doge"
+            style="display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; min-width: 140px;"
+            title="Derive Dogecoin address from this WIF key. Much cryptography."
+          >
+            {#if isImporting}
+              <DogeSpinner size="sm" message="" />
+              Importing...
+            {:else}
+              🔑 Import Key
+            {/if}
+          </button>
+          <button
+            onclick={() => { showImport = false; importWif = ''; importError = null; }}
+            class="btn-ghost"
+            style="padding: 8px 16px;"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- ── Error display ────────────────────────────────────────────────────── -->
   {#if wallet.error}
