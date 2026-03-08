@@ -7,6 +7,143 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.1] — 2026-03-08 — ✨ Full Polish Release — Much Wow Delivered
+
+> **The most delightful RadioDoge release yet. Every feature sharpened, every interaction refined.**
+> Much polish. Very smooth. Such premium. Wow. 🐕🌙🎉
+
+### Summary
+
+v0.3.1 is a pure polish-and-UX release on top of the v0.3.0 feature foundation.
+All requested features are now fully functional, the branding is consistent, and the app
+has been elevated with micro-interactions, tooltips, accessibility improvements,
+and more than a few fun surprises for the Doge faithful.
+
+---
+
+### Added
+
+#### TX/RX Packet Direction Labels
+- **ReceiveTab** now shows ALL LoRa traffic (both sent and received), not just incoming.
+- Every packet row has a clear direction indicator:
+  - **↑ green** — TX (sent by this node) with green left-border accent
+  - **↓ blue**  — RX (received from remote node) with blue left-border accent
+- TX/RX **filter toggle** (All / ↑ TX / ↓ RX) at the top of the tab — filterable live log!
+- TX packets are emitted by Rust via a new `radio-packet-tx` Tauri event when `send_transaction` fires.
+- TX/RX packet counts now tracked separately: `totalSent` + `totalReceived` in the radio store.
+
+#### Dedicated "Show Address QR" Button in Wallet Tab
+- **WalletTab** now has an explicit `📷 Show Address QR` toggle button on the address card.
+- QR code panel slides in below the address field — completely separated from the private key section.
+- Private key reveal is a separate, independent control — no accidental cross-reveal.
+- QR panel includes its own Copy Address button for convenience.
+
+#### Dynamic Signal Strength Descriptions
+- **Dashboard** signal panel now shows a fun, dynamic description based on RSSI:
+  - `≥ −50 dBm` → `🌟 Much Strong Radio!`
+  - `≥ −65 dBm` → `🐕 Very Strong Signal`
+  - `≥ −80 dBm` → `📡 Good Signal — Wow`
+  - `≥ −95 dBm` → `〰️ Moderate Signal`
+  - `≥ −110 dBm` → `😬 Weak Signal — Much Far`
+  - `< −110 dBm` → `❌ Very Weak — Such Distance`
+
+#### Tooltips Everywhere
+Rich, informative, occasionally humorous `title` tooltips added to:
+- **All Dashboard stat cards** — frequency, power, SF, bandwidth, packets sent/received
+- **RSSI meter** — context-aware description based on signal level
+- **SNR readout** — explanation of signal-to-noise ratio
+- **Settings sliders** — TX power range, frequency input
+- **All SF/BW/CR selector buttons** — per-option explanations with Doge flair
+- **Node address fields** — per-byte explanation (region, community, node)
+- **NavBar tabs** — what each tab does, why it's disabled when not connected
+- **WalletTab buttons** — generate, copy, reveal, show QR
+- **ReceiveTab filter buttons** — what each filter shows
+- **Save to Device button** — different tooltip when connected vs. disconnected
+
+#### Copy-to-Clipboard on All Fields
+- **WalletTab**: address (×2: main row + QR panel), public key, private key
+- **SettingsTab**: node address copy button
+- **Dashboard**: copy button on every packet log entry
+- **ReceiveTab**: copy button per packet (decoded or hex depending on toggle)
+- **ConnectionPanel**: node address (existed in v0.3.0, now consistently styled)
+- All copy buttons show `✅ Copied!` feedback for 1.5–2 s
+
+#### Accessibility Improvements
+- All interactive elements have `aria-label` attributes
+- Toggle buttons use `aria-pressed` for screen reader state
+- Filter groups use `role="group"` with `aria-label`
+- Packet logs use `role="log"` with `aria-live="polite"`
+- RSSI meter uses `role="meter"` with proper `aria-valuenow/min/max`
+- Error and status messages use `role="alert"` / `role="status"` / `aria-live`
+- All keyboard-focusable elements have a yellow `outline` focus ring (`focus-visible`)
+
+#### Easter Egg: Konami Code 🎮
+- Type ↑ ↑ ↓ ↓ ← → ← → B A anywhere in the app
+- Triggers confetti + a random "much wow" toast popup
+- One of four rotating messages: "Such secret! Very Konami. Much wow!"
+- The most important feature in v0.3.1.
+
+#### New CSS Animations
+- `packet-arrive` — packets slide in from left with slight vertical movement
+- `signal-pulse` — signal bars gently pulse green when signal is strong
+- `verified-pop` — verified checkmark pops in with a satisfying scale animation
+- `konami-rainbow` — entire app hue-rotates when Konami code is activated
+
+### Changed
+
+#### Branding Fix: "DOGE RADIO" → "RadioDoge"
+- **NavBar** top-left title corrected from `DOGE RADIO` (old, inconsistent) to `RadioDoge`
+- Consistent with the hero text, window title, and product name throughout
+
+#### Auto-Reconnect Backoff Adjusted
+- Initial backoff increased from 1 s to **5 s** — gives the OS time to fully re-enumerate the USB device after a re-plug (Windows needs ~3–4 s)
+- Maximum backoff increased from 30 s to **60 s** — more patient for slow hardware
+- Backoff schedule: 5 s → 10 s → 20 s → 40 s → 60 s (capped)
+- Reset back to 5 s on successful reconnect (previously reset to 1 s)
+
+#### ReceiveTab Becomes Combined TX/RX Log
+- Renamed internal heading from "📥 Live Packet Monitor" to "📡 Live Packet Log"
+- Now shows both TX (sent) and RX (received) packets in one scrollable, filterable view
+- Packet entries have direction-colored left borders (green = TX, blue = RX)
+- RSSI column hidden for TX packets (RSSI is meaningless for sent packets); shows "sent ↑" instead
+
+#### Dashboard Live Packet Log
+- Also shows TX + RX packets with direction arrows
+- Per-entry copy button added
+- RX/TX count badges added to the log header
+
+#### Settings Tab Verification Message
+- Success message now explicitly says **"Verified ✓"** when round-trip check passes
+- Error message now says "device did not confirm within 1 s" with actionable advice
+
+#### Radio Store Updated
+- `PacketEntry` type added (extends `IncomingPacket` with `direction: 'TX' | 'RX'`)
+- `addSentPacket()` function added for TX packet logging
+- `totalSent` counter added alongside existing `totalReceived`
+- `clearPackets()` now also resets `totalSent`
+
+### Fixed
+
+- NavBar tab `title` attribute now shows the full descriptive tooltip instead of just the label
+- Settings node address fields now have per-field aria-labels and tooltips
+- WalletTab QR code is now decoupled from the private key reveal — no more implicit coupling
+- Dashboard stat cards now have `role="figure"` and `aria-label` for accessibility
+- `[title]` CSS rule added to `app.css` ensuring `cursor: help` on all tooltipped elements
+- Button `[title]` overrides to `cursor: pointer` so buttons feel correct
+
+### Version Bumps
+
+| File | Before | After |
+|------|--------|-------|
+| `radiodoge-gui/package.json` | `0.3.0` | `0.3.1` |
+| `radiodoge-gui/src-tauri/tauri.conf.json` | `0.3.0` | `0.3.1` |
+| `radiodoge-gui/src-tauri/Cargo.toml` | `0.3.0` | `0.3.1` |
+| `crates/radiodoge-core/Cargo.toml` | `0.3.0` | `0.3.1` |
+| `crates/radiodoge-cli/Cargo.toml` | `0.3.0` | `0.3.1` |
+| `+page.svelte` footer | `v0.3.0` | `v0.3.1` |
+
+---
+
 ## [0.3.0] — 2026-03-07 — 🚀 Full v0.3.0 Feature Release
 
 > **Real hardware integration complete. Much functionality. Very radio. Such wow. 🐕🌙**

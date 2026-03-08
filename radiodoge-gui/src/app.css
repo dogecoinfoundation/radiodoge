@@ -265,3 +265,77 @@ input, textarea, [data-selectable] {
 .pulse-connecting {
   animation: pulse-glow 1.5s ease-in-out infinite;
 }
+
+/* ── v0.3.1 Additions ───────────────────────────────────────────────────── */
+
+/* Packet entry slide-in with slight left offset for flair */
+@keyframes packet-arrive {
+  from {
+    transform: translateX(-6px) translateY(4px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Signal bars gentle pulse when signal is strong */
+@keyframes signal-pulse {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(0, 255, 136, 0.4)); }
+  50%       { filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.8)); }
+}
+
+/* Verified checkmark pop */
+@keyframes verified-pop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  60%  { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* QR panel expand */
+@keyframes expand-down {
+  from { max-height: 0; opacity: 0; overflow: hidden; }
+  to   { max-height: 500px; opacity: 1; }
+}
+
+.packet-arrive {
+  animation: packet-arrive 0.22s ease forwards;
+}
+
+.signal-pulse {
+  animation: signal-pulse 2s ease-in-out infinite;
+}
+
+.verified-pop {
+  animation: verified-pop 0.35s ease forwards;
+}
+
+/* ── Focus states for keyboard navigation (accessibility) ─────────────── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--doge-yellow);
+  outline-offset: 2px;
+}
+
+/* ── Easter egg: Konami code glow on the whole app ───────────────────── */
+.konami-activated {
+  animation: konami-rainbow 0.8s ease;
+}
+
+@keyframes konami-rainbow {
+  0%   { filter: hue-rotate(0deg)   brightness(1); }
+  25%  { filter: hue-rotate(90deg)  brightness(1.3); }
+  50%  { filter: hue-rotate(180deg) brightness(1.5); }
+  75%  { filter: hue-rotate(270deg) brightness(1.3); }
+  100% { filter: hue-rotate(360deg) brightness(1); }
+}
+
+/* ── Tooltip polish: native title attrs get a cursor upgrade ──────────── */
+[title] {
+  cursor: help;
+}
+button[title] {
+  cursor: pointer;
+}

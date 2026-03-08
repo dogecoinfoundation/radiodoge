@@ -31,7 +31,7 @@
     updateStats,
   } from '$lib/stores/connection.svelte';
 
-  import { radio, addPacket } from '$lib/stores/radio.svelte';
+  import { radio, addPacket, addSentPacket } from '$lib/stores/radio.svelte';
 
   import type {
     ConnectionStatusEvent,
@@ -51,6 +51,31 @@
 
   function triggerConfetti() {
     confetti?.trigger();
+  }
+
+
+  // ── Easter Egg: Konami Code 🐕🌙 ──────────────────────────────────────────
+  // ↑ ↑ ↓ ↓ ← → ← → B A — much secret, very hidden, wow
+  const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+  let konamiBuffer = $state<string[]>([]);
+  let konamiActivated = $state(false);
+  let konamiMessage = $state('');
+
+  function handleKonamiKey(e: KeyboardEvent) {
+    konamiBuffer = [...konamiBuffer, e.key].slice(-KONAMI.length);
+    if (konamiBuffer.join(',') === KONAMI.join(',')) {
+      konamiActivated = true;
+      konamiBuffer = [];
+      const msgs = [
+        '🐕 Such secret! Very Konami. Much wow! 🌙',
+        '🎮 You found the Easter egg! Very gamer. Such doge.',
+        '🌙 To the moon! 🚀 Much hidden. Very code. Wow.',
+        '🐾 Shiba detected! You are truly one of us. Such radio.',
+      ];
+      konamiMessage = msgs[Math.floor(Math.random() * msgs.length)];
+      confetti?.trigger();
+      setTimeout(() => { konamiActivated = false; konamiMessage = ''; }, 3500);
+    }
   }
 
   // ── Tauri Event Listeners ─────────────────────────────────────────────────
@@ -89,6 +114,11 @@
       addPacket(event.payload);
     }).then(fn => unlisteners.push(fn));
 
+    // Outgoing (TX) LoRa packets — emitted by Rust when we send a transaction
+    listen<IncomingPacket>('radio-packet-tx', (event) => {
+      addSentPacket(event.payload);
+    }).then(fn => unlisteners.push(fn));
+
     // Radio statistics updates (every 2s when connected)
     listen<RadioStats>('radio-stats-update', (event) => {
       updateStats(event.payload);
@@ -99,15 +129,46 @@
       triggerConfetti();
     }).then(fn => unlisteners.push(fn));
 
+    // Konami code keyboard listener
+    window.addEventListener('keydown', handleKonamiKey);
+
     // Cleanup all listeners on component destroy
     return () => {
       unlisteners.forEach(fn => fn());
+      window.removeEventListener('keydown', handleKonamiKey);
     };
   });
 </script>
 
 <!-- Confetti overlay (renders above everything else) -->
 <Confetti bind:this={confetti} />
+
+<!-- Konami code Easter egg toast 🐕 -->
+{#if konamiActivated}
+  <div
+    class="konami-activated"
+    style="
+      position: fixed;
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--doge-yellow), var(--doge-orange));
+      color: #000;
+      font-weight: 700;
+      padding: 14px 28px;
+      border-radius: 50px;
+      font-size: 1rem;
+      z-index: 9999;
+      box-shadow: 0 4px 24px rgba(245, 197, 24, 0.5);
+      white-space: nowrap;
+      animation: slide-up 0.3s ease;
+    "
+    role="status"
+    aria-live="assertive"
+  >
+    {konamiMessage}
+  </div>
+{/if}
 
 <!-- App shell -->
 <div style="
@@ -150,7 +211,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.3.0</span>
+    <span>RadioDoge v0.3.1</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">

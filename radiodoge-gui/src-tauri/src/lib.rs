@@ -24,6 +24,7 @@ mod tray;
 
 // All protocol + hardware logic from the shared core library
 use radiodoge_core::{radio, wallet};
+use hex;
 use radiodoge_core::serial::SerialManager;
 use radiodoge_core::types::{
     ConnectionStatusEvent, IncomingPacket, LoraSettings, NodeAddress, PortInfo, RadioStats,
@@ -174,14 +175,15 @@ async fn connect_port(
     });
 
     // Auto-reconnect watchdog — monitors connection health and retries with
-    // exponential backoff (1s → 2s → 4s → … → 30s max) up on USB re-plug.
+    // exponential backoff (5s → 10s → 20s → … → 60s max) on USB re-plug.
+    // Starts at 5s to give the OS time to re-enumerate the USB device.
     let serial_wr = Arc::clone(&state.serial);
     let current_port_wr = Arc::clone(&state.current_port);
     let reconnect_enabled_wr = Arc::clone(&state.reconnect_enabled);
     let app_wr = app.clone();
     let port_wr = port.clone();
     tokio::spawn(async move {
-        let mut backoff = Duration::from_secs(1);
+        let mut backoff = Duration::from_secs(5); // start at 5s (USB re-enum needs time)
 
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -192,7 +194,7 @@ async fn connect_port(
             }
 
             if serial_wr.is_connected() {
-                backoff = Duration::from_secs(1); // reset on healthy connection
+                backoff = Duration::from_secs(5); // reset on healthy connection
                 continue;
             }
 
@@ -235,7 +237,8 @@ async fn connect_port(
                 Err(e) => {
                     log::warn!("Auto-reconnect failed: {} — retrying in {:?}", e, backoff);
                     tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                    // Exponential backoff: 5s → 10s → 20s → 40s → 60s max
+                    backoff = (backoff * 2).min(Duration::from_secs(60));
                 }
             }
         }
@@ -364,6 +367,25 @@ async fn send_transaction(
 
     // Trigger confetti 🎉 on the frontend
     let _ = app.emit("transaction-sent", &msg);
+
+    // Emit a TX packet event so the ReceiveTab/Dashboard can log it as a sent packet.
+    // We build a synthetic IncomingPacket-shaped JSON with direction="TX" for the frontend.
+    // (reusing `src` from above — the sending node address)
+    let tx_log_payload = serde_json::json!({
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        "source": { "region": src.region, "community": src.community, "node": src.node },
+        "destination": { "region": 255, "community": 255, "node": 255 },
+        "command": radio::CMD_DOGE_TX,
+        "payloadHex": hex::encode(&payload),
+        "decoded": format!("🐕 DOGE TX: {:.8} DOGE → {}{}", tx.amount_doge, tx.to_address,
+            tx.memo.as_deref().map(|m| format!(" [{}]", m)).unwrap_or_default()),
+        "rssi": 0,
+        "direction": "TX"
+    });
+    let _ = app.emit("radio-packet-tx", &tx_log_payload);
 
     log::info!("Transaction sent: {}", msg);
     Ok(msg)
