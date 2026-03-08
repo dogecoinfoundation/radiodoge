@@ -11,7 +11,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.1** ✨: Full polish release — TX/RX packet labels, Show Address QR button, dynamic signal descriptions, tooltips everywhere, Konami code Easter egg, branding fix (RadioDoge), auto-reconnect backoff tuned to 5s→60s. Much wow!
+> **v0.3.2** 🐛: Critical fixes — reliable firmware version query (3-attempt retry), node address save actually persists + updates UI, new Debug Console (Ctrl+Shift+D) with raw serial traffic, breathing signal bars, last-used COM port memory. Much debug. Very fix. Wow!
 
 ---
 

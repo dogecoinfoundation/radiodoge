@@ -332,6 +332,18 @@ input:focus-visible {
   100% { filter: hue-rotate(360deg) brightness(1); }
 }
 
+/* ── v0.3.2 Additions ───────────────────────────────────────────────────── */
+
+/* Breathing / pulsing glow on signal bars when connected */
+@keyframes signal-breathe {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px rgba(0, 255, 136, 0.3)); }
+  50%       { opacity: 0.85; filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.6)); }
+}
+
+.signal-bars-breathing {
+  animation: signal-breathe 3s ease-in-out infinite;
+}
+
 /* ── Tooltip polish: native title attrs get a cursor upgrade ──────────── */
 [title] {
   cursor: help;

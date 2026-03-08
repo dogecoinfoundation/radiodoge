@@ -31,6 +31,12 @@
   let isPinging = $state(false);
   let pingResult = $state<{ success: boolean; message: string } | null>(null);
 
+  // Firmware re-query state
+  let isQueryingFw = $state(false);
+
+  // localStorage key for remembering last COM port
+  const LAST_PORT_KEY = 'radiodoge-last-port';
+
   /** Refresh the port list using the detailed IPC command. */
   async function refreshPorts() {
     isRefreshing = true;
@@ -40,11 +46,13 @@
       // Keep the simple string array in the store (for compatibility)
       setAvailablePorts(ports.map(p => p.name));
 
-      // Auto-select: prefer a likely-Heltec port, else first USB port, else first
+      // Auto-select: prefer last-used port (if still present), then Heltec, then USB, then first
       if (ports.length > 0) {
+        const lastUsed = localStorage.getItem(LAST_PORT_KEY);
+        const lastUsedPresent = lastUsed ? ports.find(p => p.name === lastUsed) : null;
         const heltec = ports.find(p => p.isLikelyHeltec);
         const usb    = ports.find(p => p.isUsb);
-        const auto   = heltec ?? usb ?? ports[0];
+        const auto   = lastUsedPresent ?? heltec ?? usb ?? ports[0];
         // Only auto-select if user hasn't already chosen something still present
         const currentStillPresent = ports.some(p => p.name === selectedPort);
         if (!currentStillPresent) {
@@ -66,10 +74,27 @@
     pingResult = null;
     try {
       await invoke('connect_port', { port: selectedPort });
+      // Remember this port for next session
+      localStorage.setItem(LAST_PORT_KEY, selectedPort);
       // Status update comes via the "connection-status" event in +page.svelte
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
+    }
+  }
+
+  /** Manually re-query firmware version from the device. */
+  async function queryFirmware() {
+    isQueryingFw = true;
+    try {
+      const fw = await invoke<string | null>('query_firmware_version');
+      if (fw) {
+        connection.firmwareVersion = fw;
+      }
+    } catch (e) {
+      console.error('Firmware query failed:', e);
+    } finally {
+      isQueryingFw = false;
     }
   }
 
@@ -373,6 +398,19 @@
             ">
               FW v?.?.?
             </span>
+            <button
+              onclick={queryFirmware}
+              disabled={isQueryingFw}
+              class="btn-ghost"
+              title="Re-query firmware version from device"
+              style="padding: 2px 8px; font-size: 0.68rem;"
+            >
+              {#if isQueryingFw}
+                <span style="animation: spin-doge 1s linear infinite; display: inline-block;">⟳</span>
+              {:else}
+                ⟳ Query FW
+              {/if}
+            </button>
           {/if}
         </div>
         <SignalBars rssi={connection.stats?.rssi ?? -120} connected={true} size="md" />
