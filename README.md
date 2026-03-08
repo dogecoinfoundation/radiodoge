@@ -11,7 +11,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.2** 🐛: Critical fixes — reliable firmware version query (3-attempt retry), node address save actually persists + updates UI, new Debug Console (Ctrl+Shift+D) with raw serial traffic, breathing signal bars, last-used COM port memory. Much debug. Very fix. Wow!
+> **v0.3.4** ✨: COM port dropdown stays within card bounds, Debug Console export downloads correctly, Ping Device shows TX/RX in debug console, firmware version badge shows cleanly (e.g. "NV3FW01"), error banner is a compact dismissible yellow bar. Much polish. Very fix. Wow!
 
 ---
 
@@ -360,6 +360,7 @@ Rock-solid when you plug in a real Heltec board:
 
 End-to-end on-chain transactions — no internet required on your device:
 
+- 🔜 **Dogecoin Core RPC bridge (optional)** — when Core is running on the same machine, RadioDoge can discover existing wallets/addresses/balances via localhost RPC, use them for signing, then fall back to pure offline LoRa mode (read-only RPC by default for maximum safety)
 - 🔜 **UTXO fetching via gateway** — broadcast `REQUEST_BALANCE`; gateway queries Dogecoin RPC and relays UTXO set back over LoRa mesh
 - 🔜 **BIP32/BIP44 HD wallet** — derive multiple addresses from a single mnemonic seed (m/44'/3'/0'/0/n)
 - 🔜 **Full raw transaction signing** — construct + sign a valid Dogecoin transaction in pure Rust; no internet touched
