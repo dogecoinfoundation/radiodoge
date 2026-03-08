@@ -16,12 +16,12 @@
   let { activeTab, onTabChange }: Props = $props();
 
   const tabs = [
-    { id: 'connect',   icon: '🔌', label: 'Connect'   },
-    { id: 'dashboard', icon: '📡', label: 'Dashboard'  },
-    { id: 'wallet',    icon: '👛', label: 'Wallet'     },
-    { id: 'send',      icon: '📤', label: 'Send'       },
-    { id: 'receive',   icon: '📥', label: 'Receive'    },
-    { id: 'settings',  icon: '⚙️', label: 'Settings'   },
+    { id: 'connect',   icon: '🔌', label: 'Connect',   tooltip: 'Connect to your Heltec LoRa device via USB serial' },
+    { id: 'dashboard', icon: '📡', label: 'Dashboard',  tooltip: 'Live radio stats: RSSI, SNR, packets sent/received. Much data!' },
+    { id: 'wallet',    icon: '👛', label: 'Wallet',     tooltip: 'Generate a Dogecoin keypair — pure Rust crypto, no cloud. Very secure.' },
+    { id: 'send',      icon: '📤', label: 'Send',       tooltip: 'Broadcast a Dogecoin transaction over LoRa radio. Such transaction!' },
+    { id: 'receive',   icon: '📥', label: 'Receive',    tooltip: 'Live TX/RX packet log — see all incoming and outgoing LoRa traffic.' },
+    { id: 'settings',  icon: '⚙️', label: 'Settings',   tooltip: 'Configure LoRa parameters: frequency, power, spreading factor, bandwidth.' },
   ];
 </script>
 
@@ -73,7 +73,7 @@
           line-height: 1.1;
           letter-spacing: 0.05em;
         "
-      >DOGE RADIO</div>
+      >RadioDoge</div>
       <div style="font-size: 0.6rem; color: var(--doge-subtle); letter-spacing: 0.1em;">
         WIRELESS P2P
       </div>
@@ -103,7 +103,7 @@
         border-bottom: 2px solid {isActive ? 'var(--doge-yellow)' : 'transparent'};
         border-radius: 8px 8px 0 0;
       "
-      title={isDisabled ? 'Connect to Heltec first' : tab.label}
+      title={isDisabled ? 'Connect to Heltec first to unlock this tab' : tab.tooltip}
     >
       <span style="font-size: 1rem; line-height: 1;">{tab.icon}</span>
       <span style="white-space: nowrap;">{tab.label}</span>

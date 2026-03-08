@@ -11,9 +11,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.2.4**: Smart USB port detection (CP210x/CH340 auto-identified 🟢) ✅ · Ping Device button with ms latency ✅ · Actionable driver-hint error messages ✅ · Hero image in Connect + Dashboard tabs ✅ · Development Roadmap added ✅
->
-> ⚠️ **Icon note**: `Radio_Doge.png` is a JPEG file with a `.png` extension — it displays fine in browsers but fails Tauri's strict PNG validator during MSI builds. The bundle icon list temporarily falls back to the default generated icons until the file is converted to a real PNG with ImageMagick or similar.
+> **v0.3.1** ✨: Full polish release — TX/RX packet labels, Show Address QR button, dynamic signal descriptions, tooltips everywhere, Konami code Easter egg, branding fix (RadioDoge), auto-reconnect backoff tuned to 5s→60s. Much wow!
 
 ---
 
@@ -49,7 +47,7 @@ The MSI automatically attaches to any GitHub Release you create.
 
 - **No internet required** — transactions travel over LoRa radio (up to 15 km range!)
 - **Mesh networking** — packets hop between nodes to reach the nearest gateway
-- **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti on every transaction 🎉
+- **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti, TX/RX live log, Konami Easter egg 🎉
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
 - **Instant MSI builds** — every push to master compiles a fresh installer, no tag needed
@@ -333,21 +331,28 @@ The bedrock. Everything that makes a production-ready installable app:
 
 ---
 
-### 🔄 v0.3.x — Heltec Polish + Real-World UX (Current)
+### ✅ v0.3.x — Heltec Polish + Real-World UX (Complete)
 
-Making it rock-solid when you plug in a real Heltec board:
+Rock-solid when you plug in a real Heltec board:
 
-- ✅ Epic Doge-boombox hero image throughout the app (NavBar, Connect, Dashboard, MSI icon)
-- ✅ Smart USB port detection — CP210x, CH340, CH9102, FTDI, Espressif native flagged with `🟢 Heltec` badge
+- ✅ Epic Doge-boombox hero image throughout (NavBar, Connect, Dashboard, MSI icon)
+- ✅ Smart USB port detection — CP210x, CH340, CH9102, FTDI, Espressif native flagged `🟢 Heltec`
 - ✅ Ports sorted: likely-Heltec first → other USB → native COM; auto-selected on refresh
 - ✅ **Ping Device** button with millisecond round-trip readout
-- ✅ Actionable error messages: access-denied, driver-missing, and cable-failure each give specific fix instructions with driver download URLs
-- ✅ Non-USB port selection warning (prevents confusing connection attempts on native COM ports)
-- 🔜 Device firmware version query on connect (show `v1.x.x` badge in status card)
-- 🔜 Auto-reconnect on USB re-plug (detect port-closed → retry with exponential backoff)
-- 🔜 LoRa settings save-to-device round-trip verification (send → read back → confirm match)
-- 🔜 Desktop toast notification on incoming transaction packet (native OS notification)
-- 🔜 Copy-to-clipboard on all address/key/packet fields
+- ✅ Actionable error messages: access-denied, driver-missing, cable-failure with driver URLs
+- ✅ Non-USB port selection warning
+- ✅ **Firmware version badge** — queries `CMD_GET_FIRMWARE_VERSION` on connect, shows `FW v1.x.x`
+- ✅ **Auto-reconnect** — detects USB re-plug → retries with 5s→10s→20s→60s exponential backoff
+- ✅ **Save to Device round-trip verification** — sends settings → queries device → shows `Verified ✓`
+- ✅ **Desktop OS toast** for incoming DOGE TX packets (tauri-plugin-notification)
+- ✅ **Copy-to-clipboard** on every address, key, packet field, and node address
+- ✅ **Show Address QR button** — dedicated toggle separate from private key reveal
+- ✅ **TX/RX packet labels** — green ↑ TX / blue ↓ RX direction icons with filter toggles
+- ✅ **Dynamic signal descriptions** — "Much Strong Radio!", "Very Weak — Such Distance"
+- ✅ **Tooltips everywhere** — all cards, sliders, buttons, and fields have helpful + funny titles
+- ✅ **Branding fix** — NavBar now consistently shows "RadioDoge" (was "DOGE RADIO")
+- ✅ **Accessibility** — ARIA labels, focus rings, role attributes, live regions
+- ✅ **Konami code Easter egg** 🎮 — ↑↑↓↓←→←→BA triggers confetti + "such wow" toast
 
 ---
 
