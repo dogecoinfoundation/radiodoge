@@ -1,6 +1,6 @@
 // Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
 // v0.3.6 — Board-is-source-of-truth: NVS-persisted settings, 0x22/0x23 protocol,
-//           OLED status cycle, BLE Nordic UART service.
+//           OLED status cycle, gateway mode daemon.
 #include <Wire.h>
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
@@ -17,66 +17,6 @@
 #include "Images/sendingDogeCoin.h"
 #include "Images/receivingDogeCoin.h"
 
-// v0.3.6 — BLE Nordic UART Service (requires ESP32 BLE Arduino library)
-// To disable BLE, set ENABLE_BLE to false below.
-#define ENABLE_BLE true
-#if ENABLE_BLE
-  #include <BLEDevice.h>
-  #include <BLEServer.h>
-  #include <BLEUtils.h>
-  #include <BLE2902.h>
-  #define BLE_DEVICE_NAME_PREFIX "RadioDoge"
-  // Nordic UART Service UUIDs
-  #define NORDIC_UART_SERVICE_UUID    "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-  #define NORDIC_UART_CHAR_RX_UUID    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-  #define NORDIC_UART_CHAR_TX_UUID    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-  BLEServer *pBleServer = NULL;
-  BLECharacteristic *pBleTxChar = NULL;
-  class BleServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer* s)    { bleDeviceConnected = true;  }
-    void onDisconnect(BLEServer* s) { bleDeviceConnected = false; BLEDevice::startAdvertising(); }
-  };
-  class BleRxCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pChar) {
-      std::string v = pChar->getValue();
-      for (size_t i = 0; i < v.length() && bleRxLen < 255; i++)
-        bleRxBuffer[bleRxLen++] = (uint8_t)v[i];
-      blePendingData = true;
-    }
-  };
-  // Send a response packet over BLE TX characteristic (notify)
-  void bleSend(uint8_t* data, size_t len) {
-    if (bleDeviceConnected && pBleTxChar) {
-      pBleTxChar->setValue(data, len);
-      pBleTxChar->notify();
-    }
-  }
-  void setupBLE() {
-    // Build device name: "RadioDoge-AB" (last 2 addr bytes for uniqueness)
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_BT);
-    char bleName[24];
-    snprintf(bleName, sizeof(bleName), "%s-%02X%02X", BLE_DEVICE_NAME_PREFIX, mac[4], mac[5]);
-    BLEDevice::init(bleName);
-    pBleServer = BLEDevice::createServer();
-    pBleServer->setCallbacks(new BleServerCallbacks());
-    BLEService *pSvc = pBleServer->createService(NORDIC_UART_SERVICE_UUID);
-    pBleTxChar = pSvc->createCharacteristic(NORDIC_UART_CHAR_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
-    pBleTxChar->addDescriptor(new BLE2902());
-    BLECharacteristic *pRxChar = pSvc->createCharacteristic(NORDIC_UART_CHAR_RX_UUID, BLECharacteristic::PROPERTY_WRITE);
-    pRxChar->setCallbacks(new BleRxCallbacks());
-    pSvc->start();
-    BLEAdvertising *pAdv = BLEDevice::getAdvertising();
-    pAdv->addServiceUUID(NORDIC_UART_SERVICE_UUID);
-    pAdv->setScanResponse(false);
-    pAdv->setMinPreferred(0x06);
-    BLEDevice::startAdvertising();
-    Serial.println("BLE started: " + String(bleName));
-  }
-#else
-  void bleSend(uint8_t*, size_t) {}
-  void setupBLE() {}
-#endif
 
 // V3 Display Configuration
 #define SCREEN_WIDTH 128
@@ -299,11 +239,6 @@ unsigned long txOkTimestamp = 0;
 uint32_t pktRxCount = 0;
 uint32_t pktTxCount = 0;
 
-// v0.3.6 — BLE Nordic UART state
-bool bleDeviceConnected = false;
-uint8_t bleRxBuffer[256];
-int bleRxLen = 0;
-bool blePendingData = false;
 
 nodeAddress local;
 nodeAddress dest;
@@ -381,8 +316,6 @@ void setup() {
   // Initialize control messages with loaded/default address
   InitControlMessages();
 
-  // v0.3.6 — Start BLE Nordic UART service
-  setupBLE();
   
   // Setup WiFi in dual mode (AP + Station)
   setupDualWiFi();
@@ -516,10 +449,6 @@ void updateStatusDisplay() {
       if (gateway_mode) {
         radioDogeDisplay.setCursor(0, 50);
         radioDogeDisplay.println(">> GATEWAY MODE <<");
-      }
-      if (bleDeviceConnected) {
-        radioDogeDisplay.setCursor(90, 0);
-        radioDogeDisplay.println("BLE");
       }
       break;
     case 1: // RSSI / SNR
@@ -2759,7 +2688,6 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       }
       uint8_t reply[8] = {0x10, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
       Serial.write(reply, 8);
-      bleSend(reply, 8);
       break;
     }
     case 0x11: { // CMD_REQUEST_BALANCE — ACK only
@@ -2783,7 +2711,6 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       // Parameters received; RF reconfiguration deferred to safe idle window in future revision.
       uint8_t reply[8] = {0x21, 0x00, local.region, local.community, local.node, 0xFF, 0xFF, 0xFF};
       Serial.write(reply, 8);
-      bleSend(reply, 8);
       break;
     }
 
@@ -2798,7 +2725,6 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
       memcpy(reply + 8, payload, 4);
       Serial.write(reply, 12);
-      bleSend(reply, 12);
       break;
     }
 
@@ -2816,13 +2742,11 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
       reply[8] = gateway_mode ? 1 : 0;
       Serial.write(reply, 9);
-      bleSend(reply, 9);
       break;
     }
 
     default:
       Serial.write(hostNACK, HOST_ACK_NACK_SIZE);
-      bleSend(hostNACK, HOST_ACK_NACK_SIZE);
       break;
   }
 }
