@@ -16,6 +16,7 @@
 #include "Images/doge.h"
 #include "Images/sendingDogeCoin.h"
 #include "Images/receivingDogeCoin.h"
+#include "esp_mac.h"
 
 // v0.3.6 — BLE Nordic UART Service (requires ESP32 BLE Arduino library)
 // To disable BLE, set ENABLE_BLE to false below.
@@ -30,6 +31,11 @@
   #define NORDIC_UART_SERVICE_UUID    "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
   #define NORDIC_UART_CHAR_RX_UUID    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
   #define NORDIC_UART_CHAR_TX_UUID    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+  // BLE state globals — must be declared before the callback classes that reference them
+  bool bleDeviceConnected = false;
+  uint8_t bleRxBuffer[256];
+  int bleRxLen = 0;
+  bool blePendingData = false;
   BLEServer *pBleServer = NULL;
   BLECharacteristic *pBleTxChar = NULL;
   class BleServerCallbacks : public BLEServerCallbacks {
@@ -38,7 +44,7 @@
   };
   class BleRxCallbacks : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pChar) {
-      std::string v = pChar->getValue();
+      String v = pChar->getValue();
       for (size_t i = 0; i < v.length() && bleRxLen < 255; i++)
         bleRxBuffer[bleRxLen++] = (uint8_t)v[i];
       blePendingData = true;
@@ -298,12 +304,6 @@ bool showTxOk = false;
 unsigned long txOkTimestamp = 0;
 uint32_t pktRxCount = 0;
 uint32_t pktTxCount = 0;
-
-// v0.3.6 — BLE Nordic UART state
-bool bleDeviceConnected = false;
-uint8_t bleRxBuffer[256];
-int bleRxLen = 0;
-bool blePendingData = false;
 
 nodeAddress local;
 nodeAddress dest;
@@ -2517,6 +2517,12 @@ bool QueueRequest(RequestType type, String message, String typeStr, String prior
   addLog("[QUEUE] Request queued - ID: " + req.requestId + ", Type: " + String(type) + ", Queue size: " + String(pendingRequestCount));
   return true;
 }
+
+// Forward declarations for process functions defined below
+void ProcessBroadcastRequest(PendingRequest& req);
+void ProcessTransactionRequest(PendingRequest& req);
+void ProcessMessageRequest(PendingRequest& req);
+void ProcessPingRequest(PendingRequest& req);
 
 void ProcessNextQueuedRequest() {
   if (pendingRequestCount == 0) {
