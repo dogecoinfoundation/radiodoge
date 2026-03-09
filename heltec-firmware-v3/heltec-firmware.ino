@@ -18,6 +18,12 @@
 #include "Images/receivingDogeCoin.h"
 #include "esp_mac.h"
 
+// Forward-declare the local node address global so setupBLE() (defined inside the
+// #if ENABLE_BLE block near the top) can access its members before the variable's
+// full definition later in the file.  radioDogeTypes.h (included above) provides
+// the complete nodeAddress struct, so the compiler can resolve member accesses.
+extern nodeAddress local;
+
 // v0.3.6 — BLE Nordic UART Service (requires ESP32 BLE Arduino library)
 // To disable BLE, set ENABLE_BLE to false below.
 #define ENABLE_BLE true
