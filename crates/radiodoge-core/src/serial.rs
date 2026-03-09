@@ -108,6 +108,12 @@ pub struct SerialManager {
 
     /// v0.3.7 — Whether an address conflict has been detected (duplicate node addr on mesh).
     pub addr_conflict: Arc<AtomicBool>,
+
+    /// v0.3.8 — Last reported battery voltage in millivolts (from CMD_GET_BATTERY 0x26).
+    pub battery_mv: Arc<TokioMutex<Option<u16>>>,
+
+    /// v0.3.8 — Board MAC address string (e.g. "A0:B1:C2:D3:E4:F5", from CMD_GET_MAC 0x27).
+    pub board_mac: Arc<TokioMutex<Option<String>>>,
 }
 
 impl SerialManager {
@@ -124,6 +130,8 @@ impl SerialManager {
             board_settings: Arc::new(TokioMutex::new(None)),
             neighbors: Arc::new(TokioMutex::new(Vec::new())),
             addr_conflict: Arc::new(AtomicBool::new(false)),
+            battery_mv: Arc::new(TokioMutex::new(None)),
+            board_mac: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -268,6 +276,8 @@ impl SerialManager {
         let board_settings_clone = Arc::clone(&self.board_settings);
         let neighbors_clone = Arc::clone(&self.neighbors);
         let addr_conflict_clone = Arc::clone(&self.addr_conflict);
+        let battery_mv_clone = Arc::clone(&self.battery_mv);
+        let board_mac_clone = Arc::clone(&self.board_mac);
         let packet_tx_clone = self.packet_tx.clone();
 
         tokio::spawn(async move {
@@ -331,6 +341,7 @@ impl SerialManager {
                         const KNOWN_CMDS: &[u8] = &[
                             0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
                             0x10, 0x11, 0x20, 0x21, 0x22, 0x23,  // 0x22/0x23 = v0.3.6
+                            0x24, 0x25, 0x26, 0x27,               // v0.3.7/0.3.8
                             0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE, // firmware-side IDs
                         ];
                         while !accumulator.is_empty() {
@@ -397,9 +408,39 @@ impl SerialManager {
                                     log::warn!("Board reported duplicate node address on mesh!");
                                 }
 
-                                // v0.3.7 — Track neighbors from every incoming LoRa packet
-                                // (source != broadcast and source != our own addr)
-                                {
+                                // v0.3.8 — CMD_GET_BATTERY (0x26): board reports battery voltage in mV
+                                if packet.command == radio::CMD_GET_BATTERY {
+                                    if let Ok(payload_bytes) = hex::decode(&packet.payload_hex) {
+                                        if payload_bytes.len() >= 2 {
+                                            let mv = u16::from_be_bytes([payload_bytes[0], payload_bytes[1]]);
+                                            *battery_mv_clone.lock().await = Some(mv);
+                                        }
+                                    }
+                                }
+
+                                // v0.3.8 — CMD_GET_MAC (0x27): board reports its MAC address (6 bytes)
+                                if packet.command == radio::CMD_GET_MAC {
+                                    if let Ok(payload_bytes) = hex::decode(&packet.payload_hex) {
+                                        if payload_bytes.len() >= 6 {
+                                            let mac = format!(
+                                                "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                                                payload_bytes[0], payload_bytes[1], payload_bytes[2],
+                                                payload_bytes[3], payload_bytes[4], payload_bytes[5]
+                                            );
+                                            *board_mac_clone.lock().await = Some(mac);
+                                        }
+                                    }
+                                }
+
+                                // v0.3.7 — Track neighbors from real over-the-air LoRa packets only.
+                                // Only count PING, MESSAGE, BROADCAST, MULTIPART, DOGE_TX — NOT serial
+                                // response commands (0x20 FW version, 0x22 settings, etc.) whose source
+                                // field is the board's own address and whose RSSI is always 0 (not real).
+                                const MESH_PACKET_CMDS: &[u8] = &[
+                                    radio::CMD_PING, radio::CMD_MESSAGE, radio::CMD_BROADCAST,
+                                    radio::CMD_MULTIPART, radio::CMD_DOGE_TX,
+                                ];
+                                if MESH_PACKET_CMDS.contains(&packet.command) {
                                     use std::time::{SystemTime, UNIX_EPOCH};
                                     let now = SystemTime::now()
                                         .duration_since(UNIX_EPOCH)
@@ -432,10 +473,18 @@ impl SerialManager {
                                 // Invoke the caller-supplied callback (GUI emitter, CLI printer…)
                                 on_packet(packet);
 
-                                // Consume the processed bytes
-                                let consumed = radio::SINGLE_HDR_LEN
-                                    + (accumulator.len() - radio::SINGLE_HDR_LEN)
-                                        .min(radio::MAX_SINGLE_PAYLOAD_LEN);
+                                // Consume the processed bytes.
+                                // For commands with known fixed reply sizes, drain exactly that many
+                                // bytes so back-to-back packets in the accumulator are not lost.
+                                // For variable-length commands (messages, FW version), drain
+                                // what's available up to MAX_SINGLE_PAYLOAD_LEN.
+                                let consumed = radio::exact_packet_len(packet.command)
+                                    .unwrap_or_else(|| {
+                                        radio::SINGLE_HDR_LEN
+                                            + (accumulator.len() - radio::SINGLE_HDR_LEN)
+                                                .min(radio::MAX_SINGLE_PAYLOAD_LEN)
+                                    });
+                                let consumed = consumed.min(accumulator.len());
                                 accumulator.drain(..consumed);
                             } else {
                                 // parse_incoming returned None (buffer too short) — wait for more data
@@ -471,12 +520,14 @@ impl SerialManager {
         *self.port.lock().expect("port mutex poisoned") = None;
         self.connected.store(false, Ordering::Relaxed);
 
-        // Reset stats, firmware version, board settings, and v0.3.7 fields
+        // Reset stats, firmware version, board settings, and v0.3.7/0.3.8 fields
         *self.stats.lock().await = RadioStats::default();
         *self.firmware_version.lock().await = None;
         *self.board_settings.lock().await = None;
         self.neighbors.lock().await.clear();
         self.addr_conflict.store(false, Ordering::Relaxed);
+        *self.battery_mv.lock().await = None;
+        *self.board_mac.lock().await = None;
 
         Ok(())
     }
@@ -560,6 +611,16 @@ impl SerialManager {
     /// v0.3.7 — Clear the address conflict flag (after the user has acknowledged it).
     pub fn clear_addr_conflict(&self) {
         self.addr_conflict.store(false, Ordering::Relaxed);
+    }
+
+    /// v0.3.8 — Last battery voltage reported by the board (in mV), or None if not yet queried.
+    pub async fn get_battery_mv(&self) -> Option<u16> {
+        *self.battery_mv.lock().await
+    }
+
+    /// v0.3.8 — Board MAC address string as last reported by the board, or None if not yet queried.
+    pub async fn get_board_mac(&self) -> Option<String> {
+        self.board_mac.lock().await.clone()
     }
 
     /// After sending SET_NODE_ADDR, verify the device accepted it by querying

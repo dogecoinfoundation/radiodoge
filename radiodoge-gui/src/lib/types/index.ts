@@ -148,8 +148,19 @@ export function commandName(cmd: number): string {
     0x23: 'SET GATEWAY',
     0x24: 'WIFI TOGGLE',
     0x25: 'ADDR CONFLICT',
+    0x26: 'GET BATTERY',
+    0x27: 'GET MAC',
   };
   return map[cmd] ?? `CMD(0x${cmd.toString(16).toUpperCase()})`;
+}
+
+/** v0.3.8 — Address book entry: a labelled Dogecoin address saved locally. */
+export interface AddressBookEntry {
+  id: string;           // UUID (timestamp-based)
+  label: string;        // Human-readable nickname, e.g. "Main wallet"
+  address: string;      // Dogecoin address (starts with "D")
+  createdAt: number;    // Unix timestamp (seconds)
+  notes?: string;       // Optional free-text notes
 }
 
 /** The Doge-speak phrases randomly selected for UI copy */

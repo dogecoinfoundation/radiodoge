@@ -1,12 +1,13 @@
 //! RadioDoge GUI — Tauri 2 backend library.
 //!
-//! v0.3.7 additions:
-//!   - WiFi toggle: `set_wifi_enabled` (CMD_WIFI_TOGGLE 0x24)
-//!   - Duplicate node address detection: `get_addr_conflict` / `clear_addr_conflict`
-//!   - Mesh neighbors list: `get_neighbors`
-//!   - Gateway daemon fix: robust sidecar / PATH search
-//!   - Ping timeout raised to 1500 ms (firmware fix: serial ACK before Radio.Send)
+//! v0.3.8 additions:
+//!   - Bug fixes: fake-neighbor filter, KNOWN_CMDS 0x24/0x25, OOB reply write, drain fix
+//!   - Battery voltage: `query_battery` (CMD_GET_BATTERY 0x26)
+//!   - Board MAC: `query_mac` (CMD_GET_MAC 0x27)
+//!   - Persistent wallet: `save_wallet` / `load_saved_wallet` / `delete_saved_wallet`
+//!   - Address book: `load_address_book` / `save_address_book`
 //!
+//! v0.3.7: WiFi toggle, mesh neighbors, addr-conflict detection, ping fix.
 //! v0.3.6: board-sync, WIF import, history, gateway mode, USB/BLE toggle.
 //!
 //! All protocol, wallet, and serial logic lives in `radiodoge-core`.
@@ -765,6 +766,112 @@ async fn clear_addr_conflict(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ─── v0.3.8: Battery + MAC ────────────────────────────────────────────────────
+
+/// v0.3.8 — Query board battery voltage (CMD_GET_BATTERY 0x26).
+/// Sends the command and waits up to 600 ms for the board to reply.
+/// Returns voltage in millivolts, or None if not connected / no reply.
+#[tauri::command]
+async fn query_battery(state: State<'_, AppState>, app: AppHandle) -> Result<Option<u16>, String> {
+    if !state.serial.is_connected() {
+        return Ok(None);
+    }
+    let src = state.serial.get_node_address().await;
+    let pkt = radio::build_get_battery(&src);
+    let pkt_hex = hex::encode(&pkt);
+    emit_debug_traffic(&app, "TX", &pkt_hex, "CMD_GET_BATTERY (0x26)");
+    state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    Ok(state.serial.get_battery_mv().await)
+}
+
+/// v0.3.8 — Query board MAC address (CMD_GET_MAC 0x27).
+/// Returns the WiFi station MAC as a colon-separated hex string, or None if unavailable.
+#[tauri::command]
+async fn query_mac(state: State<'_, AppState>, app: AppHandle) -> Result<Option<String>, String> {
+    if !state.serial.is_connected() {
+        return Ok(None);
+    }
+    let src = state.serial.get_node_address().await;
+    let pkt = radio::build_get_mac(&src);
+    let pkt_hex = hex::encode(&pkt);
+    emit_debug_traffic(&app, "TX", &pkt_hex, "CMD_GET_MAC (0x27)");
+    state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    Ok(state.serial.get_board_mac().await)
+}
+
+// ─── v0.3.8: Persistent Wallet ───────────────────────────────────────────────
+
+/// v0.3.8 — Persist the current wallet to app-local storage (best-effort, unencrypted).
+/// ⚠️ This is a HOT wallet — only use for small test amounts!
+/// The user must confirm with the phrase "THIS IS MUCH INSECURE" in the UI before calling this.
+#[tauri::command]
+async fn save_wallet(wallet_info: WalletInfo, app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+    let path = dir.join("wallet.json");
+    let json = serde_json::to_string_pretty(&wallet_info).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    log::warn!("Wallet saved to disk — hot wallet, use with care!");
+    Ok(())
+}
+
+/// v0.3.8 — Load a previously saved wallet from app-local storage.
+/// Returns None if no wallet has been saved.
+#[tauri::command]
+async fn load_saved_wallet(app: AppHandle) -> Result<Option<WalletInfo>, String> {
+    let path = match app.path().app_data_dir() {
+        Ok(p) => p.join("wallet.json"),
+        Err(_) => return Ok(None),
+    };
+    match tokio::fs::read_to_string(&path).await {
+        Ok(json) => {
+            let w: WalletInfo = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            Ok(Some(w))
+        }
+        Err(_) => Ok(None), // File doesn't exist
+    }
+}
+
+/// v0.3.8 — Delete the saved wallet from disk (user explicitly cleared it).
+#[tauri::command]
+async fn delete_saved_wallet(app: AppHandle) -> Result<(), String> {
+    let path = match app.path().app_data_dir() {
+        Ok(p) => p.join("wallet.json"),
+        Err(_) => return Ok(()),
+    };
+    let _ = tokio::fs::remove_file(&path).await;
+    Ok(())
+}
+
+// ─── v0.3.8: Address Book ────────────────────────────────────────────────────
+
+/// v0.3.8 — Load the address book from app-local storage.
+/// Returns an empty array if no address book has been saved.
+#[tauri::command]
+async fn load_address_book(app: AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let path = match app.path().app_data_dir() {
+        Ok(p) => p.join("address_book.json"),
+        Err(_) => return Ok(vec![]),
+    };
+    match tokio::fs::read_to_string(&path).await {
+        Ok(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        Err(_) => Ok(vec![]),
+    }
+}
+
+/// v0.3.8 — Save the address book to app-local storage.
+#[tauri::command]
+async fn save_address_book(entries: Vec<serde_json::Value>, app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+    let path = dir.join("address_book.json");
+    let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ─── App Builder ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -802,10 +909,17 @@ pub fn run() {
             get_neighbors,
             get_addr_conflict,
             clear_addr_conflict,
+            query_battery,
+            query_mac,
+            save_wallet,
+            load_saved_wallet,
+            delete_saved_wallet,
+            load_address_book,
+            save_address_book,
         ])
         .setup(|app| {
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.7 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.8 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())

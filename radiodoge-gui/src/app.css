@@ -33,6 +33,21 @@
   --glow-orange: 0 0 20px rgba(255, 140, 0, 0.3);
 }
 
+/* ── v0.3.8 — Light Theme Override ────────────────────────────────────────── */
+[data-theme="light"] {
+  --doge-dark:       #F5F5F5;
+  --doge-card:       #FFFFFF;
+  --doge-card-hover: #F0F0F0;
+  --doge-border:     #DDDDDD;
+  --doge-border-active: #BBBBBB;
+  --doge-text:       #1A1A1A;
+  --doge-muted:      #666666;
+  --doge-subtle:     #AAAAAA;
+  --glow-yellow:     0 0 20px rgba(245, 197, 24, 0.2);
+  --glow-neon:       0 0 20px rgba(0, 180, 100, 0.2);
+  --glow-orange:     0 0 20px rgba(255, 140, 0, 0.15);
+}
+
 /* ── Tailwind v4 Theme Extension ──────────────────────────────────────────── */
 @theme {
   --color-doge-yellow:       var(--doge-yellow);

@@ -20,6 +20,7 @@
   import ReceiveTab from '$lib/components/ReceiveTab.svelte';
   import HistoryTab from '$lib/components/HistoryTab.svelte';
   import MeshTab from '$lib/components/MeshTab.svelte';
+  import AddressBook from '$lib/components/AddressBook.svelte';
   import SettingsTab from '$lib/components/SettingsTab.svelte';
   import DebugConsole from '$lib/components/DebugConsole.svelte';
   import Confetti from '$lib/components/Confetti.svelte';
@@ -242,6 +243,10 @@
       <HistoryTab />
     {:else if activeTab === 'mesh'}
       <MeshTab />
+    {:else if activeTab === 'addrbook'}
+      <div style="padding: 24px; max-width: 900px; margin: 0 auto;">
+        <AddressBook />
+      </div>
     {:else if activeTab === 'settings'}
       <SettingsTab />
     {/if}
@@ -260,7 +265,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.3.7</span>
+    <span>RadioDoge v0.3.8</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">

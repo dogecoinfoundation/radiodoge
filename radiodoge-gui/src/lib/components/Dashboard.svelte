@@ -11,7 +11,8 @@
    *   - Random Doge-speak tagline that changes every 30s (Easter-egg-lite)
    */
 
-  import { connection } from '$lib/stores/connection.svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { connection, setBatteryMv } from '$lib/stores/connection.svelte';
   import { radio, type PacketEntry } from '$lib/stores/radio.svelte';
   import { formatTimestamp, commandName, rssiToBars } from '$lib/types';
   import SignalBars from './SignalBars.svelte';
@@ -60,6 +61,30 @@
     } catch { /* sandboxed env — fail silently */ }
   }
 
+  // ── v0.3.8 Battery polling ─────────────────────────────────────────────────
+  function batteryPercent(mv: number): number {
+    // Li-ion: 4200mV = 100%, 3700mV = 50%, 3300mV = 10%, 3000mV = 0%
+    if (mv >= 4200) return 100;
+    if (mv >= 3700) return Math.round(50 + ((mv - 3700) / 500) * 50);
+    if (mv >= 3300) return Math.round(10 + ((mv - 3300) / 400) * 40);
+    if (mv >= 3000) return Math.round(((mv - 3000) / 300) * 10);
+    return 0;
+  }
+
+  $effect(() => {
+    if (!connection.isConnected) return;
+    // Poll battery immediately on connect, then every 15 s
+    async function pollBattery() {
+      try {
+        const mv = await invoke<number | null>('query_battery');
+        setBatteryMv(mv ?? null);
+      } catch { /* board may not support cmd — ignore */ }
+    }
+    pollBattery();
+    const id = setInterval(pollBattery, 15_000);
+    return () => clearInterval(id);
+  });
+
   // ── Stat card definitions ─────────────────────────────────────────────────
   const statCards = $derived(() => [
     {
@@ -97,6 +122,16 @@
       value: `${connection.stats?.packetsReceived ?? 0}`,
       icon: '📥',
       tooltip: 'Total LoRa packets received by this node in this session. Many receive. Very radio. Wow.',
+    },
+    {
+      label: 'Battery',
+      value: connection.batteryMv !== null
+        ? `${batteryPercent(connection.batteryMv)}% (${(connection.batteryMv / 1000).toFixed(2)}V)`
+        : '—',
+      icon: connection.batteryMv !== null && connection.batteryMv < 3400 ? '🪫' : '🔋',
+      tooltip: connection.batteryMv !== null
+        ? `Battery: ${connection.batteryMv}mV — ${batteryPercent(connection.batteryMv)}%${connection.batteryMv < 3400 ? ' ⚠️ Low battery!' : ''}. Updated every 15s.`
+        : 'Battery voltage. Connect to a v0.3.8+ board to see this. Updated every 15 seconds.',
     },
   ]);
 </script>

@@ -12,7 +12,7 @@
 
   import { invoke } from '@tauri-apps/api/core';
   import { radio, updateSettings } from '$lib/stores/radio.svelte';
-  import { connection } from '$lib/stores/connection.svelte';
+  import { connection, setBoardMac } from '$lib/stores/connection.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
 
   let isSaving = $state(false);
@@ -27,6 +27,37 @@
     connection.connectionType = type;
     await invoke('set_connection_type', { connType: type }).catch(() => {});
   }
+
+  // ── v0.3.8 — Light/dark theme ─────────────────────────────────────────────
+  let isDarkTheme = $state(true); // dark is default
+  function toggleTheme() {
+    isDarkTheme = !isDarkTheme;
+    document.documentElement.setAttribute('data-theme', isDarkTheme ? 'dark' : 'light');
+    try { localStorage.setItem('rd-theme', isDarkTheme ? 'dark' : 'light'); } catch {}
+  }
+  // Restore saved theme on mount
+  $effect(() => {
+    try {
+      const saved = localStorage.getItem('rd-theme');
+      if (saved === 'light') { isDarkTheme = false; document.documentElement.setAttribute('data-theme', 'light'); }
+    } catch {}
+  });
+
+  // ── v0.3.8 — Board MAC address ───────────────────────────────────────────
+  let isQueryingMac = $state(false);
+  async function fetchMac() {
+    if (!connection.isConnected) return;
+    isQueryingMac = true;
+    try {
+      const mac = await invoke<string | null>('query_mac');
+      setBoardMac(mac ?? null);
+    } catch { /* ignore */ } finally {
+      isQueryingMac = false;
+    }
+  }
+  $effect(() => {
+    if (connection.isConnected && !connection.boardMac) { fetchMac(); }
+  });
 
   // ── v0.3.7 — WiFi toggle ─────────────────────────────────────────────────
   let isTogglingWifi = $state(false);
@@ -505,6 +536,55 @@
         {#if wifiError}
           <span style="font-size: 0.75rem; color: #ff6060;">{wifiError}</span>
         {/if}
+      </div>
+    </div>
+
+    <!-- ── v0.3.8 — Board MAC Address ───────────────────────────────────────── -->
+    <div class="card-doge" aria-label="Board MAC address">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">🔑 Board MAC Address</p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">WiFi station MAC address of the connected board.</p>
+        </div>
+        {#if connection.boardMac}
+          <span style="font-family: var(--font-mono); font-size: 0.88rem; color: var(--doge-yellow); font-weight: 700; letter-spacing: 0.05em;">
+            {connection.boardMac}
+          </span>
+        {:else}
+          <button
+            onclick={fetchMac}
+            disabled={!connection.isConnected || isQueryingMac}
+            style="padding: 6px 14px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-yellow); border-radius: 6px; cursor: pointer; font-size: 0.8rem; opacity: {!connection.isConnected || isQueryingMac ? 0.5 : 1};"
+          >
+            {isQueryingMac ? '⏳ Reading…' : '🔍 Read MAC'}
+          </button>
+        {/if}
+      </div>
+    </div>
+
+    <!-- ── v0.3.8 — Light/Dark Theme ─────────────────────────────────────────── -->
+    <div class="card-doge" aria-label="Theme toggle">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">
+            {isDarkTheme ? '🌙 Dark Theme' : '☀️ Light Theme'}
+          </p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">Toggle between dark and light mode. Preference saved locally.</p>
+        </div>
+        <button
+          onclick={toggleTheme}
+          style="
+            padding: 9px 18px;
+            border: 1px solid var(--doge-border);
+            background: transparent;
+            color: var(--doge-yellow);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+          "
+        >
+          {isDarkTheme ? '☀️ Switch to Light' : '🌙 Switch to Dark'}
+        </button>
       </div>
     </div>
 
