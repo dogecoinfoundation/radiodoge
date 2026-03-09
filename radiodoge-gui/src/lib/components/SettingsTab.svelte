@@ -28,6 +28,23 @@
     await invoke('set_connection_type', { connType: type }).catch(() => {});
   }
 
+  // ── v0.3.7 — WiFi toggle ─────────────────────────────────────────────────
+  let isTogglingWifi = $state(false);
+  let wifiError = $state<string | null>(null);
+  async function toggleWifi() {
+    if (!connection.isConnected) return;
+    isTogglingWifi = true;
+    wifiError = null;
+    try {
+      await invoke<boolean>('set_wifi_enabled', { enable: !connection.wifiEnabled });
+      // board-sync event will update connection.wifiEnabled
+    } catch (e: unknown) {
+      wifiError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isTogglingWifi = false;
+    }
+  }
+
   // ── v0.3.6 — Gateway mode (board-persistent) ─────────────────────────────
   let isSettingGateway = $state(false);
   let gatewayError = $state<string | null>(null);
@@ -441,6 +458,54 @@
           Such wireless. Very Bluetooth. Wow.
         </p>
       {/if}
+    </div>
+
+    <!-- ── v0.3.7 — WiFi Toggle ────────────────────────────────────────────── -->
+    <div class="card-doge" aria-label="WiFi toggle">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">
+            📡 WiFi Radio
+          </p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">
+            Disable to save power. Persisted in board NVS. Board is source of truth.
+          </p>
+        </div>
+        {#if connection.isConnected}
+          <span style="
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: {connection.wifiEnabled ? 'rgba(0,255,136,0.12)' : 'rgba(100,100,100,0.1)'};
+            color: {connection.wifiEnabled ? 'var(--doge-neon)' : 'var(--doge-subtle)'};
+            border: 1px solid {connection.wifiEnabled ? 'rgba(0,255,136,0.35)' : 'var(--doge-border)'};
+          ">
+            {connection.wifiEnabled ? '🟢 WiFi ON' : '⚫ WiFi OFF'}
+          </span>
+        {/if}
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
+        <button
+          onclick={toggleWifi}
+          disabled={!connection.isConnected || isTogglingWifi}
+          style="
+            padding: 9px 18px;
+            border: 1px solid {connection.wifiEnabled ? 'var(--doge-neon)' : 'var(--doge-border)'};
+            background: {connection.wifiEnabled ? 'rgba(0,255,136,0.08)' : 'transparent'};
+            color: {connection.wifiEnabled ? 'var(--doge-neon)' : 'var(--doge-muted)'};
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            opacity: {!connection.isConnected || isTogglingWifi ? 0.5 : 1};
+          "
+        >
+          {isTogglingWifi ? '⏳ Applying…' : connection.wifiEnabled ? '📴 Disable WiFi' : '📡 Enable WiFi'}
+        </button>
+        {#if wifiError}
+          <span style="font-size: 0.75rem; color: #ff6060;">{wifiError}</span>
+        {/if}
+      </div>
     </div>
 
     <!-- ── v0.3.6 — Gateway Mode (board-persistent) ───────────────────────── -->

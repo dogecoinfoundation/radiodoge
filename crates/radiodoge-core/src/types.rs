@@ -163,6 +163,23 @@ pub struct BoardSettings {
     pub node_address: NodeAddress,
     /// Whether the board is in gateway mode (persisted across power cycles)
     pub gateway_mode: bool,
+    /// v0.3.7 — Whether the WiFi radio is enabled (persisted, default true)
+    #[serde(default = "default_true")]
+    pub wifi_enabled: bool,
+}
+
+fn default_true() -> bool { true }
+
+/// v0.3.7 — A recently heard mesh neighbor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeighborEntry {
+    /// The neighbor's node address
+    pub address: NodeAddress,
+    /// Last heard RSSI in dBm
+    pub rssi: i16,
+    /// Unix timestamp (seconds) of last heard packet
+    pub last_seen: u64,
 }
 
 /// v0.3.6 — Transaction history entry (kept in app-local JSON, last 50 entries).

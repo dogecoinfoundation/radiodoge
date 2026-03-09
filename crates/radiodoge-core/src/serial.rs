@@ -22,7 +22,7 @@ use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::radio;
-use crate::types::{BoardSettings, IncomingPacket, NodeAddress, PortInfo, RadioStats};
+use crate::types::{BoardSettings, IncomingPacket, NeighborEntry, NodeAddress, PortInfo, RadioStats};
 
 // ─── USB VID/PID tables for common ESP32 / Heltec serial adapters ────────────
 
@@ -102,6 +102,12 @@ pub struct SerialManager {
     /// v0.3.6 — Board settings, populated after CMD_GET_SETTINGS (0x22) response.
     /// Board is source of truth — app queries on connect and syncs UI.
     board_settings: Arc<TokioMutex<Option<BoardSettings>>>,
+
+    /// v0.3.7 — Recently heard mesh neighbors (updated from all incoming LoRa packets).
+    pub neighbors: Arc<TokioMutex<Vec<NeighborEntry>>>,
+
+    /// v0.3.7 — Whether an address conflict has been detected (duplicate node addr on mesh).
+    pub addr_conflict: Arc<AtomicBool>,
 }
 
 impl SerialManager {
@@ -116,6 +122,8 @@ impl SerialManager {
             node_address: Arc::new(TokioMutex::new(NodeAddress::default_local())),
             firmware_version: Arc::new(TokioMutex::new(None)),
             board_settings: Arc::new(TokioMutex::new(None)),
+            neighbors: Arc::new(TokioMutex::new(Vec::new())),
+            addr_conflict: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -258,6 +266,8 @@ impl SerialManager {
         let node_address_clone = Arc::clone(&self.node_address);
         let firmware_version_clone = Arc::clone(&self.firmware_version);
         let board_settings_clone = Arc::clone(&self.board_settings);
+        let neighbors_clone = Arc::clone(&self.neighbors);
+        let addr_conflict_clone = Arc::clone(&self.addr_conflict);
         let packet_tx_clone = self.packet_tx.clone();
 
         tokio::spawn(async move {
@@ -358,8 +368,7 @@ impl SerialManager {
                                 }
 
                                 // v0.3.6 — Parse CMD_GET_SETTINGS (0x22) responses.
-                                // Payload: [region, community, node, gateway_mode_byte]
-                                // Board is source of truth — update local state from board.
+                                // Payload: [region, community, node, gateway_mode_byte, wifi_enabled_byte(v0.3.7)]
                                 if packet.command == radio::CMD_GET_SETTINGS {
                                     if let Ok(payload_bytes) = hex::decode(&packet.payload_hex) {
                                         if payload_bytes.len() >= 4 {
@@ -369,14 +378,50 @@ impl SerialManager {
                                                 payload_bytes[2],
                                             );
                                             let gw = payload_bytes[3] != 0;
-                                            // Board address is authoritative
+                                            let wifi = payload_bytes.get(4).map(|&b| b != 0).unwrap_or(true);
                                             if addr != NodeAddress::broadcast() {
                                                 *node_address_clone.lock().await = addr.clone();
                                             }
                                             *board_settings_clone.lock().await = Some(BoardSettings {
                                                 node_address: addr,
                                                 gateway_mode: gw,
+                                                wifi_enabled: wifi,
                                             });
+                                        }
+                                    }
+                                }
+
+                                // v0.3.7 — CMD_ADDR_CONFLICT (0x25): board detected duplicate address
+                                if packet.command == radio::CMD_ADDR_CONFLICT {
+                                    addr_conflict_clone.store(true, Ordering::Relaxed);
+                                    log::warn!("Board reported duplicate node address on mesh!");
+                                }
+
+                                // v0.3.7 — Track neighbors from every incoming LoRa packet
+                                // (source != broadcast and source != our own addr)
+                                {
+                                    use std::time::{SystemTime, UNIX_EPOCH};
+                                    let now = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    let src = &packet.source;
+                                    if src.region != 0xFF && src.community != 0xFF && src.node != 0xFF {
+                                        let mut nbrs = neighbors_clone.lock().await;
+                                        if let Some(existing) = nbrs.iter_mut().find(|n| n.address == *src) {
+                                            existing.rssi = packet.rssi;
+                                            existing.last_seen = now;
+                                        } else {
+                                            nbrs.push(crate::types::NeighborEntry {
+                                                address: src.clone(),
+                                                rssi: packet.rssi,
+                                                last_seen: now,
+                                            });
+                                            // Keep last 20 neighbors
+                                            if nbrs.len() > 20 {
+                                                nbrs.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+                                                nbrs.truncate(20);
+                                            }
                                         }
                                     }
                                 }
@@ -426,10 +471,12 @@ impl SerialManager {
         *self.port.lock().expect("port mutex poisoned") = None;
         self.connected.store(false, Ordering::Relaxed);
 
-        // Reset stats, firmware version, and board settings
+        // Reset stats, firmware version, board settings, and v0.3.7 fields
         *self.stats.lock().await = RadioStats::default();
         *self.firmware_version.lock().await = None;
         *self.board_settings.lock().await = None;
+        self.neighbors.lock().await.clear();
+        self.addr_conflict.store(false, Ordering::Relaxed);
 
         Ok(())
     }
@@ -459,7 +506,12 @@ impl SerialManager {
         Ok(())
     }
 
-    /// Send a PING and return `true` if the device responds within 500 ms.
+    /// Send a PING and return `true` if the device responds within 1500 ms.
+    ///
+    /// v0.3.7 — timeout raised from 500 ms to 1500 ms.  The firmware ACKs the
+    /// host over serial BEFORE sending the LoRa RF ping, but the Heltec needs
+    /// ~200–600 ms to complete the RF TX and flush the UART; 500 ms was too
+    /// tight (debug log confirmed response arriving at ~548 ms).
     pub async fn ping(&self) -> bool {
         if !self.is_connected() {
             return false;
@@ -474,7 +526,7 @@ impl SerialManager {
 
         let mut rx = self.packet_tx.subscribe();
         matches!(
-            tokio::time::timeout(Duration::from_millis(500), rx.recv()).await,
+            tokio::time::timeout(Duration::from_millis(1500), rx.recv()).await,
             Ok(Ok(_))
         )
     }
@@ -493,6 +545,21 @@ impl SerialManager {
     /// Populated after CMD_GET_SETTINGS (0x22) response. Board is source of truth.
     pub async fn get_board_settings(&self) -> Option<BoardSettings> {
         self.board_settings.lock().await.clone()
+    }
+
+    /// v0.3.7 — Return a snapshot of recently heard mesh neighbors.
+    pub async fn get_neighbors(&self) -> Vec<NeighborEntry> {
+        self.neighbors.lock().await.clone()
+    }
+
+    /// v0.3.7 — Return whether an address conflict has been detected since last connect.
+    pub fn has_addr_conflict(&self) -> bool {
+        self.addr_conflict.load(Ordering::Relaxed)
+    }
+
+    /// v0.3.7 — Clear the address conflict flag (after the user has acknowledged it).
+    pub fn clear_addr_conflict(&self) {
+        self.addr_conflict.store(false, Ordering::Relaxed);
     }
 
     /// After sending SET_NODE_ADDR, verify the device accepted it by querying
