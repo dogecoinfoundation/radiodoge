@@ -45,6 +45,8 @@ pub const CMD_DOGE_TX: u8 = 0x10;     // Dogecoin transaction
 pub const CMD_REQUEST_BALANCE: u8 = 0x11; // Balance request
 pub const CMD_GET_FIRMWARE_VERSION: u8 = 0x20; // Query firmware version string
 pub const CMD_SET_LORA_PARAMS: u8 = 0x21;      // Set SF/BW/CR/frequency/TX-power (v0.3.3)
+pub const CMD_GET_SETTINGS: u8 = 0x22;         // v0.3.6: Query board live state (addr + gateway_mode)
+pub const CMD_SET_GATEWAY: u8 = 0x23;          // v0.3.6: Set/persist gateway_mode on board
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -92,6 +94,20 @@ pub fn build_doge_tx(src: &NodeAddress, dst: &NodeAddress, tx_payload: &[u8]) ->
     let mut packet = build_header(CMD_DOGE_TX, FLAG_STANDARD, src, dst);
     let clamped = &tx_payload[..tx_payload.len().min(MAX_SINGLE_PAYLOAD_LEN)];
     packet.extend_from_slice(clamped);
+    packet
+}
+
+/// Build a GET_SETTINGS command (CMD 0x22) — v0.3.6.
+/// Board replies with 4-byte payload: [region, community, node, gateway_mode_byte].
+pub fn build_get_settings(src: &NodeAddress) -> Vec<u8> {
+    build_header(CMD_GET_SETTINGS, FLAG_STANDARD, src, &NodeAddress::broadcast())
+}
+
+/// Build a SET_GATEWAY command (CMD 0x23) — v0.3.6.
+/// Payload byte: 1 = enable gateway mode, 0 = disable.
+pub fn build_set_gateway(src: &NodeAddress, enable: bool) -> Vec<u8> {
+    let mut packet = build_header(CMD_SET_GATEWAY, FLAG_STANDARD, src, &NodeAddress::broadcast());
+    packet.push(if enable { 1u8 } else { 0u8 });
     packet
 }
 
@@ -224,6 +240,21 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
             std::str::from_utf8(payload)
                 .ok()
                 .map(|s| format!("🔧 FW: {}", s.trim_matches('\0').trim()))
+        }
+        CMD_GET_SETTINGS => {
+            if payload.len() >= 4 {
+                let gw = if payload[3] != 0 { "GW ON" } else { "GW OFF" };
+                Some(format!("⚙️ SETTINGS: addr={}.{}.{} {}", payload[0], payload[1], payload[2], gw))
+            } else {
+                Some("⚙️ GET_SETTINGS".to_string())
+            }
+        }
+        CMD_SET_GATEWAY => {
+            if !payload.is_empty() {
+                Some(format!("🌐 SET_GATEWAY: {}", if payload[0] != 0 { "ON" } else { "OFF" }))
+            } else {
+                Some("🌐 SET_GATEWAY".to_string())
+            }
         }
         _ => None,
     }

@@ -154,6 +154,33 @@ pub struct IncomingPacket {
     pub rssi: i16,
 }
 
+/// v0.3.6 — Board-is-source-of-truth: live state reported by the Heltec device
+/// on CMD_GET_SETTINGS (0x22) response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardSettings {
+    /// Node address as currently stored in the board's NVS flash
+    pub node_address: NodeAddress,
+    /// Whether the board is in gateway mode (persisted across power cycles)
+    pub gateway_mode: bool,
+}
+
+/// v0.3.6 — Transaction history entry (kept in app-local JSON, last 50 entries).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TxHistoryEntry {
+    /// Unix timestamp (seconds) when the TX was initiated
+    pub timestamp: u64,
+    /// Recipient Dogecoin address
+    pub to_address: String,
+    /// Amount in DOGE
+    pub amount_doge: f64,
+    /// Optional memo
+    pub memo: Option<String>,
+    /// TX status: "sent", "failed"
+    pub status: String,
+}
+
 /// Information about a serial port visible to the OS.
 ///
 /// Returned by `list_ports_with_info()` so the UI can display friendly names,
