@@ -19,6 +19,7 @@
   import SendTab from '$lib/components/SendTab.svelte';
   import ReceiveTab from '$lib/components/ReceiveTab.svelte';
   import HistoryTab from '$lib/components/HistoryTab.svelte';
+  import MeshTab from '$lib/components/MeshTab.svelte';
   import SettingsTab from '$lib/components/SettingsTab.svelte';
   import DebugConsole from '$lib/components/DebugConsole.svelte';
   import Confetti from '$lib/components/Confetti.svelte';
@@ -33,6 +34,7 @@
     updateStats,
     applyBoardSync,
     setGatewayOnline,
+    setAddrConflict,
   } from '$lib/stores/connection.svelte';
 
   import { radio, addPacket, addSentPacket } from '$lib/stores/radio.svelte';
@@ -160,6 +162,15 @@
       setGatewayOnline(event.payload.online);
     }).then(fn => unlisteners.push(fn));
 
+    // v0.3.7 — Address conflict notification from board (0x25)
+    listen<{ detected: boolean }>('addr-conflict', (event) => {
+      if (event.payload.detected) {
+        setAddrConflict(true);
+        // Auto-switch to Mesh tab so user sees the warning
+        activeTab = 'mesh';
+      }
+    }).then(fn => unlisteners.push(fn));
+
     // Keyboard listener (Ctrl+Shift+D + Konami code)
     window.addEventListener('keydown', handleKeydown);
 
@@ -229,6 +240,8 @@
       <ReceiveTab />
     {:else if activeTab === 'history'}
       <HistoryTab />
+    {:else if activeTab === 'mesh'}
+      <MeshTab />
     {:else if activeTab === 'settings'}
       <SettingsTab />
     {/if}
@@ -247,7 +260,7 @@
     color: var(--doge-subtle);
     flex-shrink: 0;
   ">
-    <span>RadioDoge v0.3.6</span>
+    <span>RadioDoge v0.3.7</span>
     <span>|</span>
     {#if connection.isConnected}
       <span style="color: var(--doge-neon);">

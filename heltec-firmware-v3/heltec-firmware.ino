@@ -1,6 +1,6 @@
 // Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
-// v0.3.6 — Board-is-source-of-truth: NVS-persisted settings, 0x22/0x23 protocol,
-//           OLED status cycle, BLE Nordic UART service.
+// v0.3.7 — Mesh-Aware & Fully Controllable: clean OLED, ping fix, WiFi toggle,
+//           duplicate addr detection (0x25), BLE name from node addr, boot splash.
 #include <Wire.h>
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
@@ -58,11 +58,11 @@
     }
   }
   void setupBLE() {
-    // Build device name: "RadioDoge-AB" (last 2 addr bytes for uniqueness)
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_BT);
-    char bleName[24];
-    snprintf(bleName, sizeof(bleName), "%s-%02X%02X", BLE_DEVICE_NAME_PREFIX, mac[4], mac[5]);
+    // v0.3.7 — Build device name: "RadioDoge-12.3.4" using node address for clarity
+    // (avoids "Ra" truncation; full name fits BLE 29-byte limit; matches node ID in GUI)
+    char bleName[32];
+    snprintf(bleName, sizeof(bleName), "%s-%d.%d.%d",
+             BLE_DEVICE_NAME_PREFIX, local.region, local.community, local.node);
     BLEDevice::init(bleName);
     pBleServer = BLEDevice::createServer();
     pBleServer->setCallbacks(new BleServerCallbacks());
@@ -137,6 +137,11 @@ String gateway_password = "";
 
 // v0.3.6 — Board-is-source-of-truth gateway mode flag (persisted to NVS)
 bool gateway_mode = false;
+// v0.3.7 — WiFi on/off toggle (persisted to NVS, default on)
+bool wifi_enabled = true;
+// v0.3.7 — Duplicate node address detection
+bool addrConflict = false;
+unsigned long addrConflictNotifiedAt = 0;
 
 // Password requirements
 const int MIN_PASSWORD_LENGTH = 8;
@@ -227,7 +232,7 @@ struct PendingRequest {
   bool requiresConfirmation;
   String requestId;      // Unique identifier for tracking
 };
-#define FIRMWARE_VERSION 1
+#define FIRMWARE_VERSION 7  // v0.3.7
 
 #ifdef WIFI_LoRa_32_V2
 #define HELTEC_BOARD_VERSION 2
@@ -377,6 +382,13 @@ void setup() {
   if (loadGatewayMode()) {
     Serial.println("Gateway mode restored: " + String(gateway_mode ? "ON" : "OFF"));
   }
+  // v0.3.7 — Load wifi_enabled from NVS
+  loadWifiEnabled();
+  if (!wifi_enabled) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("WiFi disabled (stored in NVS)");
+  }
 
   // Initialize control messages with loaded/default address
   InitControlMessages();
@@ -391,10 +403,11 @@ void setup() {
   // Setup web server routes
   setupWebServer();
   
-  // Show startup animations
-  DisplayStartupSequence();
-  
-  Serial.println("RadioDoge initialized!");
+  // v0.3.7 — Boot splash: show "RadioDoge v0.3.7" for 3.5 s then hand off to status cycle
+  DrawBootSplash();
+  delay(3500);
+
+  Serial.println("RadioDoge v0.3.7 initialized!");
   Serial.println("Connect to WiFi: RadioDoge");
   Serial.println("Password: radiodoge");
   Serial.println("Open browser: http://192.168.4.1");
@@ -471,11 +484,25 @@ void DisplayBroadcastMessage(String message, nodeAddress sender) {
   addDisplayLog("BROADCAST: " + message + " from " + String(sender.region) + "." + String(sender.community) + "." + String(sender.node));
 }
 
-// v0.3.6 — DisplayCommandAndControl removed (was printing raw cmd bytes; replaced by status cycle)
-// void DisplayCommandAndControl(uint8_t command) { ... }
+// v0.3.7 — Boot splash: shown for 3.5 s before handing off to status cycle
+void DrawBootSplash() {
+  radioDogeDisplay.clearDisplay();
+  radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  // Doge logo at top
+  radioDogeDisplay.drawXBitmap(48, 0, doge_bits, doge_width, doge_height, SSD1306_WHITE);
+  radioDogeDisplay.setTextSize(1);
+  radioDogeDisplay.setCursor(18, 38);
+  radioDogeDisplay.println("RadioDoge v0.3.7");
+  radioDogeDisplay.setCursor(10, 52);
+  radioDogeDisplay.println("Much mesh. Very wow.");
+  radioDogeDisplay.display();
+}
 
-// v0.3.6 — OLED status cycle: nodeID → RSSI/SNR → packets RX/TX → (TX OK after 0x10)
-// Called from loop() every iteration; only redraws when 3 s have elapsed.
+// v0.3.7 — drawStatusScreen(): unified status display with icon row, no raw debug text.
+// Page 0: Node address + icon row (GW/WiFi/BLE) + "ADDR CONFLICT!" banner
+// Page 1: RSSI / SNR signal quality
+// Page 2: Packet counters RX / TX
+// Called from loop(); only redraws every 3 s unless showTxOk is active.
 void updateStatusDisplay() {
   unsigned long now = millis();
 
@@ -483,14 +510,14 @@ void updateStatusDisplay() {
   if (showTxOk) {
     if (now - txOkTimestamp < 3000) {
       radioDogeDisplay.clearDisplay();
-      radioDogeDisplay.setTextSize(1);
       radioDogeDisplay.setTextColor(SSD1306_WHITE);
+      radioDogeDisplay.setTextSize(1);
       radioDogeDisplay.setCursor(20, 8);
       radioDogeDisplay.println("TX OK!");
       radioDogeDisplay.setCursor(8, 26);
       radioDogeDisplay.println("Such DOGE. Wow.");
       radioDogeDisplay.setCursor(12, 44);
-      radioDogeDisplay.println("To the moon! ");
+      radioDogeDisplay.println("To the moon!");
       radioDogeDisplay.display();
       return;
     } else {
@@ -502,35 +529,60 @@ void updateStatusDisplay() {
   lastStatusCycle = now;
 
   radioDogeDisplay.clearDisplay();
-  radioDogeDisplay.setTextSize(1);
   radioDogeDisplay.setTextColor(SSD1306_WHITE);
+  radioDogeDisplay.setTextSize(1);
 
   switch (statusPage) {
-    case 0: // Node address
+    case 0: {
+      // ── Header: node address (large) ───────────────────────────────────
       radioDogeDisplay.setCursor(0, 0);
       radioDogeDisplay.println("RadioDoge Node");
       radioDogeDisplay.setTextSize(2);
-      radioDogeDisplay.setCursor(0, 18);
+      radioDogeDisplay.setCursor(0, 14);
       radioDogeDisplay.println(String(local.region) + "." + String(local.community) + "." + String(local.node));
       radioDogeDisplay.setTextSize(1);
+
+      // ── Icon row (right-aligned, y=0): GW | WiFi | BLE ─────────────────
+      uint8_t iconX = 82;
       if (gateway_mode) {
-        radioDogeDisplay.setCursor(0, 50);
-        radioDogeDisplay.println(">> GATEWAY MODE <<");
+        radioDogeDisplay.setCursor(iconX, 0);
+        radioDogeDisplay.print("GW");
+        iconX += 18;
+      }
+      if (wifi_enabled) {
+        radioDogeDisplay.setCursor(iconX, 0);
+        radioDogeDisplay.print("Wi");
+        iconX += 18;
       }
       if (bleDeviceConnected) {
-        radioDogeDisplay.setCursor(90, 0);
-        radioDogeDisplay.println("BLE");
+        radioDogeDisplay.setCursor(iconX, 0);
+        radioDogeDisplay.print("BT");
+      }
+
+      // ── "ADDR CONFLICT!" warning banner ───────────────────────────────
+      if (addrConflict) {
+        radioDogeDisplay.setCursor(0, 50);
+        radioDogeDisplay.println("! ADDR CONFLICT !");
       }
       break;
-    case 1: // RSSI / SNR
+    }
+    case 1:
+      // ── Signal quality ─────────────────────────────────────────────────
       radioDogeDisplay.setCursor(0, 0);
       radioDogeDisplay.println("Signal Quality");
-      radioDogeDisplay.setCursor(0, 20);
+      radioDogeDisplay.setCursor(0, 16);
       radioDogeDisplay.println("RSSI: " + String(rssi) + " dBm");
-      radioDogeDisplay.setCursor(0, 36);
+      radioDogeDisplay.setCursor(0, 30);
       radioDogeDisplay.println("SNR:  " + String(lastSnr) + " dB");
+      // Simple RSSI bar (0–64 px wide, mapped -120..-50 dBm)
+      {
+        int bar = map(constrain(rssi, -120, -50), -120, -50, 0, 64);
+        radioDogeDisplay.drawRect(0, 44, 64, 8, SSD1306_WHITE);
+        radioDogeDisplay.fillRect(0, 44, bar, 8, SSD1306_WHITE);
+      }
       break;
-    case 2: // Packet counters
+    case 2:
+      // ── Packet counters ────────────────────────────────────────────────
       radioDogeDisplay.setCursor(0, 0);
       radioDogeDisplay.println("Packets");
       radioDogeDisplay.setCursor(0, 18);
@@ -793,6 +845,26 @@ bool loadGatewayMode() {
   nvs_close(h);
   if (err != ESP_OK) return false;
   gateway_mode = (val != 0);
+  return true;
+}
+
+// v0.3.7 — WiFi enabled NVS persistence
+void saveWifiEnabledQuiet(bool enabled) {
+  nvs_handle_t h;
+  if (nvs_open("rd_settings", NVS_READWRITE, &h) != ESP_OK) return;
+  nvs_set_u8(h, "wifi_on", enabled ? 1 : 0);
+  nvs_commit(h);
+  nvs_close(h);
+}
+
+bool loadWifiEnabled() {
+  nvs_handle_t h;
+  uint8_t val = 1; // default: wifi on
+  if (nvs_open("rd_settings", NVS_READONLY, &h) != ESP_OK) return false;
+  esp_err_t err = nvs_get_u8(h, "wifi_on", &val);
+  nvs_close(h);
+  if (err != ESP_OK) return false; // key not set yet; keep default
+  wifi_enabled = (val != 0);
   return true;
 }
 
@@ -1564,6 +1636,21 @@ void OnRxDone(uint8_t *payload, uint16_t messageSize, int16_t rssiMeasured, int8
   rxPacket[messageSize] = '\0';
   Radio.Sleep();
   addLog("[LoRa] RX packet received - RSSI: " + String(rssi) + " dBm, Length: " + String(messageSize) + " bytes, SNR: " + String(snr) + " dB");
+
+  // v0.3.7 — Duplicate node address detection
+  // Bytes [2..4] in a standard LoRa packet are source region.community.node
+  if (messageSize >= 5 &&
+      rxPacket[2] == local.region &&
+      rxPacket[3] == local.community &&
+      rxPacket[4] == local.node) {
+    addrConflict = true;
+    addLog("[WARN] Duplicate node address detected! Another node is using " +
+           String(local.region) + "." + String(local.community) + "." + String(local.node));
+    // Notify host over serial: CMD_ADDR_CONFLICT (0x25) + 3-byte conflicting address
+    uint8_t conflictMsg[5] = {0x25, 3, local.region, local.community, local.node};
+    Serial.write(conflictMsg, 5);
+  }
+
   ParseReceivedMessage();
   isLoRaIdle = true;
 }
@@ -1667,9 +1754,9 @@ void SendPing(nodeAddress destination) {
   isLoRaIdle = false;
   DisplayTXMessage("Ping", destination);
   addLog("[LoRa] Sending PING to " + String(destination.region) + "." + String(destination.community) + "." + String(destination.node));
-  Radio.Send(controlPacket, CONTROL_SIZE);
-  //Serial.printf("Sending Ping to %d.%d.%d\n", destination.region, destination.community, destination.node);
+  // v0.3.7 — ACK host BEFORE Radio.Send (LoRa TX at SF7 takes ~200-500ms; serial ACK must arrive first)
   Serial.write(hostACK, HOST_ACK_NACK_SIZE);
+  Radio.Send(controlPacket, CONTROL_SIZE);
 }
 
 // Send an ACK to the specified destination address
@@ -2803,8 +2890,10 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
       reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
       memcpy(reply + 8, payload, 4);
-      Serial.write(reply, 12);
-      bleSend(reply, 12);
+      // v0.3.7 — append wifi_enabled byte to settings reply
+      reply[12] = wifi_enabled ? 1 : 0;
+      Serial.write(reply, 13);
+      bleSend(reply, 13);
       break;
     }
 
@@ -2821,6 +2910,30 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
       reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
       reply[8] = gateway_mode ? 1 : 0;
+      Serial.write(reply, 9);
+      bleSend(reply, 9);
+      break;
+    }
+
+    // v0.3.7 — CMD_WIFI_TOGGLE (0x24): toggle WiFi radio on/off. Payload byte 0: 1=on, 0=off.
+    // Persists to NVS; OLED icon row updates on next status cycle.
+    case 0x24: {
+      if (extraLen > 0) {
+        wifi_enabled = (extraPayload[0] != 0);
+        saveWifiEnabledQuiet(wifi_enabled);
+        if (wifi_enabled) {
+          setupDualWiFi();
+        } else {
+          WiFi.disconnect(true);
+          WiFi.mode(WIFI_OFF);
+          addLog("[WiFi] WiFi radio disabled by host command");
+        }
+      }
+      uint8_t reply[9];
+      reply[0] = 0x24; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      reply[8] = wifi_enabled ? 1 : 0;
       Serial.write(reply, 9);
       bleSend(reply, 9);
       break;

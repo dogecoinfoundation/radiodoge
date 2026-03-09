@@ -91,6 +91,15 @@ export interface ConnectionStatusEvent {
 export interface BoardSettings {
   nodeAddress: NodeAddress;
   gatewayMode: boolean;
+  /** v0.3.7 — Whether the WiFi radio is enabled on the board */
+  wifiEnabled?: boolean;
+}
+
+/** v0.3.7 — A recently heard mesh neighbor. */
+export interface NeighborEntry {
+  address: NodeAddress;
+  rssi: number;
+  lastSeen: number; // Unix seconds
 }
 
 /** v0.3.6 — Transaction history entry (last 50, persisted to local JSON). */
@@ -137,6 +146,8 @@ export function commandName(cmd: number): string {
     0x21: 'SET LORA',
     0x22: 'GET SETTINGS',
     0x23: 'SET GATEWAY',
+    0x24: 'WIFI TOGGLE',
+    0x25: 'ADDR CONFLICT',
   };
   return map[cmd] ?? `CMD(0x${cmd.toString(16).toUpperCase()})`;
 }

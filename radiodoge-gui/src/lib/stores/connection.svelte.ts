@@ -6,7 +6,7 @@
  * `import { connection } from '$lib/stores/connection.svelte'`.
  */
 
-import type { BoardSettings, ConnectionStatusType, NodeAddress, RadioStats } from '$lib/types';
+import type { BoardSettings, ConnectionStatusType, NeighborEntry, NodeAddress, RadioStats } from '$lib/types';
 
 /**
  * Reactive connection state — use $state() (Svelte 5 rune).
@@ -39,6 +39,12 @@ export const connection = $state({
   connectionType: 'usb' as 'usb' | 'ble',
   /** v0.3.6 — Whether a gateway daemon process is running */
   gatewayOnline: false,
+  /** v0.3.7 — Whether the board's WiFi radio is enabled */
+  wifiEnabled: true,
+  /** v0.3.7 — Whether a duplicate node address has been detected on the mesh */
+  addrConflict: false,
+  /** v0.3.7 — Recently heard mesh neighbors */
+  neighbors: [] as NeighborEntry[],
 });
 
 /** Update available ports list */
@@ -85,6 +91,17 @@ export function setReconnecting(port: string) {
 export function applyBoardSync(bs: BoardSettings) {
   connection.nodeAddress = bs.nodeAddress;
   connection.gatewayMode = bs.gatewayMode;
+  if (bs.wifiEnabled !== undefined) connection.wifiEnabled = bs.wifiEnabled;
+}
+
+/** v0.3.7 — Set address conflict flag */
+export function setAddrConflict(detected: boolean) {
+  connection.addrConflict = detected;
+}
+
+/** v0.3.7 — Update neighbors list */
+export function setNeighbors(neighbors: NeighborEntry[]) {
+  connection.neighbors = neighbors;
 }
 
 /** v0.3.6 — Update gateway online status from gateway-status event */
@@ -104,6 +121,9 @@ export function setDisconnected() {
   connection.firmwareVersion = null;
   connection.gatewayMode = false;
   connection.gatewayOnline = false;
+  connection.wifiEnabled = true;
+  connection.addrConflict = false;
+  connection.neighbors = [];
 }
 
 /** Set error state */

@@ -47,6 +47,8 @@ pub const CMD_GET_FIRMWARE_VERSION: u8 = 0x20; // Query firmware version string
 pub const CMD_SET_LORA_PARAMS: u8 = 0x21;      // Set SF/BW/CR/frequency/TX-power (v0.3.3)
 pub const CMD_GET_SETTINGS: u8 = 0x22;         // v0.3.6: Query board live state (addr + gateway_mode)
 pub const CMD_SET_GATEWAY: u8 = 0x23;          // v0.3.6: Set/persist gateway_mode on board
+pub const CMD_WIFI_TOGGLE: u8 = 0x24;          // v0.3.7: Enable/disable WiFi radio (persists to NVS)
+pub const CMD_ADDR_CONFLICT: u8 = 0x25;        // v0.3.7: Board-initiated: duplicate node address detected
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -107,6 +109,14 @@ pub fn build_get_settings(src: &NodeAddress) -> Vec<u8> {
 /// Payload byte: 1 = enable gateway mode, 0 = disable.
 pub fn build_set_gateway(src: &NodeAddress, enable: bool) -> Vec<u8> {
     let mut packet = build_header(CMD_SET_GATEWAY, FLAG_STANDARD, src, &NodeAddress::broadcast());
+    packet.push(if enable { 1u8 } else { 0u8 });
+    packet
+}
+
+/// Build a WIFI_TOGGLE command (CMD 0x24) — v0.3.7.
+/// Payload byte: 1 = enable WiFi radio, 0 = disable (power saving).
+pub fn build_wifi_toggle(src: &NodeAddress, enable: bool) -> Vec<u8> {
+    let mut packet = build_header(CMD_WIFI_TOGGLE, FLAG_STANDARD, src, &NodeAddress::broadcast());
     packet.push(if enable { 1u8 } else { 0u8 });
     packet
 }
@@ -244,7 +254,10 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
         CMD_GET_SETTINGS => {
             if payload.len() >= 4 {
                 let gw = if payload[3] != 0 { "GW ON" } else { "GW OFF" };
-                Some(format!("⚙️ SETTINGS: addr={}.{}.{} {}", payload[0], payload[1], payload[2], gw))
+                let wifi = if payload.len() >= 5 {
+                    if payload[4] != 0 { " WiFi ON" } else { " WiFi OFF" }
+                } else { "" };
+                Some(format!("⚙️ SETTINGS: addr={}.{}.{} {}{}", payload[0], payload[1], payload[2], gw, wifi))
             } else {
                 Some("⚙️ GET_SETTINGS".to_string())
             }
@@ -254,6 +267,20 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
                 Some(format!("🌐 SET_GATEWAY: {}", if payload[0] != 0 { "ON" } else { "OFF" }))
             } else {
                 Some("🌐 SET_GATEWAY".to_string())
+            }
+        }
+        CMD_WIFI_TOGGLE => {
+            if !payload.is_empty() {
+                Some(format!("📡 WIFI: {}", if payload[0] != 0 { "ON" } else { "OFF" }))
+            } else {
+                Some("📡 WIFI_TOGGLE".to_string())
+            }
+        }
+        CMD_ADDR_CONFLICT => {
+            if payload.len() >= 3 {
+                Some(format!("⚠️ ADDR CONFLICT: {}.{}.{}", payload[0], payload[1], payload[2]))
+            } else {
+                Some("⚠️ ADDR CONFLICT".to_string())
             }
         }
         _ => None,

@@ -1,11 +1,13 @@
 //! RadioDoge GUI — Tauri 2 backend library.
 //!
-//! v0.3.6 additions:
-//!   - Board-is-source-of-truth: CMD_GET_SETTINGS (0x22) queried on connect, UI syncs from board
-//!   - WIF wallet import (`import_wif`)
-//!   - Transaction history (in-memory + JSON persistence)
-//!   - Gateway mode: `set_gateway_mode` / `start_gateway` / `stop_gateway`
-//!   - Connection type toggle (USB / BLE) — Rust scaffold, UI toggle
+//! v0.3.7 additions:
+//!   - WiFi toggle: `set_wifi_enabled` (CMD_WIFI_TOGGLE 0x24)
+//!   - Duplicate node address detection: `get_addr_conflict` / `clear_addr_conflict`
+//!   - Mesh neighbors list: `get_neighbors`
+//!   - Gateway daemon fix: robust sidecar / PATH search
+//!   - Ping timeout raised to 1500 ms (firmware fix: serial ACK before Radio.Send)
+//!
+//! v0.3.6: board-sync, WIF import, history, gateway mode, USB/BLE toggle.
 //!
 //! All protocol, wallet, and serial logic lives in `radiodoge-core`.
 
@@ -23,8 +25,8 @@ use radiodoge_core::{radio, wallet};
 use hex;
 use radiodoge_core::serial::SerialManager;
 use radiodoge_core::types::{
-    BoardSettings, ConnectionStatusEvent, IncomingPacket, LoraSettings, NodeAddress, PortInfo,
-    RadioStats, TransactionRequest, TxHistoryEntry, WalletInfo,
+    BoardSettings, ConnectionStatusEvent, IncomingPacket, LoraSettings, NeighborEntry,
+    NodeAddress, PortInfo, RadioStats, TransactionRequest, TxHistoryEntry, WalletInfo,
 };
 
 /// Maximum transaction history entries kept in memory + persisted to disk.
@@ -146,6 +148,15 @@ async fn connect_port(
                 .title("🐕 DOGE Transaction Received!")
                 .body(&body)
                 .show();
+        }
+
+        // v0.3.7 — Emit addr-conflict event to frontend when board detects duplicate addr
+        if packet.command == radio::CMD_ADDR_CONFLICT {
+            let addr_str = packet.decoded.clone().unwrap_or_else(|| "unknown".to_string());
+            let _ = app_for_packets.emit("addr-conflict", serde_json::json!({
+                "detected": true,
+                "address": addr_str,
+            }));
         }
     });
 
@@ -646,10 +657,27 @@ async fn start_gateway(
         *gp = None;
     }
 
-    let child = tokio::process::Command::new("radiodoge-cli")
+    // v0.3.7 — Find radiodoge-cli: check same dir as this executable first (bundled),
+    // then fall back to PATH.  This eliminates "program not found" for packaged apps.
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+
+    let cli_name = if cfg!(windows) { "radiodoge-cli.exe" } else { "radiodoge-cli" };
+    let cli_path = exe_dir
+        .map(|d| d.join(cli_name))
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| cli_name.to_string()); // fall back to PATH
+
+    let child = tokio::process::Command::new(&cli_path)
         .args(["daemon", "-p", &port])
         .spawn()
-        .map_err(|e| format!("Failed to spawn radiodoge-cli daemon: {}. Make sure radiodoge-cli is in PATH.", e))?;
+        .map_err(|e| format!(
+            "Failed to spawn '{}': {}. \
+             Bundle radiodoge-cli next to the app executable, or add it to PATH.",
+            cli_path, e
+        ))?;
 
     *state.gateway_process.lock().await = Some(child);
     let _ = app.emit("gateway-status", serde_json::json!({ "online": true, "port": port }));
@@ -689,6 +717,54 @@ async fn set_connection_type(
     Ok(())
 }
 
+/// v0.3.7 — Enable or disable the WiFi radio on the board (CMD_WIFI_TOGGLE 0x24).
+/// Setting persisted to NVS — survives power cycles.
+#[tauri::command]
+async fn set_wifi_enabled(
+    enable: bool,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    if !state.serial.is_connected() {
+        return Err("Not connected to board.".to_string());
+    }
+    let src = state.serial.get_node_address().await;
+    let pkt = radio::build_wifi_toggle(&src, enable);
+    let pkt_hex = hex::encode(&pkt);
+    emit_debug_traffic(&app, "TX", &pkt_hex, &format!("CMD_WIFI_TOGGLE (0x24) → {}", if enable { "ON" } else { "OFF" }));
+    state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    // Re-query to confirm
+    let confirm = radio::build_get_settings(&src);
+    state.serial.send_raw(confirm).await.ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let bs = state.serial.get_board_settings().await;
+    let confirmed = bs.as_ref().map(|s| s.wifi_enabled).unwrap_or(enable);
+    if let Some(ref bs) = bs {
+        let _ = app.emit("board-sync", bs);
+    }
+    Ok(confirmed)
+}
+
+/// v0.3.7 — Return recently heard mesh neighbors.
+#[tauri::command]
+async fn get_neighbors(state: State<'_, AppState>) -> Result<Vec<NeighborEntry>, String> {
+    Ok(state.serial.get_neighbors().await)
+}
+
+/// v0.3.7 — Whether the board has reported a duplicate node address.
+#[tauri::command]
+async fn get_addr_conflict(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.serial.has_addr_conflict())
+}
+
+/// v0.3.7 — Dismiss the address-conflict warning (user acknowledged).
+#[tauri::command]
+async fn clear_addr_conflict(state: State<'_, AppState>) -> Result<(), String> {
+    state.serial.clear_addr_conflict();
+    Ok(())
+}
+
 // ─── App Builder ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -722,10 +798,14 @@ pub fn run() {
             stop_gateway,
             get_connection_type,
             set_connection_type,
+            set_wifi_enabled,
+            get_neighbors,
+            get_addr_conflict,
+            clear_addr_conflict,
         ])
         .setup(|app| {
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.6 started — much wow 🐕");
+            log::info!("RadioDoge GUI v0.3.7 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())
