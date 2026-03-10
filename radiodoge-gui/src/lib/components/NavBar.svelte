@@ -25,6 +25,7 @@
     { id: 'receive',   icon: '📥', label: 'Receive',    tooltip: 'Live TX/RX packet log — see all incoming and outgoing LoRa traffic.' },
     { id: 'history',   icon: '📜', label: 'History',    tooltip: 'Transaction history — last 50 sends. Much records. Very blockchain.' },
     { id: 'mesh',      icon: '🕸️', label: 'Mesh',       tooltip: 'Mesh neighbors — nodes heard on the LoRa network. Such decentralize!' },
+    { id: 'addrbook',  icon: '📒', label: 'Addresses',  tooltip: 'Address book — save and label Dogecoin addresses. Much organised!' },
     { id: 'settings',  icon: '⚙️', label: 'Settings',   tooltip: 'Configure LoRa parameters, gateway mode, WiFi toggle. Such configure.' },
   ];
 </script>
@@ -87,7 +88,7 @@
   <!-- Tab buttons -->
   {#each tabs as tab}
     {@const isActive = activeTab === tab.id}
-    {@const isDisabled = tab.id !== 'connect' && tab.id !== 'settings' && tab.id !== 'history' && tab.id !== 'mesh' && !connection.isConnected}
+    {@const isDisabled = tab.id !== 'connect' && tab.id !== 'settings' && tab.id !== 'history' && tab.id !== 'mesh' && tab.id !== 'addrbook' && !connection.isConnected}
     <button
       onclick={() => !isDisabled && onTabChange(tab.id)}
       style="

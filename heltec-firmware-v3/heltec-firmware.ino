@@ -1,6 +1,6 @@
 // Prototype RadioDoge firmware for the Heltec WiFi LoRa 32 v2 & v3 modules
-// v0.3.7 — Mesh-Aware & Fully Controllable: clean OLED, ping fix, WiFi toggle,
-//           duplicate addr detection (0x25), BLE name from node addr, boot splash.
+// v0.3.8 — Bug fixes + features: fake-neighbor fix, OOB write fix, KNOWN_CMDS 0x24/0x25,
+//           battery voltage (0x26), board MAC address (0x27), accumulator drain fix.
 #include <Wire.h>
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
@@ -238,7 +238,7 @@ struct PendingRequest {
   bool requiresConfirmation;
   String requestId;      // Unique identifier for tracking
 };
-#define FIRMWARE_VERSION 7  // v0.3.7
+#define FIRMWARE_VERSION 8  // v0.3.8
 
 #ifdef WIFI_LoRa_32_V2
 #define HELTEC_BOARD_VERSION 2
@@ -2890,14 +2890,14 @@ void HandleDesktopCommand(uint8_t cmdByte) {
     // Response payload (4 bytes): [node_region, node_community, node_node, gateway_mode]
     // App parses this and syncs UI — board is source of truth.
     case 0x22: {
-      uint8_t payload[4] = {local.region, local.community, local.node, gateway_mode ? 1u : 0u};
-      uint8_t reply[12];
+      // v0.3.8 — reply[13]: header(8) + [region, community, node, gateway_mode, wifi_enabled](5)
+      uint8_t reply[13];
       reply[0] = 0x22; reply[1] = 0x00;
       reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
       reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
-      memcpy(reply + 8, payload, 4);
-      // v0.3.7 — append wifi_enabled byte to settings reply
-      reply[12] = wifi_enabled ? 1 : 0;
+      reply[8] = local.region; reply[9] = local.community; reply[10] = local.node;
+      reply[11] = gateway_mode ? 1u : 0u;
+      reply[12] = wifi_enabled ? 1u : 0u;
       Serial.write(reply, 13);
       bleSend(reply, 13);
       break;
@@ -2942,6 +2942,44 @@ void HandleDesktopCommand(uint8_t cmdByte) {
       reply[8] = wifi_enabled ? 1 : 0;
       Serial.write(reply, 9);
       bleSend(reply, 9);
+      break;
+    }
+
+    // v0.3.8 — CMD_GET_BATTERY (0x26): Read ADC and report battery voltage in mV.
+    // Heltec V3: ADC_CRTL=GPIO37 (low-active enable), BAT_ADC=GPIO1, divider ratio=2.
+    case 0x26: {
+      #if HELTEC_BOARD_VERSION == 3
+        pinMode(37, OUTPUT);
+        digitalWrite(37, LOW);   // enable battery measurement
+        delay(5);
+        int raw = analogRead(1);
+        digitalWrite(37, HIGH);  // disable after reading (saves power)
+        uint16_t mv = (uint16_t)((float)raw / 4095.0f * 3300.0f * 2.0f);
+      #else
+        uint16_t mv = 0; // V2 board: no dedicated battery ADC
+      #endif
+      uint8_t reply[10];
+      reply[0] = 0x26; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      reply[8] = (uint8_t)(mv >> 8);   // high byte
+      reply[9] = (uint8_t)(mv & 0xFF); // low byte
+      Serial.write(reply, 10);
+      bleSend(reply, 10);
+      break;
+    }
+
+    // v0.3.8 — CMD_GET_MAC (0x27): Report the WiFi station MAC address (6 bytes).
+    case 0x27: {
+      uint8_t mac[6] = {0};
+      esp_read_mac(mac, ESP_MAC_WIFI_STA);
+      uint8_t reply[14];
+      reply[0] = 0x27; reply[1] = 0x00;
+      reply[2] = local.region; reply[3] = local.community; reply[4] = local.node;
+      reply[5] = 0xFF; reply[6] = 0xFF; reply[7] = 0xFF;
+      memcpy(reply + 8, mac, 6);
+      Serial.write(reply, 14);
+      bleSend(reply, 14);
       break;
     }
 

@@ -49,6 +49,8 @@ pub const CMD_GET_SETTINGS: u8 = 0x22;         // v0.3.6: Query board live state
 pub const CMD_SET_GATEWAY: u8 = 0x23;          // v0.3.6: Set/persist gateway_mode on board
 pub const CMD_WIFI_TOGGLE: u8 = 0x24;          // v0.3.7: Enable/disable WiFi radio (persists to NVS)
 pub const CMD_ADDR_CONFLICT: u8 = 0x25;        // v0.3.7: Board-initiated: duplicate node address detected
+pub const CMD_GET_BATTERY: u8 = 0x26;          // v0.3.8: Query battery voltage (2-byte u16 mV in payload)
+pub const CMD_GET_MAC: u8 = 0x27;              // v0.3.8: Query board MAC address (6 bytes in payload)
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -119,6 +121,39 @@ pub fn build_wifi_toggle(src: &NodeAddress, enable: bool) -> Vec<u8> {
     let mut packet = build_header(CMD_WIFI_TOGGLE, FLAG_STANDARD, src, &NodeAddress::broadcast());
     packet.push(if enable { 1u8 } else { 0u8 });
     packet
+}
+
+/// Build a GET_BATTERY command (CMD 0x26) — v0.3.8.
+/// Board replies with 2-byte big-endian u16 (battery voltage in mV).
+pub fn build_get_battery(src: &NodeAddress) -> Vec<u8> {
+    build_header(CMD_GET_BATTERY, FLAG_STANDARD, src, &NodeAddress::broadcast())
+}
+
+/// Build a GET_MAC command (CMD 0x27) — v0.3.8.
+/// Board replies with 6 raw MAC address bytes.
+pub fn build_get_mac(src: &NodeAddress) -> Vec<u8> {
+    build_header(CMD_GET_MAC, FLAG_STANDARD, src, &NodeAddress::broadcast())
+}
+
+/// Return the exact total byte count for commands with fixed-size replies.
+/// Returns None for variable-length commands (e.g., CMD_MESSAGE, CMD_GET_FIRMWARE_VERSION).
+/// Used by the serial read loop to advance the accumulator precisely, avoiding
+/// packet-boundary drift when multiple responses arrive in the same read.
+pub fn exact_packet_len(cmd: u8) -> Option<usize> {
+    match cmd {
+        CMD_GET_NODE_ADDR   => Some(8),  // header only
+        CMD_PING            => Some(8),  // header only (ACK)
+        CMD_REQUEST_BALANCE => Some(8),  // header only (ACK)
+        CMD_SET_LORA_PARAMS => Some(8),  // header only (ACK)
+        CMD_ADDR_CONFLICT   => Some(8),  // header only
+        CMD_SET_NODE_ADDRS  => Some(8),  // header only (ACK)
+        CMD_SET_GATEWAY     => Some(9),  // header + 1 byte (gateway_mode)
+        CMD_WIFI_TOGGLE     => Some(9),  // header + 1 byte (wifi_enabled)
+        CMD_GET_SETTINGS    => Some(13), // header + 5 bytes [region, community, node, gw, wifi]
+        CMD_GET_BATTERY     => Some(10), // header + 2 bytes (voltage_mv big-endian)
+        CMD_GET_MAC         => Some(14), // header + 6 bytes (MAC address)
+        _ => None,                       // variable length (0x03 MSG, 0x20 FW version, etc.)
+    }
 }
 
 /// Build a SET_LORA_PARAMS packet (CMD 0x21) — v0.3.3 additive.
@@ -281,6 +316,22 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
                 Some(format!("⚠️ ADDR CONFLICT: {}.{}.{}", payload[0], payload[1], payload[2]))
             } else {
                 Some("⚠️ ADDR CONFLICT".to_string())
+            }
+        }
+        CMD_GET_BATTERY => {
+            if payload.len() >= 2 {
+                let mv = u16::from_be_bytes([payload[0], payload[1]]);
+                Some(format!("🔋 BATTERY: {:.2}V ({}mV)", mv as f32 / 1000.0, mv))
+            } else {
+                Some("🔋 GET_BATTERY".to_string())
+            }
+        }
+        CMD_GET_MAC => {
+            if payload.len() >= 6 {
+                Some(format!("🔑 MAC: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                    payload[0], payload[1], payload[2], payload[3], payload[4], payload[5]))
+            } else {
+                Some("🔑 GET_MAC".to_string())
             }
         }
         _ => None,

@@ -72,6 +72,58 @@
       // Browser may block in some sandboxed envs
     }
   }
+
+  // ── v0.3.8 — Persistent wallet ────────────────────────────────────────────
+  let showSaveModal = $state(false);
+  let saveConfirmPhrase = $state('');
+  let isSavingWallet = $state(false);
+  let saveWalletError = $state<string | null>(null);
+  let walletSaved = $state(false);
+
+  const REQUIRED_PHRASE = 'THIS IS MUCH INSECURE';
+
+  async function openSaveModal() {
+    saveConfirmPhrase = '';
+    saveWalletError = null;
+    showSaveModal = true;
+  }
+
+  async function confirmSaveWallet() {
+    if (saveConfirmPhrase !== REQUIRED_PHRASE) {
+      saveWalletError = `Type exactly: ${REQUIRED_PHRASE}`;
+      return;
+    }
+    if (!wallet.isGenerated) return;
+    isSavingWallet = true;
+    saveWalletError = null;
+    try {
+      await invoke('save_wallet', {
+        walletInfo: {
+          address: wallet.address,
+          publicKeyHex: wallet.publicKeyHex,
+          privateKeyWif: wallet.privateKeyWif,
+        }
+      });
+      walletSaved = true;
+      showSaveModal = false;
+    } catch (e: unknown) {
+      saveWalletError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isSavingWallet = false;
+    }
+  }
+
+  async function deleteSavedWallet() {
+    await invoke('delete_saved_wallet').catch(() => {});
+    walletSaved = false;
+  }
+
+  // On mount: try to load saved wallet (no reactive deps → runs once)
+  $effect(() => {
+    invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>('load_saved_wallet')
+      .then(w => { if (w) { loadWallet(w); walletSaved = true; } })
+      .catch(() => {});
+  });
 </script>
 
 <div style="padding: 24px; max-width: 800px; margin: 0 auto;">
@@ -439,6 +491,116 @@
         💡 <strong style="color: var(--doge-yellow);">Tip:</strong> Each wallet is independent.
         Save your private key (WIF) before generating a new one — RadioDoge never stores keys to disk.
         Much wallet. Very self-custody. Wow.
+      </div>
+
+      <!-- v0.3.8 — Persistent wallet section -->
+      <div style="
+        padding: 14px 16px;
+        background: rgba(255,60,60,0.06);
+        border: 1px solid rgba(255,60,60,0.25);
+        border-radius: 8px;
+        font-size: 0.82rem;
+        line-height: 1.6;
+      ">
+        <p style="margin: 0 0 10px 0; font-weight: 700; color: #ff8080; font-size: 0.88rem;">
+          ⚠️ HOT WALLET STORAGE
+        </p>
+        <p style="margin: 0 0 10px 0; color: var(--doge-muted);">
+          RadioDoge can save your private key to local app storage so it reloads on startup.
+          This is <strong style="color: #ff6060;">NOT encrypted</strong> — anyone with access to this machine can read it.
+          Only use small test amounts. Never store more DOGE than you can afford to lose.
+        </p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          {#if walletSaved}
+            <span style="font-size: 0.78rem; color: var(--doge-neon);">✅ Wallet saved to disk</span>
+            <button
+              onclick={deleteSavedWallet}
+              style="padding: 6px 12px; border: 1px solid rgba(255,60,60,0.4); background: rgba(255,60,60,0.08); color: #ff8080; border-radius: 6px; cursor: pointer; font-size: 0.78rem;"
+            >
+              🗑️ Remove saved wallet
+            </button>
+          {:else}
+            <button
+              onclick={openSaveModal}
+              style="padding: 6px 14px; border: 1px solid rgba(255,60,60,0.5); background: rgba(255,60,60,0.1); color: #ff8080; border-radius: 6px; cursor: pointer; font-size: 0.8rem;"
+            >
+              💾 Remember this wallet (unsafe)
+            </button>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- v0.3.8 — Scary save confirmation modal -->
+  {#if showSaveModal}
+    <div
+      style="
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; padding: 24px;
+      "
+      role="dialog" aria-modal="true" aria-label="Confirm wallet save"
+    >
+      <div style="
+        background: var(--doge-card);
+        border: 2px solid rgba(255,60,60,0.6);
+        border-radius: 16px;
+        padding: 28px;
+        max-width: 480px;
+        width: 100%;
+        box-shadow: 0 0 60px rgba(255,60,60,0.25);
+      ">
+        <h3 style="margin: 0 0 12px 0; color: #ff6060; font-size: 1.1rem;">⚠️ MUCH DANGEROUS — Very Confirm</h3>
+        <p style="margin: 0 0 10px 0; font-size: 0.85rem; color: var(--doge-muted); line-height: 1.6;">
+          Your private key will be saved as <strong style="color:#ff8080;">plain text</strong> in the RadioDoge app data folder.
+          Anyone who can access this machine or the file system can steal your funds.
+        </p>
+        <p style="margin: 0 0 6px 0; font-size: 0.85rem; color: var(--doge-muted);">
+          To confirm, type exactly:
+        </p>
+        <p style="margin: 0 0 12px 0; font-family: var(--font-mono); font-size: 0.9rem; color: #ff6060; font-weight: 700; letter-spacing: 0.04em;">
+          {REQUIRED_PHRASE}
+        </p>
+        <input
+          type="text"
+          placeholder="Type the phrase above..."
+          bind:value={saveConfirmPhrase}
+          style="
+            width: 100%; padding: 10px 14px;
+            background: var(--doge-dark); border: 1px solid rgba(255,60,60,0.4);
+            border-radius: 8px; color: var(--doge-text); font-size: 0.9rem;
+            font-family: var(--font-mono); margin-bottom: 10px;
+            outline: none;
+          "
+        />
+        {#if saveWalletError}
+          <p style="margin: 0 0 10px 0; font-size: 0.78rem; color: #ff6060;">{saveWalletError}</p>
+        {/if}
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button
+            onclick={() => { showSaveModal = false; saveConfirmPhrase = ''; }}
+            style="padding: 8px 18px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-muted); border-radius: 8px; cursor: pointer; font-size: 0.85rem;"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={confirmSaveWallet}
+            disabled={isSavingWallet || saveConfirmPhrase !== REQUIRED_PHRASE}
+            style="
+              padding: 8px 18px;
+              border: 1px solid rgba(255,60,60,0.5);
+              background: rgba(255,60,60,0.15);
+              color: #ff8080;
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 0.85rem;
+              opacity: {isSavingWallet || saveConfirmPhrase !== REQUIRED_PHRASE ? 0.5 : 1};
+            "
+          >
+            {isSavingWallet ? '⏳ Saving…' : '💾 Save Anyway (Much Risky)'}
+          </button>
+        </div>
       </div>
     </div>
   {/if}

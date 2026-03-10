@@ -45,6 +45,10 @@ export const connection = $state({
   addrConflict: false,
   /** v0.3.7 — Recently heard mesh neighbors */
   neighbors: [] as NeighborEntry[],
+  /** v0.3.8 — Battery voltage in mV (null = not yet queried) */
+  batteryMv: null as number | null,
+  /** v0.3.8 — Board MAC address string (e.g. "A0:B1:C2:D3:E4:F5") */
+  boardMac: null as string | null,
 });
 
 /** Update available ports list */
@@ -124,6 +128,8 @@ export function setDisconnected() {
   connection.wifiEnabled = true;
   connection.addrConflict = false;
   connection.neighbors = [];
+  connection.batteryMv = null;
+  connection.boardMac = null;
 }
 
 /** Set error state */
@@ -138,4 +144,14 @@ export function setError(msg: string) {
 /** Update radio statistics */
 export function updateStats(stats: RadioStats) {
   connection.stats = stats;
+}
+
+/** v0.3.8 — Update battery voltage */
+export function setBatteryMv(mv: number | null) {
+  connection.batteryMv = mv;
+}
+
+/** v0.3.8 — Update board MAC address */
+export function setBoardMac(mac: string | null) {
+  connection.boardMac = mac;
 }
