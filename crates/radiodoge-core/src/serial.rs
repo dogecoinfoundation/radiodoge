@@ -470,6 +470,9 @@ impl SerialManager {
                                 // Broadcast to all subscribers
                                 let _ = packet_tx_clone.send(packet.clone());
 
+                                // Save command before packet is moved into callback
+                                let cmd = packet.command;
+
                                 // Invoke the caller-supplied callback (GUI emitter, CLI printer…)
                                 on_packet(packet);
 
@@ -478,7 +481,7 @@ impl SerialManager {
                                 // bytes so back-to-back packets in the accumulator are not lost.
                                 // For variable-length commands (messages, FW version), drain
                                 // what's available up to MAX_SINGLE_PAYLOAD_LEN.
-                                let consumed = radio::exact_packet_len(packet.command)
+                                let consumed = radio::exact_packet_len(cmd)
                                     .unwrap_or_else(|| {
                                         radio::SINGLE_HDR_LEN
                                             + (accumulator.len() - radio::SINGLE_HDR_LEN)
