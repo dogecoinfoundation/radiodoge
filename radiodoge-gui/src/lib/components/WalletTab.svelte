@@ -93,11 +93,17 @@
       saveWalletError = `Type exactly: ${REQUIRED_PHRASE}`;
       return;
     }
-    if (!wallet.info) return;
+    if (!wallet.isGenerated) return;
     isSavingWallet = true;
     saveWalletError = null;
     try {
-      await invoke('save_wallet', { walletInfo: wallet.info });
+      await invoke('save_wallet', {
+        walletInfo: {
+          address: wallet.address,
+          publicKeyHex: wallet.publicKeyHex,
+          privateKeyWif: wallet.privateKeyWif,
+        }
+      });
       walletSaved = true;
       showSaveModal = false;
     } catch (e: unknown) {
@@ -112,12 +118,10 @@
     walletSaved = false;
   }
 
-  // On mount: try to load saved wallet
+  // On mount: try to load saved wallet (no reactive deps → runs once)
   $effect(() => {
     invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>('load_saved_wallet')
-      .then(w => {
-        if (w) { loadWallet(w); walletSaved = true; }
-      })
+      .then(w => { if (w) { loadWallet(w); walletSaved = true; } })
       .catch(() => {});
   });
 </script>
