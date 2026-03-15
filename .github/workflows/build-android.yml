@@ -68,7 +68,7 @@ jobs:
           while [ $attempt -lt $maxAttempts ]; do
             attempt=$((attempt+1))
             echo "Build attempt $attempt / $maxAttempts ..."
-            npm run tauri -- android build --apk --verbose 2>&1 | tee build.log
+            npm run tauri -- android build --apk --debug --verbose 2>&1 | tee build.log
             if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✅ Success on attempt $attempt. APK built!"
               break
@@ -104,6 +104,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: radiodoge-android-apk-v${{ steps.version.outputs.value }}
+          name: radiodoge-android-debug-apk-v${{ steps.version.outputs.value }}
           path: radiodoge-gui/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
