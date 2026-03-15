@@ -1,0 +1,97 @@
+# RadioDoge — Android APK Build Workflow
+# Builds on every push to master and on release — exactly like build-windows.yml
+name: Build Android APK
+on:
+  push:
+  release:
+    types: [created]
+  workflow_dispatch:
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Rust stable + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install frontend dependencies
+        working-directory: radiodoge-gui
+        run: npm install
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Build Android APK (with retry + build.log)
+        working-directory: radiodoge-gui
+        shell: bash
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          maxAttempts=3
+          attempt=0
+          delay=15
+          while [ $attempt -lt $maxAttempts ]; do
+            attempt=$((attempt+1))
+            echo "Build attempt $attempt..."
+            npx tauri android build --release --verbose 2>&1 | tee build.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
+              echo "Success!"
+              break
+            fi
+            if [ $attempt -lt $maxAttempts ]; then
+              echo "Retry in ${delay}s..."
+              sleep $delay
+              delay=$((delay*2))
+            else
+              exit 1
+            fi
+          done
+      - name: Debug APK location + log tail (always runs)
+        if: always()
+        working-directory: radiodoge-gui
+        shell: bash
+        run: |
+          find . -name "*.apk" || echo "no apk"
+          tail -50 build.log 2>/dev/null || echo "no log"
+          ls -la src-tauri/gen/android/app/build/outputs/apk/release/ 2>/dev/null || true
+      - name: Upload build log (for Grok to debug instantly)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-logs-v${{ steps.version.outputs.value }}
+          path: radiodoge-gui/build.log
+          retention-days: 14
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiodoge-android-apk-v${{ steps.version.outputs.value }}
+          path: radiodoge-gui/src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
