@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 
+#[cfg(desktop)]
 mod tray;
 
 use radiodoge_core::{radio, wallet};
@@ -238,6 +239,7 @@ async fn connect_port(
         ConnectionStatusEvent::connected(&port, node_addr, firmware_version),
     );
 
+    #[cfg(desktop)]
     tray::update_tray_status(&app, true, Some(&port));
 
     // Background stats polling every 2 s
@@ -295,6 +297,7 @@ async fn connect_port(
                     }
                     let node_addr = serial_wr.get_node_address().await;
                     let _ = app_wr.emit("connection-status", ConnectionStatusEvent::connected(&port_wr, node_addr, None));
+                    #[cfg(desktop)]
                     tray::update_tray_status(&app_wr, true, Some(&port_wr));
                     backoff = Duration::from_secs(5);
                     log::info!("Auto-reconnect: reconnected to {}", port_wr);
@@ -329,6 +332,7 @@ async fn disconnect_port(
     state.serial.disconnect().await.map_err(|e| e.to_string())?;
     *state.current_port.lock().await = None;
     let _ = app.emit("connection-status", ConnectionStatusEvent::disconnected());
+    #[cfg(desktop)]
     tray::update_tray_status(&app, false, None);
     Ok(())
 }
@@ -918,6 +922,7 @@ pub fn run() {
             save_address_book,
         ])
         .setup(|app| {
+            #[cfg(desktop)]
             tray::setup_tray(app)?;
             log::info!("RadioDoge GUI v0.3.8 started — much mesh, very wow 🐕");
             Ok(())

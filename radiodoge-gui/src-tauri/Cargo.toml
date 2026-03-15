@@ -21,8 +21,8 @@ tauri-build = { version = "2", features = [] }
 # Provides: radio protocol, Dogecoin wallet, serial port management
 radiodoge-core = { workspace = true }
 
-# Tauri 2 — tray icon + PNG image support
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# Tauri 2 — PNG image support (tray-icon added for desktop targets below)
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
 
@@ -49,6 +49,10 @@ hex = "0.4"
 # Error handling
 thiserror = "1"
 anyhow = "1"
+
+# Desktop-only: system tray (not available on Android/iOS)
+[target.'cfg(not(target_os = "android"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 
 # Logging
 log = "0.4"
