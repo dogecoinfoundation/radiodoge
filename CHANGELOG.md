@@ -7,6 +7,140 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.9] — 2026-03-15 — 📱 Android Port + Mobile UI — Much Mobile. Very LoRa. Wow.
+
+> **RadioDoge now runs on Android. Install the debug APK directly from CI artifacts.**
+> Such cross-platform. Very Tauri Mobile. Much mesh. Wow. 🐕📱
+
+### Added
+
+#### Android App (Tauri Mobile)
+- **`build-android.yml`** — GitHub Actions workflow builds a debug APK on every push via `tauri android build --apk --debug`
+- Debug APK is auto-signed by Gradle (installable on any Android 7.0+ / API 24+ device without a Play Store release)
+- APK artifact uploaded as `radiodoge-android-debug-apk-vX.X.X`, retained 30 days
+- Build log always uploaded as artifact for debugging
+
+#### Mobile-Responsive UI
+- **NavBar icon-only mode** — on screens ≤640px wide, tab labels are hidden; all 9 tabs show as icons only, fitting within phone width without clipping
+- **NavBar horizontal scroll** — `overflow-x: auto` + hidden scrollbar as a safety net if icons still overflow
+- **`flex-shrink: 0`** on all tab buttons — buttons never compress on narrow screens
+- **Logo text hidden** on mobile — keeps the bouncing Doge icon, drops the "RadioDoge / WIRELESS P2P" text block
+- **`viewport-fit=cover`** — correct handling of notches and rounded screen corners on modern Android
+- **`user-scalable=no`** — prevents accidental pinch-zoom (appropriate for a native-app WebView)
+
+### Fixed
+
+#### Cargo.toml: `log` and `env_logger` under wrong dependency section
+- **Bug**: A previous edit inserted `[target.'cfg(not(target_os = "android"))'.dependencies]` in the middle of `Cargo.toml`. Because TOML is order-sensitive, `log = "0.4"` and `env_logger = "0.11"` — which appeared after that section header — were silently moved into the target-specific section. On Android builds they were invisible to the compiler, causing 15 `E0433: use of unresolved module or unlinked crate` errors.
+- **Fix**: Moved `log` and `env_logger` back above the target-specific section header, into the main `[dependencies]` table.
+
+### Changed
+
+- Version bumped to `0.3.9` across all crates, `tauri.conf.json`, `package.json`, and app footer.
+
+---
+
+## [0.3.8] — 2026-03-14 — 💾 Persistent Wallet + Battery + Theme — Much Persist. Very Battery. Wow.
+
+> **Wallet survives app restarts. Battery level on screen. Light theme for the purists.**
+> Such persistence. Very power. Much theme. Wow. 🐕
+
+### Added
+
+#### Persistent Wallet
+- **Save wallet to disk** — encrypted wallet file stored in Tauri app data directory
+- **Load wallet on launch** — if a saved wallet exists, it is loaded automatically on startup
+- **Scary confirmation modal** — `<!-- v0.3.8 — Scary save confirmation modal -->` before overwriting with big red warning that private key security is the user's responsibility
+- Hot wallet warning logged at `WARN` level on every save
+
+#### Battery Voltage Display
+- **Dashboard battery card** — polls `CMD_GET_BATTERY` every 15 seconds when connected
+- Shows voltage in mV with a human-readable percentage estimate
+- Graceful fallback: "Connect to a v0.3.8+ board to see this" if the board doesn't respond
+
+#### Board MAC Address
+- **Settings tab** — displays the board's MAC address string (e.g. `A0:B1:C2:D3:E4:F5`)
+- Queried on connect via `CMD_GET_MAC_ADDR`; copy-to-clipboard button included
+
+#### Light/Dark Theme Toggle
+- **Settings tab** — full light theme override via `[data-theme="light"]` CSS variables
+- Persisted to `localStorage`; applied on next launch
+- All brand colors (backgrounds, borders, text, glow effects) have light equivalents
+
+#### Address Book Persistence
+- `address_book.json` stored in Tauri app data directory
+- Entries survive app restarts
+
+### Changed
+
+- Version bumped to `0.3.8` across all crates, `tauri.conf.json`, `package.json`, and app footer.
+
+---
+
+## [0.3.7] — 2026-03-13 — 🕸️ Mesh Neighbors + WiFi Toggle + Address Conflict — Much Mesh. Very Radar. Wow.
+
+> **See who else is on the mesh. Toggle WiFi on the board. Know when there's an address clash.**
+> Such neighbors. Very topology. Much conflict. Wow. 🐕
+
+### Added
+
+#### Mesh Neighbor Tracking
+- **Mesh tab** — live list of recently heard nodes on the LoRa network
+- Each entry shows node address, last-heard timestamp, RSSI, and SNR
+- Auto-refreshed from the serial read loop whenever a valid packet is received from a new source
+
+#### Address Conflict Detection
+- **CMD 0x25** — firmware emits an address-conflict notification when it detects a duplicate node address on the mesh
+- GUI listens for `addr-conflict` Tauri event; sets `addrConflict` flag in the connection store
+- **Auto-switches to Mesh tab** when a conflict is detected so the user sees the warning immediately
+
+#### WiFi Radio Toggle
+- **Settings tab** — enable/disable the board's WiFi radio via a toggle
+- Sends `CMD_SET_WIFI_ENABLED` to the board; board persists the setting in NVS
+- Reflected in the connection store as `wifiEnabled`; toggle shows current board state
+
+#### Address Book UI
+- **Addresses tab** — save and label Dogecoin addresses for quick access in the Send tab
+- Each entry: label, Dogecoin address, optional notes, copy button
+- Stored in memory (persisted to disk in v0.3.8)
+
+### Changed
+
+- Version bumped to `0.3.7` across all crates, `tauri.conf.json`, `package.json`, and app footer.
+
+---
+
+## [0.3.6] — 2026-03-12 — 🌐 Gateway Mode + Board Sync — Much Gateway. Very Sync. Wow.
+
+> **Board is now the source of truth. Gateway daemon runs from the GUI. Much robust.**
+> Such sync. Very gateway. Much daemon. Wow. 🐕
+
+### Added
+
+#### Board Sync
+- **`CMD_GET_SETTINGS` (0x22)** — queried automatically on every successful connect
+- Board replies with current node address and gateway mode flag — board is source of truth, not the GUI's local state
+- `board-sync` Tauri event updates the connection store atomically; NavBar and footer refresh immediately
+- Eliminates the previous bug where the GUI could show a stale address after a reconnect
+
+#### Gateway Mode
+- **Settings tab** — enable/disable gateway mode on the board via toggle
+- Board stores the setting in NVS; GUI reflects it via board-sync on next connect
+- NavBar shows a `🌐 GATEWAY` badge when the board is in gateway mode
+- `setGatewayMode` + `setConfirmedGatewayMode` store functions track pending vs. confirmed state
+
+#### Gateway Daemon
+- **Settings tab** — "▶ Start Daemon" button spawns `radiodoge-cli daemon` as a child process
+- NavBar shows a `▶ Daemon` badge when the daemon is running
+- `gateway-status` Tauri event (`{ online: boolean }`) tracks daemon lifecycle
+- Daemon can be stopped from the GUI; process is cleaned up on app exit
+
+### Changed
+
+- Version bumped to `0.3.6` across all crates, `tauri.conf.json`, `package.json`, and app footer.
+
+---
+
 ## [0.3.5] — 2026-03-08 — ✨ Export Toast + Send Tab Validation — Much Safety. Very Feedback. Wow.
 
 > **Two targeted additions on top of v0.3.4 — zero behavior regressions.

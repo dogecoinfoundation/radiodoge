@@ -4,42 +4,52 @@
 [![Rust](https://img.shields.io/badge/Built%20with-Rust%20🦀-orange)](https://rustlang.org)
 [![Tauri 2](https://img.shields.io/badge/Tauri-v2-blue)](https://tauri.app)
 [![Dogecoin](https://img.shields.io/badge/Powered%20by-Dogecoin-f7d02c?logo=dogecoin)](https://dogecoin.com)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-informational)]()
-[![CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml/badge.svg)](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android-informational)]()
+[![Windows CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml/badge.svg)](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
+[![Android CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-android.yml/badge.svg)](https://github.com/jnowat/RadioDoge/actions/workflows/build-android.yml)
 
 > **Much wireless. Very transaction. Wow.** 🌙
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.5** ✨: Export shows a `💾 Saved to Downloads/radiodoge-debug-….txt` toast after every download. Send tab requires a loaded wallet before allowing broadcast; button tooltip explains exactly what is missing at each step. Builds on all v0.3.4 polish. Much safety. Very feedback. Wow!
+> **v0.3.9** ✨: Android is here! Install the debug APK on any Android 7.0+ device — Pixel, Samsung, whatever you've got. Mobile-responsive UI with icon-only NavBar on phones. Persistent wallet, battery display, light/dark theme, address book, gateway mode, WiFi toggle, mesh neighbor map — all shipped in v0.3.6–v0.3.9. Much mobile. Very LoRa. Wow!
 
 ---
 
-## 🚀 Get the MSI — Two Ways, Both Easy
+## 🚀 Get the App — Windows MSI or Android APK
 
-> **MSI auto-builds on every push — grab it from Actions artifacts instantly, or download a polished build from Releases!**
+> **Builds trigger on every push — grab the MSI or APK from Actions artifacts instantly!**
 
-### ⚡ Option A: Instant Download (Every Push → Actions Artifacts)
+### 🖥️ Windows MSI
 
-No waiting for a tagged release. Every commit to `master` triggers a full MSI build:
+#### ⚡ Option A: Instant Download (Every Push → Actions Artifacts)
 
-1. Go to the [**Actions tab**](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
+1. Go to the [**Windows CI**](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml)
 2. Click the latest **"🐕 Build Windows MSI"** run
-3. Scroll to **Artifacts** at the bottom of the page
-4. Click **`RadioDoge-x.x.x-windows-x64-msi`** → download the `.zip`
-5. Unzip → double-click the `.msi` → done! 🐕
+3. Scroll to **Artifacts** → click **`RadioDoge-x.x.x-windows-x64-msi`** → download the `.zip`
+4. Unzip → double-click the `.msi` → done! 🐕
 
-Artifacts are kept for **30 days** after each build.
-
-### 🏷️ Option B: Tagged Release (Permanent, GitHub Releases Page)
-
-Polished builds with release notes live on the [**Releases page**](https://github.com/jnowat/RadioDoge/releases):
+#### 🏷️ Option B: Tagged Release (Permanent)
 
 1. Go to [Releases](https://github.com/jnowat/RadioDoge/releases)
-2. Download `RadioDoge_x.x.x_x64_en-US.msi`
-3. Install and launch — done! 🐕
+2. Download `RadioDoge_x.x.x_x64_en-US.msi` → install and launch
 
-The MSI automatically attaches to any GitHub Release you create.
+Artifacts kept for **30 days**. MSI auto-attaches to any GitHub Release you create.
+
+---
+
+### 📱 Android APK (Debug — Sideload)
+
+Every push also triggers an Android build. The APK is signed with the Gradle debug key so it installs directly on any Android 7.0+ device.
+
+1. Go to [**Android CI**](https://github.com/jnowat/RadioDoge/actions/workflows/build-android.yml)
+2. Click the latest **"Android (APK)"** run
+3. Scroll to **Artifacts** → click **`radiodoge-android-debug-apk-vx.x.x`** → download the `.zip`
+4. Unzip → copy the `.apk` to your phone
+5. Enable **Settings → Install unknown apps** for your file manager
+6. Tap the `.apk` → Install → done! 🐕
+
+> **Note**: This is a debug build for testing. USB serial to the Heltec via OTG is coming in a future release — the Android app currently covers wallet, history, and UI features.
 
 ---
 
@@ -47,10 +57,11 @@ The MSI automatically attaches to any GitHub Release you create.
 
 - **No internet required** — transactions travel over LoRa radio (up to 15 km range!)
 - **Mesh networking** — packets hop between nodes to reach the nearest gateway
-- **Beautiful GUI** — fun Dogecoin-themed desktop app with confetti, TX/RX live log, with fun Easter egg 🎉
+- **Beautiful GUI** — fun Dogecoin-themed app with confetti, TX/RX live log, and Easter egg 🎉
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
-- **Instant MSI builds** — every push to master compiles a fresh installer, no tag needed
+- **Android app** — installable debug APK built by CI on every push, runs on Android 7.0+
+- **Instant builds** — every push to master compiles a fresh Windows MSI and Android APK
 
 ---
 
@@ -83,16 +94,15 @@ Your PC / Phone
 ## ⚡ Getting Started in 5 Minutes
 
 ### Prerequisites
-- Windows 10/11 (x64)
+- Windows 10/11 (x64) **or** Android 7.0+ device
 - [Heltec ESP32 LoRa V3](https://heltec.org/project/wifi-lora-32-v3/) board
 - USB cable (USB-C)
 - [Node.js 20+](https://nodejs.org) and [Rust](https://rustup.rs) (for development only)
 
-### Option A: Download the MSI (Windows, easiest)
+### Option A: Download the MSI (Windows) or APK (Android)
 
-1. Go to [Actions](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml) for the latest push build, **or** [Releases](https://github.com/jnowat/RadioDoge/releases) for tagged builds
-2. Download `RadioDoge_x.x.x_x64_en-US.msi`
-3. Install and launch — done! 🐕
+- **Windows**: Go to [Windows CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-windows.yml) → latest run → Artifacts → download MSI zip → install
+- **Android**: Go to [Android CI](https://github.com/jnowat/RadioDoge/actions/workflows/build-android.yml) → latest run → Artifacts → download APK zip → sideload
 
 ### Option B: Build from Source
 
@@ -219,7 +229,8 @@ cargo build -p radiodoge-cli --release
 radiodoge/
 ├── Cargo.toml               🆕 Cargo workspace root (all Rust crates)
 ├── .github/workflows/
-│   └── build-windows.yml    Push-triggered MSI builds (every push to master!)
+│   ├── build-windows.yml    Push-triggered MSI builds (every push to master!)
+│   └── build-android.yml    Push-triggered Android APK builds (debug, sideloadable)
 ├── crates/
 │   ├── radiodoge-core/      🆕 Pure Rust shared library (no Tauri, no GUI)
 │   │   └── src/             types, wallet, radio protocol, serial port manager
@@ -258,7 +269,8 @@ The Rust + Tauri 2 GUI is the **primary official client**. It features:
 | Rust Runtime | Tokio (async) |
 | Serial Comms | `serialport` crate |
 | Dogecoin Crypto | `secp256k1` + `sha2` + `ripemd` + `bs58` |
-| CI/CD | GitHub Actions → Windows MSI on every push |
+| Mobile | Tauri Mobile (Android APK via `tauri android build`) |
+| CI/CD | GitHub Actions → Windows MSI + Android APK on every push |
 
 ---
 
@@ -282,15 +294,25 @@ Node addresses use the `Region.Community.Node` format (e.g., `10.0.2`).
 
 ---
 
-## 🏗️ CI/CD — MSI Auto-Builds on Every Push
+## 🏗️ CI/CD — MSI + APK Auto-Builds on Every Push
 
-The GitHub Actions workflow (`.github/workflows/build-windows.yml`) triggers automatically:
+Two GitHub Actions workflows trigger automatically on every push:
+
+### Windows MSI (`.github/workflows/build-windows.yml`)
 
 | Event | What Happens |
 |---|---|
-| **Push to `master`** | Builds MSI → uploads as Actions artifact (download immediately!) |
+| **Push to any branch** | Builds MSI → uploads as Actions artifact (download immediately!) |
 | **GitHub Release created** | Builds MSI → attaches to the release permanently |
-| **Manual dispatch** | Builds MSI → uploads as artifact (handy for debugging) |
+| **Manual dispatch** | Builds MSI → uploads as artifact |
+
+### Android APK (`.github/workflows/build-android.yml`)
+
+| Event | What Happens |
+|---|---|
+| **Push to any branch** | Builds debug APK → uploads as Actions artifact |
+| **GitHub Release created** | Builds debug APK → uploads as artifact |
+| **Manual dispatch** | Builds debug APK → uploads as artifact |
 
 ### Optional: Code Signing (for production)
 
@@ -331,9 +353,9 @@ The bedrock. Everything that makes a production-ready installable app:
 
 ---
 
-### ✅ v0.3.x — Heltec Polish + Real-World UX (Complete)
+### ✅ v0.3.x — Heltec Polish + Real-World UX + Android (Complete)
 
-Rock-solid when you plug in a real Heltec board:
+Rock-solid when you plug in a real Heltec board, now with Android support:
 
 - ✅ Epic Doge-boombox hero image throughout (NavBar, Connect, Dashboard, MSI icon)
 - ✅ Smart USB port detection — CP210x, CH340, CH9102, FTDI, Espressif native flagged `🟢 Heltec`
@@ -353,6 +375,16 @@ Rock-solid when you plug in a real Heltec board:
 - ✅ **Branding fix** — NavBar now consistently shows "RadioDoge" (was "DOGE RADIO")
 - ✅ **Accessibility** — ARIA labels, focus rings, role attributes, live regions
 - ✅ **Easter egg** 🎮 — "such wow" toast (use the ultimate [read "uber-nostalgic"] cheat code!)
+- ✅ **Board sync** — app queries `CMD_GET_SETTINGS` (0x22) on connect; board is source of truth for node address and gateway mode
+- ✅ **Gateway mode** — enable/disable gateway from the app; gateway daemon status badge in NavBar
+- ✅ **WiFi toggle** — enable/disable the board's WiFi radio from Settings
+- ✅ **Mesh neighbor map** — tracks recently heard nodes; address conflict detection (CMD 0x25)
+- ✅ **Address book** — save and label Dogecoin addresses, persisted to `address_book.json`
+- ✅ **Persistent wallet** — save encrypted wallet to disk; reload on next launch
+- ✅ **Battery voltage display** — polls board every 15 s when connected
+- ✅ **Board MAC address** — displayed in Settings tab
+- ✅ **Light/dark theme toggle** — full theme switcher in Settings
+- ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
 
 ---
 
@@ -388,7 +420,8 @@ Bridge RadioDoge with the existing Meshtastic community:
 
 ### 📱 Future Horizons
 
-- 🔜 **Android app via Tauri Mobile** — USB-OTG serial; the Rust core is already platform-agnostic
+- ✅ **Android app via Tauri Mobile** — debug APK ships on every CI push; installable on Android 7.0+ (USB-OTG serial connection to Heltec coming next)
+- 🔜 **Android USB-OTG serial** — connect to Heltec directly from your phone via USB cable
 - 🔜 **iOS** — Bluetooth LE to Heltec via BLE-serial bridge firmware
 - 🔜 **Linux AppImage + macOS .dmg** in CI — Tauri supports these targets already
 - 🔜 **WebAssembly packet inspector** — browser tool to decode RadioDoge packets from hex
