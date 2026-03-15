@@ -87,9 +87,12 @@ jobs:
         working-directory: radiodoge-gui
         shell: bash
         run: |
-          find . -name "*.apk" || echo "no apk"
+          echo "=== APK search ==="
+          find src-tauri/gen/android -name "*.apk" 2>/dev/null || echo "no apk found"
+          echo "=== APK output dirs ==="
+          ls -la src-tauri/gen/android/app/build/outputs/apk/ 2>/dev/null || echo "apk/ dir missing"
+          echo "=== build.log tail ==="
           tail -50 build.log 2>/dev/null || echo "no log"
-          ls -la src-tauri/gen/android/app/build/outputs/apk/release/ 2>/dev/null || true
       - name: Upload build log (for Grok to debug instantly)
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,5 +105,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: radiodoge-android-apk-v${{ steps.version.outputs.value }}
-          path: radiodoge-gui/src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+          path: radiodoge-gui/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
