@@ -385,6 +385,7 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Board MAC address** — displayed in Settings tab
 - ✅ **Light/dark theme toggle** — full theme switcher in Settings
 - ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
+- 🔜 **Android app USB connection** — USB-OTG serial connection to Heltec coming next
 
 ---
 
@@ -420,7 +421,6 @@ Bridge RadioDoge with the existing Meshtastic community:
 
 ### 📱 Future Horizons
 
-- ✅ **Android app via Tauri Mobile** — debug APK ships on every CI push; installable on Android 7.0+ (USB-OTG serial connection to Heltec coming next)
 - 🔜 **Android USB-OTG serial** — connect to Heltec directly from your phone via USB cable
 - 🔜 **iOS** — Bluetooth LE to Heltec via BLE-serial bridge firmware
 - 🔜 **Linux AppImage + macOS .dmg** in CI — Tauri supports these targets already
