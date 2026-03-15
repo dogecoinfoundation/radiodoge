@@ -1,0 +1,109 @@
+# RadioDoge — Android APK Build Workflow
+# Builds on every push to master and on release — exactly like build-windows.yml
+name: Build Android APK
+on:
+  push:
+  release:
+    types: [created]
+  workflow_dispatch:
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Rust stable + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install frontend dependencies
+        working-directory: radiodoge-gui
+        run: npm install
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android NDK + SDK packages
+        shell: bash
+        run: |
+          sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0"
+      - name: Initialize Tauri Android platform
+        working-directory: radiodoge-gui
+        shell: bash
+        run: npm run tauri -- android init --ci
+      - name: Build Android APK (with retry + build.log)
+        working-directory: radiodoge-gui
+        shell: bash
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          maxAttempts=3
+          attempt=0
+          delay=15
+          while [ $attempt -lt $maxAttempts ]; do
+            attempt=$((attempt+1))
+            echo "Build attempt $attempt / $maxAttempts ..."
+            npm run tauri -- android build --apk --debug --verbose 2>&1 | tee build.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
+              echo "✅ Success on attempt $attempt. APK built!"
+              break
+            fi
+            if [ $attempt -lt $maxAttempts ]; then
+              echo "Attempt failed. Retrying in ${delay}s ..."
+              sleep $delay
+              delay=$((delay*2))
+            else
+              echo "All attempts failed."
+              exit 1
+            fi
+          done
+      - name: Debug APK location + log tail (always runs)
+        if: always()
+        working-directory: radiodoge-gui
+        shell: bash
+        run: |
+          echo "=== APK search ==="
+          find src-tauri/gen/android -name "*.apk" 2>/dev/null || echo "no apk found"
+          echo "=== APK output dirs ==="
+          ls -la src-tauri/gen/android/app/build/outputs/apk/ 2>/dev/null || echo "apk/ dir missing"
+          echo "=== build.log tail ==="
+          tail -50 build.log 2>/dev/null || echo "no log"
+      - name: Upload build log (for Grok to debug instantly)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-logs-v${{ steps.version.outputs.value }}
+          path: radiodoge-gui/build.log
+          retention-days: 14
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiodoge-android-debug-apk-v${{ steps.version.outputs.value }}
+          path: radiodoge-gui/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 30

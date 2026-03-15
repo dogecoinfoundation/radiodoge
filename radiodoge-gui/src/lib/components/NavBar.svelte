@@ -42,10 +42,14 @@
     position: sticky;
     top: 0;
     z-index: 100;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   "
 >
   <!-- Logo / Branding -->
   <div
+    class="nav-logo"
     style="
       display: flex;
       align-items: center;
@@ -66,7 +70,7 @@
         filter: drop-shadow(0 0 6px rgba(245, 197, 24, 0.5));
       "
     />
-    <div>
+    <div class="nav-logo-text">
       <div
         style="
           font-weight: 800;
@@ -91,12 +95,14 @@
     {@const isDisabled = tab.id !== 'connect' && tab.id !== 'settings' && tab.id !== 'history' && tab.id !== 'mesh' && tab.id !== 'addrbook' && !connection.isConnected}
     <button
       onclick={() => !isDisabled && onTabChange(tab.id)}
+      class="tab-btn"
       style="
         display: flex;
         align-items: center;
         gap: 6px;
         padding: 8px 14px;
         border: none;
+        flex-shrink: 0;
         background: {isActive ? 'rgba(245, 197, 24, 0.1)' : 'transparent'};
         color: {isActive ? 'var(--doge-yellow)' : isDisabled ? 'var(--doge-subtle)' : 'var(--doge-muted)'};
         border-radius: 8px;
@@ -111,7 +117,7 @@
       title={isDisabled ? 'Connect to Heltec first to unlock this tab' : tab.tooltip}
     >
       <span style="font-size: 1rem; line-height: 1;">{tab.icon}</span>
-      <span style="white-space: nowrap;">{tab.label}</span>
+      <span class="tab-label" style="white-space: nowrap;">{tab.label}</span>
     </button>
   {/each}
 
@@ -186,3 +192,14 @@
     {/if}
   </div>
 </nav>
+
+<style>
+  /* Hide scrollbar on the nav (overflow-x: auto is set inline) */
+  nav::-webkit-scrollbar { display: none; }
+
+  /* On narrow mobile screens: hide tab labels and logo text to fit 9 icon-only tabs */
+  @media (max-width: 640px) {
+    .tab-label    { display: none; }
+    .nav-logo-text { display: none; }
+  }
+</style>

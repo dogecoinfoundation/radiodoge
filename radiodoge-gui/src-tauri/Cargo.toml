@@ -1,6 +1,6 @@
 [package]
 name = "radiodoge-gui"
-version = "0.3.8"
+version = "0.3.9"
 description = "RadioDoge — Wireless P2P Dogecoin Over LoRa (Tauri 2 GUI)"
 authors = ["RadioDoge Contributors"]
 license = "MIT"
@@ -21,8 +21,8 @@ tauri-build = { version = "2", features = [] }
 # Provides: radio protocol, Dogecoin wallet, serial port management
 radiodoge-core = { workspace = true }
 
-# Tauri 2 — tray icon + PNG image support
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# Tauri 2 — PNG image support (tray-icon added for desktop targets below)
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
 
@@ -53,3 +53,7 @@ anyhow = "1"
 # Logging
 log = "0.4"
 env_logger = "0.11"
+
+# Desktop-only: system tray (not available on Android/iOS)
+[target.'cfg(not(target_os = "android"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
