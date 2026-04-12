@@ -56,6 +56,84 @@ jobs:
         working-directory: radiodoge-gui
         shell: bash
         run: npm run tauri -- android init --ci
+
+      # v0.3.10: tauri-plugin-serialplugin uses usb-serial-for-android (hosted on JitPack).
+      # The generated build.gradle.kts only has google() + mavenCentral() by default, so we
+      # inject JitPack into both the buildscript and allprojects repositories blocks.
+      - name: Patch build.gradle.kts — add JitPack repository
+        working-directory: radiodoge-gui
+        shell: bash
+        run: |
+          FILE="src-tauri/gen/android/build.gradle.kts"
+          if [ ! -f "$FILE" ]; then
+            echo "::warning::build.gradle.kts not found at $FILE — skipping JitPack patch"
+          elif grep -q "jitpack.io" "$FILE"; then
+            echo "JitPack already present in $FILE — no patch needed"
+          else
+            python3 - <<'PYEOF'
+import re, sys
+
+path = "src-tauri/gen/android/build.gradle.kts"
+with open(path) as f:
+    content = f.read()
+
+jitpack = '        maven { url = uri("https://jitpack.io") }'
+
+# Insert JitPack after every mavenCentral() that is followed by a closing brace
+# on the next non-empty line.  This covers both buildscript{} and allprojects{}.
+patched = re.sub(
+    r'([ \t]+mavenCentral\(\))([ \t]*\n)([ \t]+\})',
+    lambda m: f'{m.group(1)}{m.group(2)}{jitpack}\n{m.group(3)}',
+    content,
+)
+
+if patched == content:
+    print("WARNING: pattern not found — JitPack may need to be added manually", file=sys.stderr)
+    sys.exit(0)
+
+with open(path, "w") as f:
+    f.write(patched)
+
+print("✅ JitPack added to build.gradle.kts")
+PYEOF
+          fi
+
+      # v0.3.10: ensure the Bluetooth permissions are present in the app manifest
+      # (needed for future Bluetooth BLE scanning; USB permissions are added by the plugin).
+      - name: Patch AndroidManifest.xml — add Bluetooth permissions
+        working-directory: radiodoge-gui
+        shell: bash
+        run: |
+          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::warning::AndroidManifest.xml not found — skipping BT permission patch"
+          elif grep -q "BLUETOOTH_CONNECT" "$MANIFEST"; then
+            echo "Bluetooth permissions already present — no patch needed"
+          else
+            # Insert Bluetooth permissions just before the <application> tag
+            python3 - <<'PYEOF'
+path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+with open(path) as f:
+    content = f.read()
+
+bt_perms = (
+    '    <!-- v0.3.10: Bluetooth BLE scanning (experimental) -->\n'
+    '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n'
+    '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
+    '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />\n'
+    '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
+)
+
+if bt_perms not in content:
+    content = content.replace('<application', bt_perms + '\n    <application', 1)
+    with open(path, "w") as f:
+        f.write(content)
+    print("✅ Bluetooth permissions added to AndroidManifest.xml")
+else:
+    print("Bluetooth permissions already present")
+PYEOF
+          fi
+
       - name: Build Android APK (with retry + build.log)
         working-directory: radiodoge-gui
         shell: bash

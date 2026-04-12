@@ -79,6 +79,38 @@ export interface IncomingPacket {
 
 export type ConnectionStatusType = 'disconnected' | 'connecting' | 'connected' | 'error' | 'reconnecting';
 
+// ── v0.3.10 — Android mobile connection types ─────────────────────────────────
+
+/**
+ * Android connection lifecycle status.
+ * Used by the mobile UI state machine in ConnectionPanel.
+ */
+export type MobileConnectionStatus =
+  | 'idle'        // Nothing happening yet
+  | 'searching'   // Device scan running
+  | 'connecting'  // Port open, handshake in progress
+  | 'connected'   // Board acknowledged — fully ready
+  | 'failed';     // Something went wrong
+
+/**
+ * A physical device discovered by the Android USB/Bluetooth scanner.
+ * Mirrors MobileDeviceInfo in connection-bridge.ts.
+ */
+export interface MobileDeviceInfo {
+  /** OS path or BT address, e.g. "/dev/bus/usb/001/002" */
+  path: string;
+  /** Human-readable label for the device picker */
+  description: string;
+  /** Connection medium */
+  type: 'usb' | 'bluetooth' | 'unknown';
+  /** True if VID/PID matches a known Heltec / ESP32 USB adapter */
+  isLikelyHeltec: boolean;
+  /** USB Vendor ID (undefined for Bluetooth devices) */
+  vid?: number;
+  /** USB Product ID (undefined for Bluetooth devices) */
+  pid?: number;
+}
+
 export interface ConnectionStatusEvent {
   status: ConnectionStatusType;
   port?: string;

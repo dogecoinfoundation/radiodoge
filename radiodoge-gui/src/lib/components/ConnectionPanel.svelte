@@ -1,19 +1,33 @@
 <script lang="ts">
   /**
    * Connection panel — the first tab the user sees.
-   * Handles COM port selection and connecting to the Heltec device.
+   * Handles COM port selection (desktop) and Android USB/BT device picker.
    *
-   * v0.3.0: Uses list_ports_detailed for rich USB device info (CP210x/CH340
-   * detection), auto-selects the most likely Heltec port, adds a Ping button
-   * with latency readout, and shows actionable driver-hint error messages.
+   * v0.3.0:  Uses list_ports_detailed for rich USB device info.
+   * v0.3.10: Android USB serial support via tauri-plugin-serialplugin.
+   *          Connection method tabs (USB / Bluetooth), status indicator badge,
+   *          and platform-aware connect flow via connection-bridge.ts.
    */
 
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-shell';
-  import { connection, setAvailablePorts, setConnecting, setDisconnected, setError } from '$lib/stores/connection.svelte';
+  import {
+    connection,
+    setAvailablePorts,
+    setConnecting,
+    setDisconnected,
+    setError,
+    setMobileSearching,
+    setMobileConnecting,
+    setMobileConnected,
+    setMobileFailed,
+    setMobileIdle,
+  } from '$lib/stores/connection.svelte';
   import SignalBars from './SignalBars.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
-  import { nodeAddressToString, type PortInfo } from '$lib/types';
+  import { nodeAddressToString, type PortInfo, type MobileDeviceInfo } from '$lib/types';
+  import { bridge } from '$lib/device/connection-bridge';
 
   /** Copy text to clipboard and briefly show confirmation. */
   let copiedField = $state<string | null>(null);
@@ -126,6 +140,114 @@
     }
   }
 
+  // ── v0.3.10: Android mobile state ─────────────────────────────────────────
+
+  /** True when running on Android (detected once on mount). */
+  let isAndroidPlatform = $state(false);
+
+  /** Connection method selected in the tab picker. */
+  let mobileConnectTab = $state<'usb' | 'bluetooth'>('usb');
+
+  /** Discovered Android devices (populated by mobileRefresh). */
+  let mobileDevices = $state<MobileDeviceInfo[]>([]);
+
+  /** Path of the device the user has selected in the mobile picker. */
+  let selectedMobileDevice = $state('');
+
+  /** True while the Android device scan is running. */
+  let mobileRefreshing = $state(false);
+
+  /** Firmware version received from the board during Android connect handshake. */
+  let mobileFirmwareVersion = $state<string | null>(null);
+
+  /** Scan for Android USB serial devices and update mobileDevices. */
+  async function mobileRefresh() {
+    mobileRefreshing = true;
+    setMobileSearching(mobileConnectTab);
+    try {
+      const found = await bridge.listDevices();
+      // On Android only show USB devices in USB tab, BT in BT tab.
+      // (On desktop this won't normally be called — handled by refreshPorts.)
+      mobileDevices = found.filter(d =>
+        mobileConnectTab === 'bluetooth' ? d.type === 'bluetooth' : d.type !== 'bluetooth'
+      );
+
+      if (mobileDevices.length > 0) {
+        // Auto-select: Heltec first, then first available
+        const heltec = mobileDevices.find(d => d.isLikelyHeltec);
+        if (!mobileDevices.some(d => d.path === selectedMobileDevice)) {
+          selectedMobileDevice = (heltec ?? mobileDevices[0]).path;
+        }
+      } else {
+        selectedMobileDevice = '';
+      }
+    } catch (e) {
+      console.error('[ConnectionPanel] mobileRefresh error:', e);
+    } finally {
+      mobileRefreshing = false;
+      if (mobileDevices.length === 0) {
+        // Revert status — no devices found, back to idle so user sees normal message
+        setMobileIdle();
+      } else {
+        setMobileIdle();
+      }
+    }
+  }
+
+  /** Connect on Android via the connection bridge. */
+  async function mobileConnect() {
+    if (!selectedMobileDevice) return;
+    setMobileConnecting(mobileConnectTab);
+    mobileFirmwareVersion = null;
+    pingResult = null;
+    try {
+      await bridge.connect(selectedMobileDevice);
+      // "connection-status: connected" event arrives async via mobile_push_bytes
+      // when the board responds to GET_SETTINGS.  The +page.svelte listener calls
+      // setConnected() which drives the main UI — we mirror that into mobile state here.
+      setMobileConnected();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMobileFailed(msg);
+      setError(msg);
+    }
+  }
+
+  /** Disconnect on Android. */
+  async function mobileDisconnect() {
+    pingResult = null;
+    try {
+      await bridge.disconnect();
+    } catch (e) {
+      console.error('[ConnectionPanel] mobileDisconnect error:', e);
+      setDisconnected();
+    }
+    setMobileIdle();
+  }
+
+  /** Send a PING via the Android bridge and display round-trip time. */
+  async function mobilePingDevice() {
+    isPinging = true;
+    pingResult = null;
+    const start = performance.now();
+    try {
+      await bridge.mobilePing();
+      const ms = Math.round(performance.now() - start);
+      pingResult = { success: true, message: `Pong! Device responded in ~${ms} ms 🐕` };
+    } catch (e) {
+      pingResult = { success: false, message: String(e) };
+    } finally {
+      isPinging = false;
+    }
+  }
+
+  // ── v0.3.10: derived helper for the selected mobile device info ────────────
+  const selectedMobileDeviceInfo = $derived(
+    mobileDevices.find(d => d.path === selectedMobileDevice) ?? null
+  );
+
+  // ── Platform detection + event wiring on mount ─────────────────────────────
+
   // Refresh ports on mount
   $effect(() => {
     refreshPorts();
@@ -160,6 +282,43 @@
     !connection.error.includes('driver') &&
     !connection.error.includes('Permission')
   );
+
+  // ── Detect platform once; set up mobile event listeners ───────────────────
+  $effect(() => {
+    let cleanup: (() => void)[] = [];
+
+    (async () => {
+      isAndroidPlatform = await bridge.isAndroid();
+
+      if (isAndroidPlatform) {
+        // Firmware version arrives from Rust as a Tauri event; surface it in the UI
+        const unlisten = await listen<string>('mobile-firmware-version', (ev) => {
+          mobileFirmwareVersion = ev.payload
+            .replace(/^RadioDoge\s+/i, '').trim() || ev.payload;
+          // Also sync into the shared connection store so the NavBar badge works
+          connection.firmwareVersion = mobileFirmwareVersion;
+        });
+        cleanup.push(unlisten);
+
+        // When board sync arrives → mark mobile as connected
+        const unlistenSync = await listen('board-sync', () => {
+          setMobileConnected();
+        });
+        cleanup.push(unlistenSync);
+
+        // Show an in-app toast for incoming DOGE transactions
+        const handler = (e: Event) => {
+          const body = (e as CustomEvent<string>).detail;
+          console.info('[DOGE TX received on mobile]', body);
+          // You could trigger a Svelte toast/notification here if desired
+        };
+        window.addEventListener('radiodoge:doge-tx', handler);
+        cleanup.push(() => window.removeEventListener('radiodoge:doge-tx', handler));
+      }
+    })();
+
+    return () => cleanup.forEach(fn => fn());
+  });
 </script>
 
 <div style="max-width: 620px; margin: 0 auto; padding: 32px 24px;">
@@ -199,7 +358,296 @@
     </p>
   </div>
 
-  <!-- ── Connection card ──────────────────────────────────────────────────── -->
+  <!-- ── Android USB/BT connection card (v0.3.10) ─────────────────────────── -->
+  {#if isAndroidPlatform}
+    <div class="card-doge {connection.isConnected ? 'card-connected' : ''}" style="margin-bottom: 16px;">
+      <h2 style="margin: 0 0 16px 0; font-size: 1.1rem; font-weight: 600; color: var(--doge-text);">
+        📱 Connect to Heltec Device
+      </h2>
+
+      <!-- ── Status indicator badge ──────────────────────────────────────── -->
+      {#if connection.mobileStatusText}
+        <div style="
+          margin-bottom: 14px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          font-size: 0.83rem;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          {connection.mobileStatus === 'connected'
+            ? 'background: rgba(0,255,136,0.08); border: 1px solid rgba(0,255,136,0.3); color: var(--doge-neon);'
+            : connection.mobileStatus === 'failed'
+            ? 'background: rgba(255,68,68,0.08); border: 1px solid rgba(255,68,68,0.3); color: var(--doge-red);'
+            : 'background: rgba(245,197,24,0.07); border: 1px solid rgba(245,197,24,0.2); color: var(--doge-yellow);'}
+        "
+          role="status"
+          aria-live="polite"
+        >
+          {#if connection.mobileStatus === 'searching' || connection.mobileStatus === 'connecting'}
+            <span style="animation: spin-doge 1.2s linear infinite; display: inline-block;">📡</span>
+          {:else if connection.mobileStatus === 'connected'}
+            <span>✅</span>
+          {:else if connection.mobileStatus === 'failed'}
+            <span>❌</span>
+          {/if}
+          {connection.mobileStatusText}
+        </div>
+      {/if}
+
+      <!-- ── Connection method tabs: USB / Bluetooth ─────────────────────── -->
+      {#if !connection.isConnected}
+        <div style="
+          display: flex;
+          gap: 0;
+          border: 1px solid var(--doge-border);
+          border-radius: 8px;
+          overflow: hidden;
+          margin-bottom: 14px;
+        ">
+          {#each [
+            { id: 'usb' as const,       label: '🔌 USB-C',    subtitle: 'CP2102 / CH340' },
+            { id: 'bluetooth' as const, label: '📶 Bluetooth', subtitle: 'Experimental' },
+          ] as tab}
+            <button
+              onclick={() => { mobileConnectTab = tab.id; selectedMobileDevice = ''; mobileDevices = []; setMobileIdle(); }}
+              style="
+                flex: 1;
+                padding: 10px 8px;
+                background: {mobileConnectTab === tab.id ? 'rgba(245,197,24,0.12)' : 'transparent'};
+                border: none;
+                border-right: {tab.id === 'usb' ? '1px solid var(--doge-border)' : 'none'};
+                color: {mobileConnectTab === tab.id ? 'var(--doge-yellow)' : 'var(--doge-muted)'};
+                cursor: pointer;
+                transition: background 0.15s;
+                font-size: 0.85rem;
+                font-weight: {mobileConnectTab === tab.id ? 600 : 400};
+                line-height: 1.4;
+              "
+            >
+              <div>{tab.label}</div>
+              <div style="font-size: 0.65rem; opacity: 0.7; margin-top: 2px;">{tab.subtitle}</div>
+            </button>
+          {/each}
+        </div>
+
+        {#if mobileConnectTab === 'bluetooth'}
+          <div style="
+            padding: 12px 14px;
+            background: rgba(255,140,0,0.06);
+            border: 1px solid rgba(255,140,0,0.2);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--doge-muted);
+            margin-bottom: 12px;
+            line-height: 1.6;
+          ">
+            📶 <strong style="color: var(--doge-orange);">Bluetooth is experimental</strong> — full BLE
+            communication lands in a future release. USB-C is recommended for reliable use.
+            Your Heltec firmware must have BLE serial enabled; see firmware docs for the GATT UUID.
+          </div>
+        {/if}
+
+        <!-- ── Device list ─────────────────────────────────────────────── -->
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <label style="font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+              {mobileConnectTab === 'bluetooth' ? 'Bluetooth Devices' : 'USB Serial Devices'}
+            </label>
+            <button
+              onclick={mobileRefresh}
+              disabled={mobileRefreshing}
+              class="btn-ghost"
+              title="Scan for devices"
+              style="padding: 6px 12px; font-size: 0.78rem;"
+            >
+              {#if mobileRefreshing}
+                <span style="animation: spin-doge 1s linear infinite; display: inline-block;">⟳</span>
+                Scanning…
+              {:else}
+                ⟳ Scan
+              {/if}
+            </button>
+          </div>
+
+          {#if mobileDevices.length === 0 && !mobileRefreshing}
+            <div style="
+              padding: 14px;
+              background: rgba(245,197,24,0.04);
+              border: 1px dashed rgba(245,197,24,0.2);
+              border-radius: 8px;
+              font-size: 0.82rem;
+              color: var(--doge-subtle);
+              text-align: center;
+              line-height: 1.7;
+            ">
+              {#if mobileConnectTab === 'usb'}
+                No USB serial devices found.<br>
+                Plug in the Heltec via USB-C OTG cable, then tap <strong>⟳ Scan</strong>.<br>
+                <span style="font-size: 0.7rem; opacity: 0.75; margin-top: 4px; display: inline-block;">
+                  ⚠️ USB-C is <em>experimental</em> — Android will prompt for USB permission on first connect.
+                </span>
+              {:else}
+                No Bluetooth devices found.<br>
+                Make sure BLE is enabled on the Heltec firmware and the board is powered on.<br>
+                Tap <strong>⟳ Scan</strong> to search again.
+              {/if}
+            </div>
+          {:else if mobileDevices.length > 0}
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              {#each mobileDevices as device}
+                <button
+                  onclick={() => { selectedMobileDevice = device.path; }}
+                  style="
+                    display: flex; align-items: center; gap: 10px;
+                    padding: 10px 12px;
+                    background: {selectedMobileDevice === device.path
+                      ? 'rgba(245,197,24,0.1)' : 'rgba(255,255,255,0.03)'};
+                    border: 1px solid {selectedMobileDevice === device.path
+                      ? 'rgba(245,197,24,0.4)' : 'var(--doge-border)'};
+                    border-radius: 8px; cursor: pointer; text-align: left;
+                    width: 100%; transition: all 0.15s;
+                  "
+                >
+                  <span style="font-size: 1.1rem; flex-shrink: 0;">
+                    {device.isLikelyHeltec ? '🟢' : device.type === 'bluetooth' ? '📶' : '🔵'}
+                  </span>
+                  <div style="min-width: 0; flex: 1;">
+                    <div style="font-size: 0.82rem; font-family: var(--font-mono); color: var(--doge-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                      {device.path}
+                    </div>
+                    <div style="font-size: 0.7rem; color: var(--doge-muted); margin-top: 2px;">
+                      {device.isLikelyHeltec ? '✅ Heltec-compatible USB adapter' : device.description}
+                    </div>
+                  </div>
+                  {#if selectedMobileDevice === device.path}
+                    <span style="color: var(--doge-yellow); flex-shrink: 0;">✓</span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- ── Connect button ────────────────────────────────────────────── -->
+        <button
+          onclick={mobileConnect}
+          disabled={!selectedMobileDevice || connection.mobileStatus === 'connecting'}
+          class="btn-doge"
+          style="width: 100%; padding: 14px; font-size: 1rem;"
+        >
+          {#if connection.mobileStatus === 'connecting'}
+            <DogeSpinner size="sm" message="" />
+            <span style="margin-left: 8px;">Connecting… such patience 🐕</span>
+          {:else if mobileConnectTab === 'bluetooth'}
+            📶 Connect via Bluetooth
+          {:else}
+            🔌 Connect via USB-C
+          {/if}
+        </button>
+
+      {:else}
+        <!-- ── Connected view (Android) ────────────────────────────────── -->
+        <div style="margin-bottom: 4px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h3 style="margin: 0; font-size: 1rem; color: var(--doge-neon);">✅ Connected!</h3>
+              {#if mobileFirmwareVersion ?? connection.firmwareVersion}
+                <span style="
+                  background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3);
+                  border-radius: 12px; padding: 2px 10px;
+                  font-size: 0.72rem; font-family: var(--font-mono); color: var(--doge-neon);
+                ">
+                  {mobileFirmwareVersion ?? connection.firmwareVersion}
+                </span>
+              {/if}
+            </div>
+            <SignalBars rssi={connection.stats?.rssi ?? -120} connected={true} size="md" />
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+            <div>
+              <div class="stat-label">Device</div>
+              <div style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 600; font-size: 0.78rem; word-break: break-all;">
+                {selectedMobileDevice || connection.portName}
+              </div>
+            </div>
+            {#if connection.nodeAddress}
+              <div>
+                <div class="stat-label">Node Address</div>
+                <div style="font-family: var(--font-mono); color: var(--doge-yellow); font-weight: 600;">
+                  {nodeAddressToString(connection.nodeAddress)}
+                </div>
+              </div>
+            {/if}
+            <div>
+              <div class="stat-label">Transport</div>
+              <div style="color: var(--doge-text); font-size: 0.82rem;">
+                {connection.mobileConnectionType === 'bluetooth' ? '📶 Bluetooth' : '🔌 USB-C (OTG)'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onclick={mobilePingDevice}
+            disabled={isPinging}
+            class="btn-ghost"
+            style="width: 100%; padding: 10px; font-size: 0.9rem; margin-bottom: {pingResult ? '10px' : '8px'};"
+          >
+            {#if isPinging}
+              <span style="animation: spin-doge 1s linear infinite; display: inline-block;">📡</span>
+              Pinging…
+            {:else}
+              📡 Ping Device
+            {/if}
+          </button>
+          {#if pingResult}
+            <div style="
+              padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 10px;
+              {pingResult.success
+                ? 'background: rgba(0,255,136,0.07); border: 1px solid rgba(0,255,136,0.25); color: var(--doge-neon);'
+                : 'background: rgba(255,68,68,0.07); border: 1px solid rgba(255,68,68,0.25); color: var(--doge-red);'}
+            ">
+              {pingResult.success ? '✅' : '❌'} {pingResult.message}
+            </div>
+          {/if}
+
+          <button
+            onclick={mobileDisconnect}
+            style="
+              width: 100%;
+              background: rgba(255,68,68,0.1); color: var(--doge-red);
+              border: 1px solid rgba(255,68,68,0.3); border-radius: 12px;
+              padding: 12px; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+            "
+          >
+            🔌 Disconnect
+          </button>
+        </div>
+      {/if}
+
+      <!-- Error (Android) -->
+      {#if connection.error && !connection.isConnected}
+        <div style="
+          margin-top: 10px; padding: 10px 14px;
+          background: rgba(255,68,68,0.08); border: 1px solid rgba(255,68,68,0.3);
+          border-radius: 8px; color: var(--doge-red); font-size: 0.8rem;
+          display: flex; align-items: flex-start; gap: 8px;
+        ">
+          <span style="flex-shrink:0;">❌</span>
+          <span style="flex:1; word-break: break-word; white-space: pre-line;">{connection.error}</span>
+          <button
+            onclick={() => { connection.error = null; }}
+            style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.5;font-size:0.85rem;padding:0;flex-shrink:0;"
+          >✕</button>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- ── Connection card (Desktop) ──────────────────────────────────────────── -->
+  {#if !isAndroidPlatform}
   <div class="card-doge {connection.isConnected ? 'card-connected' : ''}">
     <h2 style="margin: 0 0 20px 0; font-size: 1.1rem; font-weight: 600; color: var(--doge-text);">
       🔌 Connect to Heltec Device
@@ -399,9 +847,10 @@
       </div>
     {/if}
   </div>
+  {/if}<!-- end desktop-only -->
 
-  <!-- ── Connected status card ─────────────────────────────────────────────── -->
-  {#if connection.isConnected}
+  <!-- ── Connected status card (desktop only) ──────────────────────────────── -->
+  {#if !isAndroidPlatform && connection.isConnected}
     <div class="card-doge card-connected" style="margin-top: 16px; animation: slide-up 0.3s ease;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -538,19 +987,24 @@
     </div>
   {/if}
 
-  <!-- ── How it works (disconnected only) ─────────────────────────────────── -->
+  <!-- ── How it works ─────────────────────────────────────────────────────── -->
   {#if !connection.isConnected}
     <div style="margin-top: 32px;">
       <h3 style="color: var(--doge-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px;">
         How it works
       </h3>
       <div style="display: flex; flex-direction: column; gap: 12px;">
-        {#each [
+        {#each (isAndroidPlatform ? [
+          { icon: '1️⃣', text: 'Flash the Heltec firmware (see docs/) and power the board' },
+          { icon: '2️⃣', text: 'Plug the Heltec into your phone via USB-C OTG cable, then tap ⟳ Scan' },
+          { icon: '3️⃣', text: 'Select the device, tap Connect — Android will ask for USB permission' },
+          { icon: '4️⃣', text: 'Generate a Dogecoin wallet in the Wallet tab and send DOGE over LoRa! 🚀' },
+        ] : [
           { icon: '1️⃣', text: 'Flash Heltec firmware (see docs/), connect via USB-C' },
           { icon: '2️⃣', text: 'Select the COM port above (🟢 green = Heltec detected!) and click Connect' },
           { icon: '3️⃣', text: 'Generate a Dogecoin wallet in the Wallet tab' },
           { icon: '4️⃣', text: 'Send DOGE over LoRa radio — no internet needed! 🚀' },
-        ] as step}
+        ]) as step}
           <div style="display: flex; align-items: flex-start; gap: 12px; color: var(--doge-muted); font-size: 0.88rem;">
             <span style="font-size: 1.1rem; flex-shrink: 0;">{step.icon}</span>
             <span>{step.text}</span>
