@@ -452,9 +452,9 @@
         <!-- ── Device list ─────────────────────────────────────────────── -->
         <div style="margin-bottom: 14px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <label style="font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+            <div style="font-size: 0.8rem; color: var(--doge-muted); text-transform: uppercase; letter-spacing: 0.05em;">
               {mobileConnectTab === 'bluetooth' ? 'Bluetooth Devices' : 'USB Serial Devices'}
-            </label>
+            </div>
             <button
               onclick={mobileRefresh}
               disabled={mobileRefreshing}

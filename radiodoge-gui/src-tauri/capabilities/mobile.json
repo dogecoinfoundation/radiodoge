@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
   "description": "RadioDoge Android capabilities — v0.3.10 USB serial + Bluetooth",
-  "platforms": ["android", "ios"],
+  "platforms": ["android", "iOS"],
   "windows": ["main"],
   "permissions": [
     "core:default",
