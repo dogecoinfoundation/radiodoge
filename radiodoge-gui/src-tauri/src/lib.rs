@@ -1100,8 +1100,7 @@ async fn mobile_push_bytes(
 /// Uses the current node address from AppState (synced from board on connect).
 #[tauri::command]
 async fn mobile_build_ping(state: State<'_, AppState>) -> Vec<u8> {
-    let src = state.serial.get_node_address().await
-        .unwrap_or_else(NodeAddress::default_local);
+    let src = state.serial.get_node_address().await;
     radio::build_ping(&src, &NodeAddress::broadcast())
 }
 
@@ -1114,8 +1113,7 @@ async fn mobile_build_ping(state: State<'_, AppState>) -> Vec<u8> {
 /// emits "mobile-firmware-version" and "connection-status: connected".
 #[tauri::command]
 async fn mobile_build_connect_queries(state: State<'_, AppState>) -> Vec<Vec<u8>> {
-    let src = state.serial.get_node_address().await
-        .unwrap_or_else(NodeAddress::default_local);
+    let src = state.serial.get_node_address().await;
     vec![
         radio::build_get_firmware_version(&src),
         radio::build_get_settings(&src),
@@ -1132,8 +1130,7 @@ async fn mobile_build_tx_packets(
     tx: TransactionRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<Vec<u8>>, String> {
-    let src = state.serial.get_node_address().await
-        .unwrap_or_else(NodeAddress::default_local);
+    let src = state.serial.get_node_address().await;
     let dst = NodeAddress::broadcast();
 
     // encode_transaction_payload signature: (to_address, amount_doge, memo)
