@@ -28,7 +28,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { platform } from '@tauri-apps/plugin-os';
 import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-import { SerialPort } from '@s00d/tauri-plugin-serialplugin';
+import { SerialPort } from 'tauri-plugin-serialplugin';
 import type { LoraSettings, TransactionRequest } from '$lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ let sessionUnlistens: UnlistenFn[] = [];
  * List available serial devices.
  *
  * Desktop: proxies through `list_ports_detailed` Rust command.
- * Android: queries USB devices via @s00d/tauri-plugin-serialplugin.
+ * Android: queries USB devices via tauri-plugin-serialplugin.
  */
 export async function listDevices(): Promise<MobileDeviceInfo[]> {
   if (await isAndroid()) {

@@ -32,7 +32,7 @@
     "@tauri-apps/plugin-notification": "^2.2.1",
     "@tauri-apps/plugin-shell": "^2.2.0",
     "@tauri-apps/plugin-os": "^2.0.0",
-    "@s00d/tauri-plugin-serialplugin": "^2.0.0",
+    "tauri-plugin-serialplugin": "^2.0.0",
     "qrcode": "^1.5.4"
   }
 }
