@@ -1099,9 +1099,9 @@ async fn mobile_push_bytes(
 /// Build a raw PING packet for the Android USB bridge to write directly to serial.
 /// Uses the current node address from AppState (synced from board on connect).
 #[tauri::command]
-async fn mobile_build_ping(state: State<'_, AppState>) -> Vec<u8> {
+async fn mobile_build_ping(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
     let src = state.serial.get_node_address().await;
-    radio::build_ping(&src, &NodeAddress::broadcast())
+    Ok(radio::build_ping(&src, &NodeAddress::broadcast()))
 }
 
 /// Build the two-packet connect sequence for the Android USB bridge:
@@ -1112,12 +1112,12 @@ async fn mobile_build_ping(state: State<'_, AppState>) -> Vec<u8> {
 /// When the board replies, `mobile_push_bytes` processes the responses and
 /// emits "mobile-firmware-version" and "connection-status: connected".
 #[tauri::command]
-async fn mobile_build_connect_queries(state: State<'_, AppState>) -> Vec<Vec<u8>> {
+async fn mobile_build_connect_queries(state: State<'_, AppState>) -> Result<Vec<Vec<u8>>, String> {
     let src = state.serial.get_node_address().await;
-    vec![
+    Ok(vec![
         radio::build_get_firmware_version(&src),
         radio::build_get_settings(&src),
-    ]
+    ])
 }
 
 /// Build Dogecoin transaction packet(s) for the Android USB bridge.
