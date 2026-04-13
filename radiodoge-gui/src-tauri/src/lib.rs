@@ -1135,6 +1135,7 @@ async fn mobile_push_bytes(
             bandwidth_khz: lora.bandwidth_khz,
             coding_rate: lora.coding_rate.clone(),
             rssi: rssi_snap,
+            snr: 0.0, // SNR not available over USB serial; BLE path may supply it later
             packets_sent: 0,
             packets_received: count_snap,
         };
