@@ -250,7 +250,7 @@
   <footer class="app-footer">
     <!-- Left: version + connection info (truncates to fit) -->
     <div class="footer-left">
-      <span class="footer-version">RadioDoge v0.3.15</span>
+      <span class="footer-version">RadioDoge v0.3.16</span>
       <span class="footer-sep" aria-hidden="true">|</span>
       {#if connection.isConnected}
         <span class="footer-port">

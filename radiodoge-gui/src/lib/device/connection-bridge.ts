@@ -1,5 +1,5 @@
 /**
- * RadioDoge connection bridge — v0.3.13
+ * RadioDoge connection bridge — v0.3.16
  *
  * Platform-aware abstraction over serial communication:
  *
@@ -305,6 +305,36 @@ export async function connect(devicePath: string, type?: 'usb' | 'bluetooth'): P
   await invoke('connect_port', { port: devicePath });
 }
 
+// ─── Raw-bytes extraction helper ─────────────────────────────────────────────
+//
+// tauri-plugin-serialplugin v2.x delivers the listen() callback payload as a
+// ReadData wrapper object — { data: number[] } — because the Tauri IPC layer
+// JSON-serialises the native byte array into that shape before delivering it
+// to JavaScript.  Earlier builds (and BLE onReceiveData) may deliver a plain
+// number[] or Uint8Array directly.  This helper normalises all three forms so
+// the rest of the bridge can always work with a flat number[].
+
+/**
+ * Extract raw bytes from whatever shape tauri-plugin-serialplugin delivers:
+ *
+ *   number[]           — plain byte array (older plugin builds)
+ *   Uint8Array         — typed array (some native read paths)
+ *   { data: number[] } — ReadData wrapper (standard on Android v2.22.0)
+ *   { data: Uint8Array }
+ *
+ * Returns an empty array for any unrecognised shape.
+ */
+function _extractBytes(raw: unknown): number[] {
+  if (Array.isArray(raw)) return raw as number[];
+  if (raw instanceof Uint8Array) return Array.from(raw);
+  if (raw !== null && typeof raw === 'object') {
+    const inner = (raw as Record<string, unknown>).data;
+    if (Array.isArray(inner)) return inner as number[];
+    if (inner instanceof Uint8Array) return Array.from(inner);
+  }
+  return [];
+}
+
 // ─── Android USB connect ──────────────────────────────────────────────────────
 
 async function _connectAndroid(devicePath: string): Promise<void> {
@@ -321,12 +351,20 @@ async function _connectAndroid(devicePath: string): Promise<void> {
   }
 
   try {
-    const teardown = await activePort.listen((data: Uint8Array | number[]) => {
-      const bytes = Array.isArray(data) ? data : Array.from(data);
-      invoke('mobile_push_bytes', { bytes, rssi: 0 }).catch(
-        (err) => console.warn('[bridge] mobile_push_bytes error:', err),
-      );
-    });
+    // IMPORTANT: tauri-plugin-serialplugin v2.x wraps the raw bytes in a
+    // ReadData object { data: number[] }.  We must unwrap via _extractBytes()
+    // rather than treating `data` directly as an array — doing so would pass
+    // an empty array to mobile_push_bytes and no packets would ever be parsed.
+    const teardown = await activePort.listen(
+      (data: unknown) => {
+        const bytes = _extractBytes(data);
+        if (bytes.length === 0) return;
+        invoke('mobile_push_bytes', { bytes, rssi: 0 }).catch(
+          (err) => console.warn('[bridge] mobile_push_bytes error:', err),
+        );
+      },
+      (err: string) => console.warn('[bridge] USB serial read error:', err),
+    );
     activeListenerTeardown = typeof teardown === 'function' ? teardown : null;
   } catch (e) {
     await _closePort();
@@ -385,8 +423,11 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
     const teardown = await blec.onReceiveData(
       BLE_SERVICE_UUID,
       BLE_NOTIFY_CHAR_UUID,
-      (data: Uint8Array) => {
-        const bytes = Array.from(data);
+      (data: unknown) => {
+        // BLE notifications are typically Uint8Array but use _extractBytes()
+        // for defensive compatibility with any wrapper format.
+        const bytes = _extractBytes(data);
+        if (bytes.length === 0) return;
         invoke('mobile_push_bytes', { bytes, rssi: 0 }).catch(
           (err) => console.warn('[bridge-ble] mobile_push_bytes error:', err),
         );
@@ -522,10 +563,78 @@ function _sleep(ms: number): Promise<void> {
 // ─── Outgoing packet helpers (Android — USB and BLE) ─────────────────────────
 
 /**
- * Send a PING to the board.
+ * Send a PING and wait up to `timeoutMs` ms for the board to echo it back.
+ *
+ * Mirrors the desktop `ping_device` Rust command which blocks until it receives
+ * a CMD_PING (0x02) reply or times out after 500 ms.
+ *
+ * Implementation:
+ *   1. Register a one-shot `radio-packet` listener BEFORE writing the PING
+ *      bytes to avoid a race condition where the PONG arrives before we start
+ *      listening.
+ *   2. Write the PING via USB or BLE.
+ *   3. Resolve true when CMD_PING arrives; resolve false on timeout (500 ms).
+ *
+ * Returns true if a PONG was received, false on timeout.
+ */
+export async function mobilePingWait(timeoutMs = 500): Promise<boolean> {
+  const pingBytes = await invoke<number[]>('mobile_build_ping');
+
+  // Deferred-resolve pattern: create the promise first, capture its resolver.
+  let resolvePong!: (v: boolean) => void;
+  const pong = new Promise<boolean>((r) => { resolvePong = r; });
+  let settled = false;
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+
+  // Start as a no-op; overwritten once listen() resolves (before any event
+  // can fire because events are only dispatched after the current microtask).
+  let unlisten: () => void = () => {};
+
+  const ul = await listen<{ command: number }>('radio-packet', (ev) => {
+    if (!settled && ev.payload.command === 0x02 /* CMD_PING */) {
+      settled = true;
+      if (timerId !== undefined) clearTimeout(timerId);
+      unlisten();
+      resolvePong(true);
+    }
+  });
+  unlisten = ul;
+
+  timerId = setTimeout(() => {
+    if (!settled) {
+      settled = true;
+      unlisten();
+      resolvePong(false);
+    }
+  }, timeoutMs);
+
+  // Send the PING only after the listener is active.
+  try {
+    if (activeBleAddress) {
+      await _bleWrite(new Uint8Array(pingBytes));
+    } else {
+      _requireActivePort();
+      await activePort!.writeBinary(new Uint8Array(pingBytes));
+    }
+  } catch (e) {
+    if (!settled) {
+      settled = true;
+      if (timerId !== undefined) clearTimeout(timerId);
+      unlisten();
+      resolvePong(false);
+    }
+    throw e;
+  }
+
+  return pong;
+}
+
+/**
+ * Send a PING to the board (fire-and-forget, no wait for PONG).
  *
  * Routes through USB serial or BLE write depending on which transport is active.
  * Rust builds the correct byte sequence so there is no protocol code in JS.
+ * Use mobilePingWait() when a round-trip confirmation is needed.
  */
 export async function mobilePing(): Promise<void> {
   const bytes = await invoke<number[]>('mobile_build_ping');
@@ -589,6 +698,7 @@ export const bridge = {
   connect,
   disconnect,
   mobilePing,
+  mobilePingWait,
   mobileSendTransaction,
   mobileSendLoraSettings,
 };

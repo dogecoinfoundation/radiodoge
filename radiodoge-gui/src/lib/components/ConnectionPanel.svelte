@@ -224,15 +224,20 @@
     setMobileIdle();
   }
 
-  /** Send a PING via the Android bridge and display round-trip time. */
+  /** Send a PING via the Android bridge and wait for the board's PONG reply. */
   async function mobilePingDevice() {
     isPinging = true;
     pingResult = null;
     const start = performance.now();
     try {
-      await bridge.mobilePing();
+      // mobilePingWait() registers a radio-packet listener BEFORE writing the
+      // PING bytes, then waits up to 500 ms for CMD_PING (0x02) to come back.
+      // This mirrors the desktop ping_device Rust command exactly.
+      const ok = await bridge.mobilePingWait(500);
       const ms = Math.round(performance.now() - start);
-      pingResult = { success: true, message: `Pong! Device responded in ~${ms} ms 🐕` };
+      pingResult = ok
+        ? { success: true,  message: `Pong! Device responded in ~${ms} ms 🐕` }
+        : { success: false, message: `No response within 500 ms. Is the firmware running?` };
     } catch (e) {
       pingResult = { success: false, message: String(e) };
     } finally {

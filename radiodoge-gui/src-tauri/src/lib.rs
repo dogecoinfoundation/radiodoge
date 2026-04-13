@@ -1012,12 +1012,44 @@ async fn mobile_push_bytes(
             break; // Need more bytes
         }
 
-        let packet = match radio::parse_incoming(&acc, rssi) {
+        // Peek the command byte so we can determine the packet length BEFORE
+        // calling parse_incoming.  This ensures parse_incoming receives exactly
+        // the bytes belonging to one packet, giving a clean payload_hex and
+        // preventing the next packet from being swallowed as spurious payload
+        // when two packets arrive in a single USB read callback.
+        let cmd = acc[0];
+
+        // Determine the byte count for this packet.
+        let packet_len = match radio::exact_packet_len(cmd) {
+            Some(n) => n,
+            None => {
+                // Variable-length packet.  For CMD_GET_FIRMWARE_VERSION the
+                // board sends a null-terminated ASCII string — scan for the
+                // '\0' so a GET_SETTINGS reply that immediately follows is not
+                // consumed as part of the firmware-version payload.
+                // For all other variable-length commands fall back to consuming
+                // the header + all available payload bytes (up to MAX).
+                let after_hdr = acc.get(radio::SINGLE_HDR_LEN..).unwrap_or(&[]);
+                let payload_len = if cmd == radio::CMD_GET_FIRMWARE_VERSION {
+                    after_hdr
+                        .iter()
+                        .position(|&b| b == 0)
+                        .map(|i| i + 1) // include the '\0'
+                        .unwrap_or_else(|| after_hdr.len().min(radio::MAX_SINGLE_PAYLOAD_LEN))
+                } else {
+                    after_hdr.len().min(radio::MAX_SINGLE_PAYLOAD_LEN)
+                };
+                radio::SINGLE_HDR_LEN + payload_len
+            }
+        };
+        let packet_len = packet_len.min(acc.len());
+
+        // Parse exactly the bytes for this packet so payload_hex is clean.
+        let packet = match radio::parse_incoming(&acc[..packet_len], rssi) {
             Some(p) => p,
-            None => break,
+            None => break, // shouldn't happen: len is guaranteed >= SINGLE_HDR_LEN
         };
 
-        let cmd = packet.command;
         packets_extracted += 1;
 
         // Emit to UI (same event as desktop)
@@ -1100,15 +1132,8 @@ async fn mobile_push_bytes(
             _ => {}
         }
 
-        // Advance the accumulator by exactly the right number of bytes.
-        // For fixed-size commands use the precise length; for variable-length
-        // commands consume the header + up to MAX_SINGLE_PAYLOAD_LEN bytes.
-        let consumed = radio::exact_packet_len(cmd).unwrap_or_else(|| {
-            radio::SINGLE_HDR_LEN
-                + (acc.len() - radio::SINGLE_HDR_LEN).min(radio::MAX_SINGLE_PAYLOAD_LEN)
-        });
-        let consumed = consumed.min(acc.len());
-        acc.drain(..consumed);
+        // Advance the accumulator past the consumed packet.
+        acc.drain(..packet_len);
     }
 
     // v0.3.15 — Emit radio-stats-update so the Dashboard packet counters and
@@ -1395,7 +1420,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.15 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.16 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())
