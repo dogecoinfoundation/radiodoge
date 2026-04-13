@@ -8,6 +8,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-focus",
     "shell:allow-open",
-    "notification:default"
+    "notification:default",
+    "serialplugin:default",
+    "os:default"
   ]
 }

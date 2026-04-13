@@ -11,7 +11,7 @@ use anyhow::Result;
 use rand::rngs::OsRng;
 use ripemd::{Digest as RipemdDigest, Ripemd160};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use sha2::{Digest as Sha2Digest, Sha256};
+use sha2::{Digest as _, Sha256};
 
 use crate::types::WalletInfo;
 

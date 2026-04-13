@@ -1,12 +1,15 @@
 //! RadioDoge GUI — Tauri 2 backend library.
 //!
-//! v0.3.8 additions:
-//!   - Bug fixes: fake-neighbor filter, KNOWN_CMDS 0x24/0x25, OOB reply write, drain fix
-//!   - Battery voltage: `query_battery` (CMD_GET_BATTERY 0x26)
-//!   - Board MAC: `query_mac` (CMD_GET_MAC 0x27)
-//!   - Persistent wallet: `save_wallet` / `load_saved_wallet` / `delete_saved_wallet`
-//!   - Address book: `load_address_book` / `save_address_book`
+//! v0.3.10 additions:
+//!   - Android USB serial via tauri-plugin-serialplugin (CP2102/CH340 over USB-OTG)
+//!   - Mobile packet bridge: JS feeds raw bytes → Rust frames packets → emits events
+//!   - New commands: mobile_push_bytes, mobile_build_ping, mobile_build_connect_queries,
+//!     mobile_build_tx_packets, mobile_build_lora_settings_packet,
+//!     mobile_set_connected, mobile_set_disconnected, mobile_clear_accumulator
+//!   - Platform detection via tauri-plugin-os
+//!   - Bluetooth framework in UI (experimental, BLE scan stub)
 //!
+//! v0.3.8: Battery voltage, board MAC, persistent wallet, address book.
 //! v0.3.7: WiFi toggle, mesh neighbors, addr-conflict detection, ping fix.
 //! v0.3.6: board-sync, WIF import, history, gateway mode, USB/BLE toggle.
 //!
@@ -45,8 +48,17 @@ pub struct AppState {
     pub tx_history: Arc<Mutex<Vec<TxHistoryEntry>>>,
     /// v0.3.6 — Background gateway daemon process handle.
     pub gateway_process: Arc<Mutex<Option<tokio::process::Child>>>,
-    /// v0.3.6 — Connection type: "usb" or "ble"
+    /// v0.3.6 — Connection type: "usb", "ble", or "usb-android"
     pub connection_type: Arc<Mutex<String>>,
+    /// v0.3.10 — Raw byte accumulator for the Android USB bridge.
+    /// The JS layer (using tauri-plugin-serialplugin) feeds received bytes here;
+    /// Rust extracts complete packets using the same framing logic as the desktop
+    /// serial read-loop and emits the standard "radio-packet" / "board-sync" events.
+    pub mobile_accumulator: Arc<Mutex<Vec<u8>>>,
+    /// v0.3.10 — Firmware version string cached during the Android USB connect
+    /// sequence. Stored when GET_FIRMWARE_VERSION (0x20) response is received,
+    /// included in the "connection-status: connected" event emitted after GET_SETTINGS.
+    pub mobile_fw_version: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
@@ -59,6 +71,8 @@ impl AppState {
             tx_history: Arc::new(Mutex::new(Vec::new())),
             gateway_process: Arc::new(Mutex::new(None)),
             connection_type: Arc::new(Mutex::new("usb".to_string())),
+            mobile_accumulator: Arc::new(Mutex::new(Vec::new())),
+            mobile_fw_version: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -876,6 +890,291 @@ async fn save_address_book(entries: Vec<serde_json::Value>, app: AppHandle) -> R
     Ok(())
 }
 
+// ─── v0.3.10: Android USB Serial Bridge ──────────────────────────────────────
+//
+// On Android, the `serialport` crate cannot open USB-OTG devices — that
+// requires Android's USB Host API via Java. `tauri-plugin-serialplugin` wraps
+// `usb-serial-for-android` and exposes a JavaScript API the frontend can call.
+//
+// The mobile bridge pattern:
+//   1. JS lists USB devices  → SerialPort.available_ports()
+//   2. JS opens the port     → SerialPort.open()  [triggers Android permission dialog]
+//   3. JS writes bytes       → SerialPort.write()
+//   4. JS receives bytes     → listener callback → calls mobile_push_bytes()
+//   5. Rust frames packets   → same logic as desktop read-loop
+//   6. Rust emits events     → "radio-packet", "board-sync", "connection-status", …
+//
+// All packet-building uses the existing radio:: functions so there is zero
+// protocol duplication between platforms.
+
+/// Notify the Rust backend that an Android USB serial connection is opening.
+/// Sets `current_port` and emits "connection-status: connecting" so the
+/// frontend (which listens to the same event as on desktop) updates its state.
+#[tauri::command]
+async fn mobile_set_connected(
+    device_path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    *state.current_port.lock().await = Some(device_path.clone());
+    *state.connection_type.lock().await = "usb-android".to_string();
+    // Clear any stale firmware version from a previous session
+    *state.mobile_fw_version.lock().await = None;
+    state.mobile_accumulator.lock().await.clear();
+    let _ = app.emit("connection-status", ConnectionStatusEvent::connecting(&device_path));
+    log::info!("mobile_set_connected: {}", device_path);
+    Ok(())
+}
+
+/// Notify the Rust backend that the Android USB connection has been closed.
+/// Clears state and emits "connection-status: disconnected".
+#[tauri::command]
+async fn mobile_set_disconnected(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    *state.current_port.lock().await = None;
+    *state.mobile_fw_version.lock().await = None;
+    state.mobile_accumulator.lock().await.clear();
+    let _ = app.emit("connection-status", ConnectionStatusEvent::disconnected());
+    log::info!("mobile_set_disconnected");
+    Ok(())
+}
+
+/// Discard all buffered bytes in the Android accumulator (called on disconnect).
+#[tauri::command]
+async fn mobile_clear_accumulator(state: State<'_, AppState>) -> Result<(), String> {
+    state.mobile_accumulator.lock().await.clear();
+    Ok(())
+}
+
+/// Feed raw bytes received from the Android USB serial plugin into the packet
+/// accumulator. Extracts complete RadioDoge packets using the same framing
+/// logic as the desktop serial read-loop:
+///
+/// - Unknown command bytes at the front are discarded (sync recovery)
+/// - Fixed-length commands advance by `exact_packet_len()` bytes
+/// - Variable-length commands (messages, FW version) consume up to MAX_SINGLE_PAYLOAD_LEN
+///
+/// For each complete packet this function:
+/// - Emits "radio-packet" to the frontend
+/// - On CMD_GET_FIRMWARE_VERSION: caches the version string
+/// - On CMD_GET_SETTINGS: emits "board-sync" + "connection-status: connected"
+/// - On CMD_DOGE_TX: emits "mobile-doge-tx-received" notification event
+/// - On CMD_ADDR_CONFLICT: emits "addr-conflict"
+///
+/// Returns the number of complete packets extracted (useful for debug logging).
+#[tauri::command]
+async fn mobile_push_bytes(
+    bytes: Vec<u8>,
+    rssi: i16,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<u32, String> {
+    // Same set of known first-byte values as the desktop read-loop
+    const KNOWN_CMDS: &[u8] = &[
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x10, 0x11,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+        0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE,
+    ];
+
+    let mut acc = state.mobile_accumulator.lock().await;
+    acc.extend_from_slice(&bytes);
+
+    let mut packets_extracted: u32 = 0;
+
+    loop {
+        // Discard leading bytes whose first byte is not a known command (sync recovery).
+        // This mirrors the desktop loop's behavior for stale firmware debug output.
+        while !acc.is_empty() && !KNOWN_CMDS.contains(&acc[0]) {
+            acc.remove(0);
+        }
+        if acc.len() < radio::SINGLE_HDR_LEN {
+            break; // Need more bytes
+        }
+
+        let packet = match radio::parse_incoming(&acc, rssi) {
+            Some(p) => p,
+            None => break,
+        };
+
+        let cmd = packet.command;
+        packets_extracted += 1;
+
+        // Emit to UI (same event as desktop)
+        let _ = app.emit("radio-packet", &packet);
+        emit_debug_traffic(
+            &app,
+            "RX",
+            &packet.payload_hex,
+            packet.decoded.as_deref().unwrap_or(""),
+        );
+
+        // Handle specific packet types
+        match cmd {
+            radio::CMD_GET_FIRMWARE_VERSION => {
+                if let Ok(raw) = hex::decode(&packet.payload_hex) {
+                    if let Ok(ver) = String::from_utf8(raw) {
+                        let ver = ver.trim_matches('\0').trim().to_string();
+                        if !ver.is_empty() {
+                            log::info!("Mobile: firmware version = {}", ver);
+                            *state.mobile_fw_version.lock().await = Some(ver.clone());
+                            // Emit so the frontend can display the badge without waiting
+                            let _ = app.emit("mobile-firmware-version", &ver);
+                        }
+                    }
+                }
+            }
+
+            radio::CMD_GET_SETTINGS => {
+                // Payload: [region, community, node, gateway_mode, wifi_enabled(v0.3.7)]
+                if let Ok(payload) = hex::decode(&packet.payload_hex) {
+                    if payload.len() >= 4 {
+                        let addr = NodeAddress::new(payload[0], payload[1], payload[2]);
+                        let gw   = payload[3] != 0;
+                        let wifi = payload.get(4).map(|&b| b != 0).unwrap_or(true);
+
+                        // Only trust the addr if it is not the broadcast address
+                        if addr != NodeAddress::broadcast() {
+                            state.serial.update_node_address(addr.clone()).await;
+                        }
+
+                        let bs = BoardSettings {
+                            node_address: addr.clone(),
+                            gateway_mode: gw,
+                            wifi_enabled: wifi,
+                        };
+                        let _ = app.emit("board-sync", &bs);
+
+                        // Now emit "connected" — we have everything we need.
+                        // Include the firmware version if it arrived before settings.
+                        let fw = state.mobile_fw_version.lock().await.clone();
+                        let port = state.current_port.lock().await.clone()
+                            .unwrap_or_else(|| "usb-android".to_string());
+                        let _ = app.emit(
+                            "connection-status",
+                            ConnectionStatusEvent::connected(&port, addr, fw),
+                        );
+                        log::info!("Mobile: board sync complete, emitting connected");
+                    }
+                }
+            }
+
+            radio::CMD_DOGE_TX => {
+                // No system-tray notification on Android; emit an in-app event instead
+                let body = packet.decoded.clone()
+                    .unwrap_or_else(|| "Incoming Dogecoin transaction over LoRa".to_string());
+                let _ = app.emit(
+                    "mobile-doge-tx-received",
+                    serde_json::json!({ "body": body }),
+                );
+            }
+
+            radio::CMD_ADDR_CONFLICT => {
+                let addr_str = packet.decoded.clone().unwrap_or_else(|| "unknown".to_string());
+                let _ = app.emit("addr-conflict", serde_json::json!({
+                    "detected": true,
+                    "address": addr_str,
+                }));
+            }
+
+            _ => {}
+        }
+
+        // Advance the accumulator by exactly the right number of bytes.
+        // For fixed-size commands use the precise length; for variable-length
+        // commands consume the header + up to MAX_SINGLE_PAYLOAD_LEN bytes.
+        let consumed = radio::exact_packet_len(cmd).unwrap_or_else(|| {
+            radio::SINGLE_HDR_LEN
+                + (acc.len() - radio::SINGLE_HDR_LEN).min(radio::MAX_SINGLE_PAYLOAD_LEN)
+        });
+        let consumed = consumed.min(acc.len());
+        acc.drain(..consumed);
+    }
+
+    Ok(packets_extracted)
+}
+
+/// Build a raw PING packet for the Android USB bridge to write directly to serial.
+/// Uses the current node address from AppState (synced from board on connect).
+#[tauri::command]
+async fn mobile_build_ping(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(radio::build_ping(&src, &NodeAddress::broadcast()))
+}
+
+/// Build the two-packet connect sequence for the Android USB bridge:
+///   [0] GET_FIRMWARE_VERSION (0x20)
+///   [1] GET_SETTINGS         (0x22)
+///
+/// The JS layer sends these in order after opening the serial port.
+/// When the board replies, `mobile_push_bytes` processes the responses and
+/// emits "mobile-firmware-version" and "connection-status: connected".
+#[tauri::command]
+async fn mobile_build_connect_queries(state: State<'_, AppState>) -> Result<Vec<Vec<u8>>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(vec![
+        radio::build_get_firmware_version(&src),
+        radio::build_get_settings(&src),
+    ])
+}
+
+/// Build Dogecoin transaction packet(s) for the Android USB bridge.
+///
+/// Returns a `Vec<Vec<u8>>` — each inner Vec is one complete packet to write
+/// in order. Payloads ≤ 192 bytes produce a single packet; larger payloads
+/// are split into a multipart sequence (identical to the desktop send path).
+#[tauri::command]
+async fn mobile_build_tx_packets(
+    tx: TransactionRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<Vec<u8>>, String> {
+    let src = state.serial.get_node_address().await;
+    let dst = NodeAddress::broadcast();
+
+    // encode_transaction_payload signature: (to_address, amount_doge, memo)
+    let payload = wallet::encode_transaction_payload(
+        &tx.to_address,
+        tx.amount_doge,
+        tx.memo.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
+        Ok(vec![radio::build_doge_tx(&src, &dst, &payload)])
+    } else {
+        Ok(radio::build_multipart_packets(&src, &dst, radio::CMD_DOGE_TX, &payload))
+    }
+}
+
+/// Build a SET_LORA_PARAMS packet (CMD 0x21) for the Android USB bridge.
+/// Mirrors the desktop `update_lora_settings` command but returns raw bytes
+/// instead of writing them to the (non-existent on Android) Rust serial handle.
+#[tauri::command]
+async fn mobile_build_lora_settings_packet(settings: LoraSettings) -> Vec<u8> {
+    let bw_idx: u8 = match settings.bandwidth_khz as u32 {
+        250 => 1,
+        500 => 2,
+        _   => 0, // default 125 kHz
+    };
+    let cr: u8 = match settings.coding_rate.as_str() {
+        "4/6" => 6,
+        "4/7" => 7,
+        "4/8" => 8,
+        _     => 5, // default 4/5
+    };
+    let freq_khz = (settings.frequency_mhz * 1000.0) as u32;
+    radio::build_set_lora_params(
+        &settings.node_address,
+        settings.spreading_factor,
+        bw_idx,
+        cr,
+        freq_khz,
+        settings.power_dbm as u8,
+    )
+}
+
 // ─── App Builder ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -883,10 +1182,18 @@ pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
+        // Core plugins
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        // v0.3.10 — Android USB serial bridge (usb-serial-for-android under the hood)
+        // Also available on desktop (no-op for the primary serial path, but provides
+        // the JS API surface that connection-bridge.ts calls on Android).
+        .plugin(tauri_plugin_serialplugin::init())
+        // v0.3.10 — Platform detection (returns "android", "windows", "linux", …)
+        .plugin(tauri_plugin_os::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
+            // ── Desktop serial (existing) ─────────────────────────────────
             list_ports,
             list_ports_detailed,
             connect_port,
@@ -920,11 +1227,21 @@ pub fn run() {
             delete_saved_wallet,
             load_address_book,
             save_address_book,
+            // ── v0.3.10 Android USB bridge ────────────────────────────────
+            // JS layer handles physical serial I/O; Rust handles framing + protocol
+            mobile_set_connected,
+            mobile_set_disconnected,
+            mobile_clear_accumulator,
+            mobile_push_bytes,
+            mobile_build_ping,
+            mobile_build_connect_queries,
+            mobile_build_tx_packets,
+            mobile_build_lora_settings_packet,
         ])
         .setup(|app| {
             #[cfg(desktop)]
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.8 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.10 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())

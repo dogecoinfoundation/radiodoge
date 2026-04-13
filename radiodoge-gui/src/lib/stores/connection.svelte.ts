@@ -4,9 +4,21 @@
  * This module holds all state related to the serial connection and
  * radio statistics. It's imported directly into components via
  * `import { connection } from '$lib/stores/connection.svelte'`.
+ *
+ * v0.3.10 additions:
+ *   - `mobileStatus` / `mobileStatusText` — simple status indicator for the
+ *     Android UI ("Searching for device…", "Connected", "Connection failed")
+ *   - `mobileConnectionType` — active transport: "usb" | "bluetooth" | null
  */
 
-import type { BoardSettings, ConnectionStatusType, NeighborEntry, NodeAddress, RadioStats } from '$lib/types';
+import type {
+  BoardSettings,
+  ConnectionStatusType,
+  MobileConnectionStatus,
+  NeighborEntry,
+  NodeAddress,
+  RadioStats,
+} from '$lib/types';
 
 /**
  * Reactive connection state — use $state() (Svelte 5 rune).
@@ -49,6 +61,14 @@ export const connection = $state({
   batteryMv: null as number | null,
   /** v0.3.8 — Board MAC address string (e.g. "A0:B1:C2:D3:E4:F5") */
   boardMac: null as string | null,
+  // ── v0.3.10 — Android-specific ─────────────────────────────���────────────
+  /** v0.3.10 — Android connection lifecycle state (Android UI only) */
+  mobileStatus: 'idle' as MobileConnectionStatus,
+  /** v0.3.10 — Human-readable status text shown in the Android status badge.
+   *  One of: "Searching for device…", "Connected", "Connection failed", or "". */
+  mobileStatusText: '' as string,
+  /** v0.3.10 — Active Android transport. "usb" | "bluetooth" | null */
+  mobileConnectionType: null as 'usb' | 'bluetooth' | null,
 });
 
 /** Update available ports list */
@@ -130,6 +150,10 @@ export function setDisconnected() {
   connection.neighbors = [];
   connection.batteryMv = null;
   connection.boardMac = null;
+  // v0.3.10 — reset mobile state on disconnect
+  connection.mobileStatus = 'idle';
+  connection.mobileStatusText = '';
+  connection.mobileConnectionType = null;
 }
 
 /** Set error state */
@@ -154,4 +178,40 @@ export function setBatteryMv(mv: number | null) {
 /** v0.3.8 — Update board MAC address */
 export function setBoardMac(mac: string | null) {
   connection.boardMac = mac;
+}
+
+// ── v0.3.10 — Android mobile status helpers ───────────────────────────────────
+
+/** v0.3.10 — Set Android status to "searching" */
+export function setMobileSearching(transport: 'usb' | 'bluetooth') {
+  connection.mobileStatus = 'searching';
+  connection.mobileStatusText = 'Searching for device…';
+  connection.mobileConnectionType = transport;
+}
+
+/** v0.3.10 — Set Android status to "connecting" (device found, handshake in progress) */
+export function setMobileConnecting(transport: 'usb' | 'bluetooth') {
+  connection.mobileStatus = 'connecting';
+  connection.mobileStatusText = 'Connecting…';
+  connection.mobileConnectionType = transport;
+}
+
+/** v0.3.10 — Mark Android connection as fully established */
+export function setMobileConnected() {
+  connection.mobileStatus = 'connected';
+  connection.mobileStatusText = 'Connected';
+}
+
+/** v0.3.10 — Mark Android connection as failed */
+export function setMobileFailed(reason?: string) {
+  connection.mobileStatus = 'failed';
+  connection.mobileStatusText = 'Connection failed';
+  connection.error = reason ?? 'Connection failed';
+}
+
+/** v0.3.10 — Reset Android mobile status to idle */
+export function setMobileIdle() {
+  connection.mobileStatus = 'idle';
+  connection.mobileStatusText = '';
+  connection.mobileConnectionType = null;
 }

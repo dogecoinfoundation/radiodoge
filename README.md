@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.9** ✨: Android is here! Install the debug APK on any Android 7.0+ device — Pixel, Samsung, whatever you've got. Mobile-responsive UI with icon-only NavBar on phones. Persistent wallet, battery display, light/dark theme, address book, gateway mode, WiFi toggle, mesh neighbor map — all shipped in v0.3.6–v0.3.9. Much mobile. Very LoRa. Wow!
+> **v0.3.10** ✨: Android USB serial is here (experimental)! Connect a Heltec ESP32 to your phone via USB-C OTG cable — the app talks to the board using the same RadioDoge packet protocol as the desktop. Bluetooth BLE framework is wired up too (experimental, full GATT comms coming soon). Much mobile. Very LoRa. Wow!
 
 ---
 
@@ -49,7 +49,7 @@ Every push also triggers an Android build. The APK is signed with the Gradle deb
 5. Enable **Settings → Install unknown apps** for your file manager
 6. Tap the `.apk` → Install → done! 🐕
 
-> **Note**: This is a debug build for testing. USB serial to the Heltec via OTG is coming in a future release — the Android app currently covers wallet, history, and UI features.
+> **⚠️ USB-C connection is experimental and needs testing.** Connect your Heltec to your Android phone via a USB-C OTG cable. The app will ask for USB permission on first use. Serial baud rate is 115,200 — same as desktop. Bluetooth BLE is also present in the UI but GATT comms are a stub pending firmware BLE UUID finalisation.
 
 ---
 
@@ -61,6 +61,7 @@ Every push also triggers an Android build. The APK is signed with the Gradle deb
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
 - **Android app** — installable debug APK built by CI on every push, runs on Android 7.0+
+- **Android USB serial** (experimental) — connect a Heltec via USB-C OTG cable; full protocol support
 - **Instant builds** — every push to master compiles a fresh Windows MSI and Android APK
 
 ---
@@ -220,6 +221,70 @@ cargo build -p radiodoge-cli --release
 | RSSI very low (< −100 dBm) | Move nodes closer, or adjust spreading factor in Settings tab |
 | Transaction not received by gateway | No gateway node in range — add a second Heltec as a relay/gateway |
 | SmartScreen warning on MSI | Click "More info → Run anyway" — unsigned build is normal for dev |
+| Android: no USB devices after Scan | Check OTG cable, ensure USB Host mode is on; grant USB permission when prompted |
+| Android: "USB serial open failed" | Kill any other app that might hold the USB device, or unplug/replug the cable |
+
+---
+
+## 🔌 USB Serial — Windows and Android
+
+The Heltec ESP32 LoRa V3 has a built-in **Silicon Labs CP2102** USB-to-serial chip. This chip exposes a virtual COM port at 115,200 baud and carries the RadioDoge binary packet protocol.
+
+### Windows
+
+1. Install the **CP210x VCP driver** from Silicon Labs if the port isn't auto-detected:
+   `https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers`
+2. Plug the Heltec in via USB-C. Device Manager should show `Silicon Labs CP210x USB to UART Bridge (COM3)` (port number varies).
+3. Open RadioDoge → Connect tab → click **⟳ Refresh**. A 🟢 green badge means the Heltec was identified by VID/PID.
+4. Click **🔌 Connect to Heltec**. The app pings the board, queries firmware version, and syncs the node address.
+
+### Android (USB-C OTG) — ⚠️ Experimental, needs testing
+
+> The USB-C serial connection on Android is functional but **experimental**. Please report any issues on GitHub.
+
+**Requirements:**
+- Android 7.0+ (API 24)
+- A USB-C OTG cable or adapter (both ends USB-C, or USB-A OTG + USB-C adapter for the board side)
+- A Heltec ESP32 LoRa V3 with RadioDoge firmware flashed
+
+**Steps:**
+1. Plug the Heltec into your Android phone via the OTG cable.
+2. Open the RadioDoge APK → Connect tab (shows **📱 Connect to Heltec Device**).
+3. Select the **🔌 USB-C** tab and tap **⟳ Scan** — the device should appear.
+4. Select the device and tap **🔌 Connect via USB-C**.
+5. Android will show a **USB Permission** dialog — tap **OK**.
+6. The status badge changes: *Searching for device…* → *Connecting…* → **Connected** (or *Connection failed* on error).
+7. Once connected, the node address and firmware version appear — the rest of the app (wallet, send, receive, mesh) works identically to desktop.
+
+**How it works under the hood:**
+- The JS layer uses `tauri-plugin-serialplugin` (backed by `usb-serial-for-android`) to open the CP2102 serial port.
+- All received bytes are forwarded to the Rust backend (`mobile_push_bytes`) which applies the same packet framing logic as the desktop read-loop.
+- Outgoing packets are built by the Rust protocol library and written back via the JS serial API — zero protocol duplication.
+
+---
+
+## 📶 Bluetooth — Android (Experimental Framework)
+
+> Full Bluetooth BLE communication is **not yet implemented**. The UI framework is wired up and the Android permissions are declared; this section will expand when firmware BLE GATT support is finalised.
+
+**Current state (v0.3.10):**
+- The Connect tab shows a **📶 Bluetooth** tab on Android.
+- Scanning and device selection UI is functional.
+- Actual BLE GATT connection to the board is a stub — tapping Connect shows a "Bluetooth is experimental" notice.
+
+**Planned BLE architecture:**
+- ESP32 firmware will expose a custom BLE GATT service with a single "serial" characteristic (UUID TBD).
+- `tauri-plugin-bluetooth` (or a thin custom JNI plugin) will handle BLE scan, connect, and characteristic read/write.
+- The same `mobile_push_bytes` Rust entry-point will receive BLE data, so the packet protocol is identical to USB.
+
+**To enable Bluetooth on the ESP32 firmware side (future):**
+```cpp
+// In heltec-firmware.ino — enable BLE serial bridge
+// Uses the Arduino BluetoothSerial library or esp32-nimble
+#include <BluetoothSerial.h>
+BluetoothSerial SerialBT;
+// Forward from HardwareSerial ↔ BluetoothSerial for a transparent bridge
+```
 
 ---
 
@@ -267,9 +332,11 @@ The Rust + Tauri 2 GUI is the **primary official client**. It features:
 | CSS | TailwindCSS v4 (CSS-first config) |
 | Desktop Shell | Tauri 2 |
 | Rust Runtime | Tokio (async) |
-| Serial Comms | `serialport` crate |
+| Serial Comms | `serialport` crate (desktop) + `tauri-plugin-serialplugin` (Android) |
 | Dogecoin Crypto | `secp256k1` + `sha2` + `ripemd` + `bs58` |
 | Mobile | Tauri Mobile (Android APK via `tauri android build`) |
+| Android USB | `tauri-plugin-serialplugin` → `usb-serial-for-android` (JitPack) |
+| Platform detection | `tauri-plugin-os` |
 | CI/CD | GitHub Actions → Windows MSI + Android APK on every push |
 
 ---
@@ -385,7 +452,8 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Board MAC address** — displayed in Settings tab
 - ✅ **Light/dark theme toggle** — full theme switcher in Settings
 - ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
-- 🔜 **Android app USB connection** — USB-OTG serial connection to Heltec coming next
+- ✅ **Android USB serial** (v0.3.10, experimental) — USB-OTG CP2102 serial via `tauri-plugin-serialplugin`; status badge ("Searching for device…" / "Connected" / "Connection failed"); full RadioDoge packet protocol identical to desktop
+- 🔜 **Android Bluetooth BLE** (framework in v0.3.10, full GATT coming) — UI tabs, scan, permissions all wired up; waiting on firmware BLE GATT characteristic UUID to be finalised
 
 ---
 

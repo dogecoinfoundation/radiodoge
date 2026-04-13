@@ -1,6 +1,6 @@
 {
   "name": "radiodoge-gui",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -20,7 +20,7 @@
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tailwindcss/vite": "^4.0.6",
-    "@tauri-apps/cli": "^2.3.0",
+    "@tauri-apps/cli": "^2",
     "svelte": "^5.20.0",
     "svelte-check": "^4.1.4",
     "tailwindcss": "^4.0.6",
@@ -28,9 +28,11 @@
     "vite": "^6.1.1"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.3.0",
+    "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2.2.1",
     "@tauri-apps/plugin-shell": "^2.2.0",
+    "@tauri-apps/plugin-os": "^2.0.0",
+    "tauri-plugin-serialplugin": "^2.0.0",
     "qrcode": "^1.5.4"
   }
 }

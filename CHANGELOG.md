@@ -7,6 +7,51 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.10] — 2026-04-13 — 🔌 ESP32 USB-C Serial + Android USB-OTG — Much Wire. Very Serial. Wow.
+
+> **RadioDoge now talks to ESP32/Heltec boards via USB-C on both desktop and Android.**
+> Such serial. Very OTG. Much mesh. Wow. 🐕🔌
+
+### Added
+
+#### Android USB-C Serial (USB-OTG)
+- **`tauri-plugin-serialplugin = "=2.22.0"`** — Android USB-OTG serial bridge via `usb-serial-for-android` (JitPack); pinned to =2.22.0 because v2.20.0 reads non-existent `baudRate`/`dataBits`/`parity` getter properties on `UsbSerialPort` causing fatal Kotlin compile errors
+- **JitPack CI patch** — `.github/scripts/patch_jitpack.py` injects `maven { url = uri("https://jitpack.io") }` after every `mavenCentral()` in the Tauri-generated `build.gradle.kts`; required because the generated file only lists `google()` + `mavenCentral()`
+- **`tauri-plugin-os = "2"`** — runtime platform detection (`"android"`, `"windows"`, `"linux"`, …) used for USB-OTG vs. desktop serial branching
+
+#### Bluetooth BLE Framework Stub
+- **Bluetooth BLE permission patch** — `.github/scripts/patch_manifest.py` adds `BLUETOOTH`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN`, and `ACCESS_FINE_LOCATION` permissions to the generated `AndroidManifest.xml` ahead of future BLE scanning UI
+- BLE scanning infrastructure stubbed; no active BLE connections in this release
+
+#### Mobile Bridge Architecture
+- **`mobile_push_bytes`** — Tauri command that accepts raw byte arrays from the frontend and forwards them to the Android serial plugin
+- **`mobile_build_ping`** — returns a pre-built ping packet as `Result<Vec<u8>, String>` for the mobile frontend to send via `serialplugin`
+- **`mobile_build_connect_queries`** — returns firmware-version + settings query packets as `Result<Vec<Vec<u8>>, String>`
+- All three async commands return `Result<_, String>` as required by Tauri v2's `AsyncCommandMustReturnResult` trait
+
+#### Platform-Abstracted Serial (`connection-bridge.ts`)
+- `ConnectionBridge` TypeScript abstraction routes serial I/O through `SerialManager` on desktop and `tauri-plugin-serialplugin` on Android
+- Mobile status badge displayed in `ConnectionPanel` when running on Android
+
+#### Updated CI (`build-android.yml`)
+- Complex CI logic extracted to `.github/scripts/` Python files to avoid YAML literal block scalar termination bugs (Python heredoc bodies at column 0 break `run: |`)
+- `@tauri-apps/cli: "^2"` (was `"^2.3.0"`) — CLI version must match Rust `tauri` crate major.minor; mismatch caused Kotlin `onDetach overrides nothing` error
+- Retry loop (3 attempts, 15 s / 30 s backoff) on APK build step
+- Build log always uploaded as artifact
+
+### Fixed
+
+- **`mobile_build_ping` / `mobile_build_connect_queries` E0277** — async `#[tauri::command]` functions taking `State<'_, AppState>` must return `Result<T, E>`; fixed return types from bare `Vec<>` to `Result<Vec<>, String>`
+- **`capabilities/mobile.json` `"ios"` casing** — Tauri requires `"iOS"` (capital S); lowercase caused `unknown variant 'ios'` JSON parse failure breaking both MSI and APK builds
+- **Cargo.toml `log`/`env_logger` section placement** — kept in main `[dependencies]` table, not inside `[target.'cfg(not(target_os = "android"))'.dependencies]`
+
+### Changed
+
+- Version bumped to `0.3.10` across all crates, `package.json`, and app footer.
+- `tauri = "^2.6.2"` floor pin ensures Kotlin runtime is always ≥ 2.6.2 (serialplugin requirement).
+
+---
+
 ## [0.3.9] — 2026-03-15 — 📱 Android Port + Mobile UI — Much Mobile. Very LoRa. Wow.
 
 > **RadioDoge now runs on Android. Install the debug APK directly from CI artifacts.**
