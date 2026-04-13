@@ -7,6 +7,29 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.14] — 2026-04-13 — 📱 Mobile Layout Fix — Much Responsive. Very Clamp. Wow.
+
+> **Android UI is now correctly sized and usable. Bottom status bar no longer overflows. NavBar port badge truncates. Tab touch targets meet Android guidelines. Hero scales with screen.**
+
+### Fixed
+
+#### Android layout (all were regressions from hardcoded desktop sizes)
+- **Bottom status bar overflow** — was `height: 28px` with fixed `gap: 16px` and 7+ items; on a 360dp phone the total content width exceeded the viewport by 3–4×. Redesigned as a two-group flex layout: `.footer-left` takes all available space with `min-width: 0` so `.footer-port` can ellipsis-truncate long device paths (`/dev/bus/usb/001/002 · 1.1.1` → `🟢 /dev/bus/usb/...`); `.footer-right` holds the debug button and the "such decentralize" slogan, which is hidden via `@media (max-width: 520px)`.
+- **NavBar port badge width** — `white-space: nowrap` with no `max-width` made the connected badge push tab buttons off-screen to the left. Added `max-width: clamp(72px, 22vw, 200px); overflow: hidden; text-overflow: ellipsis;` so the badge truncates at 22% of viewport width.
+- **Tab touch targets** — tab buttons had only `8px 14px` padding in a 56px nav, giving ~40px tap height. Added `min-height: 44px` via `:global(.tab-btn)` to meet the Android 48dp touch-target guideline.
+- **Hero image fixed size** — `width="180" height="180"` was a fixed 180px on all screens. Replaced with `width: clamp(80px, 28vw, 180px); height: auto;` so it scales to 28% of the viewport on phones (≈101px on a 360dp phone) without clipping.
+- **Hero section margins** — `margin-bottom: 40px` and fixed inner padding reduced to `clamp()` variants so the connect card is visible without scrolling on short phones.
+
+### Changed
+- Root shell uses `height: 100svh` (small viewport height) with `100vh` fallback — semantically correct for full-screen Tauri Android WebView.
+- `app-main` gets `-webkit-overflow-scrolling: touch` for momentum scrolling on Android.
+- Footer `padding-bottom` uses `max(3px, env(safe-area-inset-bottom))` for home-indicator clearance on edge-to-edge devices.
+- BLE empty-state message improved: "Board advertises as 'RadioDoge-X.X.X' (Nordic UART Service)" replaces the generic "make sure BLE is enabled" note.
+- Stats display compacted to `↑N ↓N` (removed "sent"/"received" labels) to fit the narrow footer.
+- Version bumped to `0.3.14` across all crates, `package.json`, `tauri.conf.json`, and app footer.
+
+---
+
 ## [0.3.13] — 2026-04-13 — 📶 BLE UUID Alignment + Disconnect Fix — Much NUS. Very GATT. Wow.
 
 > **BLE now connects and exchanges data correctly. UUIDs aligned to Nordic UART Service. Unexpected disconnects reset UI. "Experimental" labels removed.**
