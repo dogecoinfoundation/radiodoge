@@ -217,18 +217,12 @@
 {/if}
 
 <!-- App shell -->
-<div style="
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: var(--doge-dark);
-  overflow: hidden;
-">
+<div class="app-shell">
   <!-- Navigation bar (sticky top) -->
   <NavBar {activeTab} onTabChange={handleTabChange} />
 
   <!-- Tab content area (scrollable) -->
-  <main style="flex: 1; overflow-y: auto; overflow-x: hidden;">
+  <main class="app-main">
     {#if activeTab === 'connect'}
       <ConnectionPanel />
     {:else if activeTab === 'dashboard'}
@@ -252,55 +246,146 @@
     {/if}
   </main>
 
-  <!-- Status bar (bottom) -->
-  <footer style="
-    height: 28px;
-    background: #080808;
-    border-top: 1px solid var(--doge-border);
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    gap: 16px;
-    font-size: 0.7rem;
-    color: var(--doge-subtle);
-    flex-shrink: 0;
-  ">
-    <span>RadioDoge v0.3.13</span>
-    <span>|</span>
-    {#if connection.isConnected}
-      <span style="color: var(--doge-neon);">
-        🟢 {connection.portName} — Node {connection.nodeAddress?.region ?? '?'}.{connection.nodeAddress?.community ?? '?'}.{connection.nodeAddress?.node ?? '?'}
-      </span>
-      <span>|</span>
-      <span>
-        ↑ {connection.stats?.packetsSent ?? 0} sent
-      </span>
-      <span>
-        ↓ {connection.stats?.packetsReceived ?? 0} received
-      </span>
-    {:else}
-      <span>🔴 Not connected</span>
-    {/if}
-    <span style="flex: 1;"></span>
-    <button
-      onclick={toggleDebugConsole}
-      title="Toggle Debug Console (Ctrl+Shift+D)"
-      style="
-        background: {debugVisible ? 'rgba(245, 197, 24, 0.15)' : 'transparent'};
-        border: 1px solid {debugVisible ? 'var(--doge-yellow)' : 'transparent'};
-        border-radius: 4px;
-        color: {debugVisible ? 'var(--doge-yellow)' : 'var(--doge-subtle)'};
-        cursor: pointer;
-        font-size: 0.68rem;
-        padding: 1px 6px;
-        font-family: var(--font-mono);
-        transition: all 0.15s;
-      "
-    >
-      🐛
-    </button>
-    <span style="color: var(--doge-yellow); font-style: italic;">
-      such decentralize. very LoRa. wow 🐕
-    </span>
+  <!-- Status bar (bottom) — responsive, truncates long device paths -->
+  <footer class="app-footer">
+    <!-- Left: version + connection info (truncates to fit) -->
+    <div class="footer-left">
+      <span class="footer-version">RadioDoge v0.3.14</span>
+      <span class="footer-sep" aria-hidden="true">|</span>
+      {#if connection.isConnected}
+        <span class="footer-port">
+          🟢 {connection.portName}{connection.nodeAddress != null
+            ? ` · ${connection.nodeAddress.region}.${connection.nodeAddress.community}.${connection.nodeAddress.node}`
+            : ''}
+        </span>
+        <span class="footer-stats">↑{connection.stats?.packetsSent ?? 0} ↓{connection.stats?.packetsReceived ?? 0}</span>
+      {:else}
+        <span class="footer-disconnected">🔴 Not connected</span>
+      {/if}
+    </div>
+    <!-- Right: debug toggle + slogan (slogan hidden on narrow screens) -->
+    <div class="footer-right">
+      <button
+        onclick={toggleDebugConsole}
+        title="Toggle Debug Console (Ctrl+Shift+D)"
+        style="
+          background: {debugVisible ? 'rgba(245, 197, 24, 0.15)' : 'transparent'};
+          border: 1px solid {debugVisible ? 'var(--doge-yellow)' : 'transparent'};
+          border-radius: 4px;
+          color: {debugVisible ? 'var(--doge-yellow)' : 'var(--doge-subtle)'};
+          cursor: pointer;
+          font-size: 0.68rem;
+          padding: 2px 7px;
+          font-family: var(--font-mono);
+          transition: all 0.15s;
+          flex-shrink: 0;
+        "
+      >
+        🐛
+      </button>
+      <span class="footer-slogan">such decentralize. wow 🐕</span>
+    </div>
   </footer>
 </div>
+
+<style>
+  /* ── App shell ───────────────────────────────────────────────────────────── */
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    /* 100svh = small viewport height: accounts for dynamic browser chrome on
+       mobile while falling back to 100vh on older engines. Tauri Android fills
+       the full window so both values are equivalent, but svh is explicit. */
+    height: 100vh;
+    height: 100svh;
+    background: var(--doge-dark);
+    overflow: hidden;
+  }
+
+  .app-main {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Ensure -webkit-overflow-scrolling: touch for smooth inertia on Android */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Bottom status bar ───────────────────────────────────────────────────── */
+  .app-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 28px;
+    height: auto;
+    background: #080808;
+    border-top: 1px solid var(--doge-border);
+    padding: 3px clamp(8px, 3vw, 16px);
+    padding-bottom: max(3px, env(safe-area-inset-bottom, 0px));
+    gap: clamp(4px, 1.5vw, 8px);
+    font-size: clamp(0.6rem, 1.8vw, 0.7rem);
+    color: var(--doge-subtle);
+    flex-shrink: 0;
+    overflow: hidden; /* never let footer grow and push content out */
+  }
+
+  /* Left group takes all available space; overflowing text gets ellipsis */
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 1.5vw, 8px);
+    flex: 1 1 0;
+    min-width: 0; /* critical: allows flex children to shrink below content size */
+    overflow: hidden;
+  }
+
+  .footer-version {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .footer-sep {
+    flex-shrink: 0;
+    opacity: 0.4;
+  }
+
+  /* The device path span — this is the one that must truncate */
+  .footer-port {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 0;
+    color: var(--doge-neon);
+  }
+
+  .footer-stats {
+    white-space: nowrap;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .footer-disconnected {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Right group: debug button + slogan — shrinks but never overflows left */
+  .footer-right {
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 1.5vw, 8px);
+    flex-shrink: 0;
+    margin-left: clamp(4px, 1.5vw, 8px);
+  }
+
+  .footer-slogan {
+    white-space: nowrap;
+    color: var(--doge-yellow);
+    font-style: italic;
+  }
+
+  /* Hide slogan on phones narrower than 520px — it's just flavour text */
+  @media (max-width: 520px) {
+    .footer-slogan { display: none; }
+  }
+</style>

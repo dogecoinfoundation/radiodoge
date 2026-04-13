@@ -320,12 +320,12 @@
   });
 </script>
 
-<div style="max-width: 620px; margin: 0 auto; padding: clamp(16px, 4vw, 32px) clamp(12px, 4vw, 24px);">
+<div style="max-width: 620px; margin: 0 auto; padding: clamp(12px, 3.5vw, 32px) clamp(12px, 4vw, 24px);">
 
   <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
-  <div style="text-align: center; margin-bottom: 40px;">
+  <div style="text-align: center; margin-bottom: clamp(20px, 5vw, 40px);">
     <div style="
-      margin-bottom: 20px;
+      margin-bottom: clamp(12px, 3vw, 20px);
       display: inline-block;
       animation: bounce-doge 3s ease-in-out infinite;
       filter: drop-shadow(0 0 24px rgba(245, 197, 24, 0.45));
@@ -333,26 +333,29 @@
       <img
         src="/doge-radio.png"
         alt="Doge holding a boombox radio with glowing Dogecoins"
-        width="180"
-        height="180"
-        style="border-radius: 24px; display: block;"
+        style="
+          border-radius: 24px;
+          display: block;
+          width: clamp(80px, 28vw, 180px);
+          height: auto;
+        "
       />
     </div>
     <h1 style="
-      font-size: 2rem;
+      font-size: clamp(1.4rem, 5vw, 2rem);
       font-weight: 800;
       background: linear-gradient(135deg, var(--doge-yellow), var(--doge-orange));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      margin: 0 0 8px 0;
+      margin: 0 0 6px 0;
     ">
       RadioDoge
     </h1>
-    <p style="color: var(--doge-muted); margin: 0; font-size: 0.95rem;">
+    <p style="color: var(--doge-muted); margin: 0; font-size: clamp(0.8rem, 2.5vw, 0.95rem);">
       Wireless P2P Dogecoin — no internet required 🌐✖️
     </p>
-    <p style="color: var(--doge-subtle); margin: 6px 0 0 0; font-size: 0.78rem; font-style: italic;">
+    <p style="color: var(--doge-subtle); margin: 4px 0 0 0; font-size: clamp(0.68rem, 2vw, 0.78rem); font-style: italic;">
       Much radio. Very LoRa. Such decentralize. Wow. 🐕🌙
     </p>
   </div>
@@ -489,8 +492,11 @@
                 </span>
               {:else}
                 No Bluetooth devices found.<br>
-                Make sure BLE is enabled on the Heltec firmware and the board is powered on.<br>
-                Tap <strong>⟳ Scan</strong> to search again.
+                Make sure the Heltec is <strong>powered on</strong>, BLE is enabled
+                in firmware, and the board is within ~10 m.<br>
+                <span style="font-size: 0.7rem; opacity: 0.75; margin-top: 4px; display: inline-block;">
+                  Board advertises as "RadioDoge-X.X.X" (Nordic UART Service).
+                </span>
               {/if}
             </div>
           {:else if mobileDevices.length > 0}

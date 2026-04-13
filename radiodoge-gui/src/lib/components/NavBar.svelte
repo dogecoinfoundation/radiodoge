@@ -128,18 +128,7 @@
   <div style="display: flex; align-items: center; gap: 10px; margin-left: 8px;">
     {#if connection.isConnected}
       <SignalBars rssi={connection.stats?.rssi ?? -120} connected={true} size="sm" />
-      <span
-        style="
-          background: rgba(0, 255, 136, 0.1);
-          color: var(--doge-neon);
-          border: 1px solid rgba(0, 255, 136, 0.3);
-          border-radius: 20px;
-          padding: 3px 10px;
-          font-size: 0.72rem;
-          font-weight: 600;
-          white-space: nowrap;
-        "
-      >
+      <span class="nav-port-badge">
         {connection.connectionType === 'ble' ? '📶' : '🟢'} {connection.portName}
       </span>
       {#if connection.gatewayMode}
@@ -199,7 +188,29 @@
 
   /* On narrow mobile screens: hide tab labels and logo text to fit 9 icon-only tabs */
   @media (max-width: 640px) {
-    .tab-label    { display: none; }
+    .tab-label     { display: none; }
     .nav-logo-text { display: none; }
+  }
+
+  /* Tab buttons: minimum 44px touch target height (Android a11y guideline) */
+  :global(.tab-btn) {
+    min-height: 44px;
+  }
+
+  /* Port name badge: truncate long paths (/dev/bus/usb/001/002, AA:BB:CC:DD:EE:FF) */
+  .nav-port-badge {
+    background: rgba(0, 255, 136, 0.1);
+    color: var(--doge-neon);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    /* Truncation: cap at 22 chars wide, ellipsis for anything longer */
+    max-width: clamp(72px, 22vw, 200px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
   }
 </style>
