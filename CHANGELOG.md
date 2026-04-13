@@ -7,6 +7,32 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.13] — 2026-04-13 — 📶 BLE UUID Alignment + Disconnect Fix — Much NUS. Very GATT. Wow.
+
+> **BLE now connects and exchanges data correctly. UUIDs aligned to Nordic UART Service. Unexpected disconnects reset UI. "Experimental" labels removed.**
+> Such Nordic. Very UUID. Much connect. Wow. 🐕📶
+
+### Fixed
+
+#### BLE GATT UUIDs (blocker — BLE was completely non-functional)
+- **Placeholder UUIDs replaced with Nordic UART Service (NUS) UUIDs** in `connection-bridge.ts`:
+  - `BLE_SERVICE_UUID    = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'`
+  - `BLE_WRITE_CHAR_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'` (NUS RX — host writes)
+  - `BLE_NOTIFY_CHAR_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'` (NUS TX — board notifies)
+- The firmware (`heltec-firmware-v3/heltec-firmware.ino`) already implements NUS correctly; the GUI now uses matching UUIDs. BLE scan will find boards immediately; characteristic reads/writes and notifications will work.
+
+#### Unexpected BLE Disconnect
+- **`setDisconnected()` now called in the blec `onDisconnect` callback** — if the board drops the BLE connection unexpectedly, `activeBleAddress` is cleared and the global `connection.isConnected` becomes `false` immediately. Previously the UI stayed stuck showing "Connected" with no way to reconnect.
+
+### Changed
+
+- **Firmware BLE comment updated** in `heltec-firmware-v3/heltec-firmware.ino` to document v0.3.13 UUID alignment.
+- **"USB-C is experimental"** warning removed from the empty-state device list message — USB-C OTG is stable.
+- **Mobile layout**: outer padding now uses `clamp()` so the connect card uses full width on small phone screens without clipping on tablets.
+- Version bumped to `0.3.13` across all crates, `package.json`, `tauri.conf.json`, and app footer.
+
+---
+
 ## [0.3.12] — 2026-04-13 — 🔌 Global State Sync Fix — Much Connect. Very isConnected. Wow.
 
 > **Critical bug fix: `connection.isConnected` now becomes `true` immediately after USB or BLE connects, so the Disconnect button appears and all isConnected-gated UI unlocks.**
