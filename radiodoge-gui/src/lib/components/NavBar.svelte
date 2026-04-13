@@ -36,8 +36,8 @@
     align-items: center;
     background: #0D0D0D;
     border-bottom: 1px solid var(--doge-border);
-    padding: 0 16px;
-    height: 56px;
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    height: calc(56px + env(safe-area-inset-top, 0px));
     gap: 4px;
     position: sticky;
     top: 0;
@@ -192,9 +192,11 @@
     .nav-logo-text { display: none; }
   }
 
-  /* Tab buttons: minimum 44px touch target height (Android a11y guideline) */
+  /* Tab buttons: minimum 48px touch target height (Android a11y guideline) */
   :global(.tab-btn) {
-    min-height: 44px;
+    min-height: 48px;
+    touch-action: manipulation; /* suppress 300 ms tap delay on Android WebView */
+    cursor: pointer;
   }
 
   /* Port name badge: truncate long paths (/dev/bus/usb/001/002, AA:BB:CC:DD:EE:FF) */
