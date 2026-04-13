@@ -320,7 +320,7 @@
   });
 </script>
 
-<div style="max-width: 620px; margin: 0 auto; padding: 32px 24px;">
+<div style="max-width: 620px; margin: 0 auto; padding: clamp(16px, 4vw, 32px) clamp(12px, 4vw, 24px);">
 
   <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
   <div style="text-align: center; margin-bottom: 40px;">
@@ -485,7 +485,7 @@
                 No USB serial devices found.<br>
                 Plug in the Heltec via USB-C OTG cable, then tap <strong>⟳ Scan</strong>.<br>
                 <span style="font-size: 0.7rem; opacity: 0.75; margin-top: 4px; display: inline-block;">
-                  ⚠️ USB-C is <em>experimental</em> — Android will prompt for USB permission on first connect.
+                  Android will prompt for USB permission on first connect.
                 </span>
               {:else}
                 No Bluetooth devices found.<br>

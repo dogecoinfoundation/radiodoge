@@ -1,5 +1,5 @@
 /**
- * RadioDoge connection bridge — v0.3.12
+ * RadioDoge connection bridge — v0.3.13
  *
  * Platform-aware abstraction over serial communication:
  *
@@ -16,7 +16,7 @@
  *     → `@mnlphlp/plugin-blec` (tauri-plugin-blec) handles GATT scan/connect/write.
  *       Incoming characteristic notifications feed into `mobile_push_bytes` via the
  *       same accumulator pipeline as USB — zero protocol duplication between transports.
- *       GATT service/characteristic UUIDs are placeholders until firmware finalises them.
+ *       GATT UUIDs are Nordic UART Service (NUS) — matching heltec-firmware-v3.
  *
  * Data pipeline (both USB and BLE on Android):
  *   Raw bytes → invoke('mobile_push_bytes') → Rust accumulator + parser
@@ -68,20 +68,23 @@ export type MobileConnectionStatus =
   | 'connected'   // Board responded to GET_SETTINGS — fully ready
   | 'failed';     // Open or handshake failed
 
-// ─── BLE GATT UUIDs (placeholder — update once firmware finalises its BLE service) ──
+// ─── BLE GATT UUIDs — Nordic UART Service (NUS) ──────────────────────────────
 //
-// TODO: Replace these with the final RadioDoge ESP32 firmware GATT UUIDs before
-//       production release.  The firmware exposes a serial-over-BLE service; the
-//       UUID scheme mirrors a custom NUS-like profile.
+// The firmware in heltec-firmware-v3/heltec-firmware.ino implements a Nordic
+// UART Service (NUS).  These UUIDs are registered with the Bluetooth SIG and
+// must match exactly what the board advertises:
 //
-// Layout expected from firmware:
-//   Service          — BLE_SERVICE_UUID
-//   Write char       — BLE_WRITE_CHAR_UUID  (write-with-response, host → board)
-//   Notify char      — BLE_NOTIFY_CHAR_UUID (notify, board → host)
+//   Service          — 6E400001-B5A3-F393-E0A9-E50E24DCCA9E
+//   RX characteristic — 6E400002  (WRITE, host → board; "RX" from board's POV)
+//   TX characteristic — 6E400003  (NOTIFY, board → host; "TX" from board's POV)
+//
+// From the host's perspective:
+//   BLE_WRITE_CHAR_UUID  = NUS RX char  (we write to it)
+//   BLE_NOTIFY_CHAR_UUID = NUS TX char  (we subscribe for notifications)
 
-const BLE_SERVICE_UUID    = '51ff12bb-3ed8-46e5-b4f9-d64e2fec0001'; // placeholder
-const BLE_WRITE_CHAR_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec0002'; // placeholder: write
-const BLE_NOTIFY_CHAR_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec021b'; // placeholder: notify
+const BLE_SERVICE_UUID     = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS service
+const BLE_WRITE_CHAR_UUID  = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS RX — host writes
+const BLE_NOTIFY_CHAR_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS TX — board notifies
 
 // ─── USB VID/PID recognition ─────────────────────────────────────────────────
 
@@ -361,9 +364,12 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
   // Connect via the blec plugin (triggers Android BLE GATT connect)
   try {
     await blec.connect(address, () => {
-      // onDisconnect: board dropped the connection unexpectedly
+      // onDisconnect: board dropped the connection unexpectedly — reset global state
       console.warn('[bridge-ble] BLE device disconnected:', address);
+      activeBleAddress = null;
       invoke('mobile_ble_disconnect').catch(() => {});
+      invoke('mobile_clear_accumulator').catch(() => {});
+      setDisconnected();
     });
   } catch (e) {
     await invoke('mobile_ble_disconnect').catch(() => {});

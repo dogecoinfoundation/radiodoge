@@ -25,6 +25,9 @@
 extern nodeAddress local;
 
 // v0.3.6 — BLE Nordic UART Service (requires ESP32 BLE Arduino library)
+// v0.3.13 — UUIDs confirmed aligned with RadioDoge GUI connection-bridge.ts.
+//   NUS RX (host → board, WRITE)  : 6E400002-B5A3-F393-E0A9-E50E24DCCA9E
+//   NUS TX (board → host, NOTIFY) : 6E400003-B5A3-F393-E0A9-E50E24DCCA9E
 // To disable BLE, set ENABLE_BLE to false below.
 #define ENABLE_BLE true
 #if ENABLE_BLE
@@ -33,7 +36,7 @@ extern nodeAddress local;
   #include <BLEUtils.h>
   #include <BLE2902.h>
   #define BLE_DEVICE_NAME_PREFIX "RadioDoge"
-  // Nordic UART Service UUIDs
+  // Nordic UART Service (NUS) UUIDs — aligned with GUI v0.3.13 connection-bridge.ts
   #define NORDIC_UART_SERVICE_UUID    "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
   #define NORDIC_UART_CHAR_RX_UUID    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
   #define NORDIC_UART_CHAR_TX_UUID    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
