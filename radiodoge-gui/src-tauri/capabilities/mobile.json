@@ -8,6 +8,7 @@
     "core:default",
     "notification:default",
     "serialplugin:default",
-    "os:default"
+    "os:default",
+    "blec:default"
   ]
 }

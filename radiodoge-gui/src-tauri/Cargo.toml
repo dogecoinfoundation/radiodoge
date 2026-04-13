@@ -39,6 +39,12 @@ tauri-plugin-serialplugin = "=2.22.0"
 # v0.3.10 — Platform detection ("android", "windows", "linux", …)
 tauri-plugin-os = "2"
 
+# v0.3.10 — BLE client: btleplug on desktop, native Android BLE on mobile.
+# Used for wireless connection to the Heltec ESP32 firmware BLE serial service.
+# On Android: uses Android BluetoothLeScanner / GATT APIs natively.
+# On desktop: uses btleplug (Windows/macOS/Linux host BLE adapter).
+tauri-plugin-blec = "0.4"
+
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
