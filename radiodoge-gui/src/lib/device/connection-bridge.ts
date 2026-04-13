@@ -1,5 +1,5 @@
 /**
- * RadioDoge connection bridge — v0.3.11
+ * RadioDoge connection bridge — v0.3.12
  *
  * Platform-aware abstraction over serial communication:
  *
@@ -38,6 +38,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { SerialPort } from 'tauri-plugin-serialplugin';
 import type { LoraSettings, TransactionRequest } from '$lib/types';
+import { setConnected, setDisconnected } from '$lib/stores/connection.svelte';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,13 @@ async function _connectAndroid(devicePath: string): Promise<void> {
 
   await _registerSessionListeners();
 
+  // Immediately mark global connection state as connected so the Disconnect
+  // button appears and isConnected-gated tabs/features become visible.
+  // The board will respond to GET_SETTINGS asynchronously and emit a
+  // "connection-status: connected" event which will re-call setConnected with
+  // the real nodeAddress/firmwareVersion.
+  setConnected(devicePath, null);
+
   const initPackets = await invoke<number[][]>('mobile_build_connect_queries');
   for (let i = 0; i < initPackets.length; i++) {
     await activePort.writeBinary(new Uint8Array(initPackets[i]));
@@ -387,6 +395,9 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
   // Register the same Tauri event listeners as the USB path
   await _registerSessionListeners();
 
+  // Mark global connection state as connected immediately after GATT is up.
+  setConnected(address, null);
+
   // Send the connect handshake: GET_FIRMWARE_VERSION + GET_SETTINGS.
   // Board responses arrive as BLE notifications → mobile_push_bytes.
   const initPackets = await invoke<number[][]>('mobile_build_connect_queries');
@@ -422,6 +433,7 @@ async function _disconnectAndroid(notifyRust: boolean): Promise<void> {
   if (notifyRust) {
     await invoke('mobile_set_disconnected').catch(() => {});
     await invoke('mobile_clear_accumulator').catch(() => {});
+    setDisconnected();
   }
 }
 
@@ -446,6 +458,7 @@ async function _disconnectBluetoothAndroid(notifyRust: boolean): Promise<void> {
   if (notifyRust) {
     await invoke('mobile_ble_disconnect').catch(() => {});
     await invoke('mobile_clear_accumulator').catch(() => {});
+    setDisconnected();
   }
 }
 

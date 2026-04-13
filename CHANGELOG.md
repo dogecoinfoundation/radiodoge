@@ -7,6 +7,32 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.12] — 2026-04-13 — 🔌 Global State Sync Fix — Much Connect. Very isConnected. Wow.
+
+> **Critical bug fix: `connection.isConnected` now becomes `true` immediately after USB or BLE connects, so the Disconnect button appears and all isConnected-gated UI unlocks.**
+> Such sync. Very state. Much connect. Wow. 🐕🔌
+
+### Fixed
+
+#### Global State Sync (critical)
+- **`connection.isConnected` never becoming `true` on Android** — `setMobileConnected()` only sets `mobileStatus = 'connected'`; it never set `isConnected = true`. The Disconnect button, isConnected-gated tabs, and status bar all stayed stuck in the "disconnected" state regardless of whether the port was actually open.
+- **Fix**: `connection-bridge.ts` now imports `setConnected` and `setDisconnected` from `$lib/stores/connection.svelte` and calls them directly:
+  - `setConnected(devicePath, null)` immediately after USB-OTG port opens and listeners are registered
+  - `setConnected(address, null)` immediately after BLE GATT connects and listeners are registered
+  - `setDisconnected()` in the `notifyRust=true` paths of `_disconnectAndroid` and `_disconnectBluetoothAndroid`
+- Board handshake responses (`connection-status: connected` event) will still fire asynchronously and re-call `setConnected` with the real `nodeAddress` and `firmwareVersion` when the board replies to `GET_SETTINGS`.
+
+#### USB-C Disconnect Button
+- Now shows correctly once the port opens (was broken by the above `isConnected` bug — no separate fix needed).
+
+### Changed
+
+- **BT tab subtitle**: `'Experimental'` → `'BLE'` — Bluetooth is fully implemented; no longer experimental.
+- **BLE info box**: Removed the "Note: firmware GATT UUIDs are placeholders" developer note from the user-facing connect panel.
+- Version bumped to `0.3.12` across all crates, `package.json`, `tauri.conf.json`, and app footer.
+
+---
+
 ## [0.3.11] — 2026-04-13 — 📶 Full Android BLE + USB-C Write Fix — Much Wireless. Very GATT. Wow.
 
 > **Bluetooth BLE is now fully implemented. USB-C serial write is fixed. Both paths share the same zero-duplication packet pipeline.**

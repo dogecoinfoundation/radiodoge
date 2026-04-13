@@ -407,7 +407,7 @@
         ">
           {#each [
             { id: 'usb' as const,       label: '🔌 USB-C',    subtitle: 'CP2102 / CH340' },
-            { id: 'bluetooth' as const, label: '📶 Bluetooth', subtitle: 'Experimental' },
+            { id: 'bluetooth' as const, label: '📶 Bluetooth', subtitle: 'BLE' },
           ] as tab}
             <button
               onclick={() => { mobileConnectTab = tab.id; selectedMobileDevice = ''; mobileDevices = []; setMobileIdle(); }}
@@ -445,8 +445,6 @@
             📶 <strong style="color: var(--doge-orange);">Bluetooth BLE</strong> — tap
             <strong>⟳ Scan</strong> to discover nearby Heltec boards. Make sure BLE serial is
             enabled in the firmware. USB-C is more reliable for development use.
-            <br><span style="font-size:0.72em; opacity:0.75;">Note: firmware GATT UUIDs are
-            placeholders — update <code>connection-bridge.ts</code> once finalised.</span>
           </div>
         {/if}
 
