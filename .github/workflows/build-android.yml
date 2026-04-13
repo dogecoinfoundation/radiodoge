@@ -1,5 +1,10 @@
 # RadioDoge — Android APK Build Workflow
-# Builds on every push to master and on release — exactly like build-windows.yml
+# Builds on every push and on release — exactly like build-windows.yml
+#
+# v0.3.10 additions vs parent branch:
+#   - patch_jitpack.py  : adds JitPack repo to build.gradle.kts so that
+#                         tauri-plugin-serialplugin can pull usb-serial-for-android
+#   - patch_manifest.py : adds Bluetooth BLE permissions to AndroidManifest.xml
 name: Build Android APK
 on:
   push:
@@ -20,119 +25,64 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Read version
         id: version
         shell: bash
         run: |
           VERSION=$(node -p "require('./radiodoge-gui/package.json').version")
           echo "value=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Install Rust stable + Android targets
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+
       - name: Install frontend dependencies
         working-directory: radiodoge-gui
         run: npm install
+
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
       - name: Install Android NDK + SDK packages
         shell: bash
         run: |
           sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Initialize Tauri Android platform
         working-directory: radiodoge-gui
         shell: bash
         run: npm run tauri -- android init --ci
 
-      # v0.3.10: tauri-plugin-serialplugin uses usb-serial-for-android (hosted on JitPack).
-      # The generated build.gradle.kts only has google() + mavenCentral() by default, so we
-      # inject JitPack into both the buildscript and allprojects repositories blocks.
+      # tauri-plugin-serialplugin pulls usb-serial-for-android from JitPack.
+      # The generated build.gradle.kts only lists google() + mavenCentral(), so
+      # we inject the JitPack maven block before the first Gradle sync.
       - name: Patch build.gradle.kts — add JitPack repository
-        working-directory: radiodoge-gui
         shell: bash
-        run: |
-          FILE="src-tauri/gen/android/build.gradle.kts"
-          if [ ! -f "$FILE" ]; then
-            echo "::warning::build.gradle.kts not found at $FILE — skipping JitPack patch"
-          elif grep -q "jitpack.io" "$FILE"; then
-            echo "JitPack already present in $FILE — no patch needed"
-          else
-            python3 - <<'PYEOF'
-import re, sys
+        run: python3 .github/scripts/patch_jitpack.py
 
-path = "src-tauri/gen/android/build.gradle.kts"
-with open(path) as f:
-    content = f.read()
-
-jitpack = '        maven { url = uri("https://jitpack.io") }'
-
-# Insert JitPack after every mavenCentral() that is followed by a closing brace
-# on the next non-empty line.  This covers both buildscript{} and allprojects{}.
-patched = re.sub(
-    r'([ \t]+mavenCentral\(\))([ \t]*\n)([ \t]+\})',
-    lambda m: f'{m.group(1)}{m.group(2)}{jitpack}\n{m.group(3)}',
-    content,
-)
-
-if patched == content:
-    print("WARNING: pattern not found — JitPack may need to be added manually", file=sys.stderr)
-    sys.exit(0)
-
-with open(path, "w") as f:
-    f.write(patched)
-
-print("✅ JitPack added to build.gradle.kts")
-PYEOF
-          fi
-
-      # v0.3.10: ensure the Bluetooth permissions are present in the app manifest
-      # (needed for future Bluetooth BLE scanning; USB permissions are added by the plugin).
+      # Add Bluetooth BLE permissions for future BLE scanning support.
+      # USB permissions are handled automatically by tauri-plugin-serialplugin.
       - name: Patch AndroidManifest.xml — add Bluetooth permissions
-        working-directory: radiodoge-gui
         shell: bash
-        run: |
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          if [ ! -f "$MANIFEST" ]; then
-            echo "::warning::AndroidManifest.xml not found — skipping BT permission patch"
-          elif grep -q "BLUETOOTH_CONNECT" "$MANIFEST"; then
-            echo "Bluetooth permissions already present — no patch needed"
-          else
-            # Insert Bluetooth permissions just before the <application> tag
-            python3 - <<'PYEOF'
-path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-with open(path) as f:
-    content = f.read()
-
-bt_perms = (
-    '    <!-- v0.3.10: Bluetooth BLE scanning (experimental) -->\n'
-    '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n'
-    '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
-    '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />\n'
-    '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
-)
-
-if bt_perms not in content:
-    content = content.replace('<application', bt_perms + '\n    <application', 1)
-    with open(path, "w") as f:
-        f.write(content)
-    print("✅ Bluetooth permissions added to AndroidManifest.xml")
-else:
-    print("Bluetooth permissions already present")
-PYEOF
-          fi
+        run: python3 .github/scripts/patch_manifest.py
 
       - name: Build Android APK (with retry + build.log)
         working-directory: radiodoge-gui
@@ -148,7 +98,7 @@ PYEOF
             echo "Build attempt $attempt / $maxAttempts ..."
             npm run tauri -- android build --apk --debug --verbose 2>&1 | tee build.log
             if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✅ Success on attempt $attempt. APK built!"
+              echo "Success on attempt $attempt. APK built!"
               break
             fi
             if [ $attempt -lt $maxAttempts ]; then
@@ -160,6 +110,7 @@ PYEOF
               exit 1
             fi
           done
+
       - name: Debug APK location + log tail (always runs)
         if: always()
         working-directory: radiodoge-gui
@@ -171,13 +122,15 @@ PYEOF
           ls -la src-tauri/gen/android/app/build/outputs/apk/ 2>/dev/null || echo "apk/ dir missing"
           echo "=== build.log tail ==="
           tail -50 build.log 2>/dev/null || echo "no log"
-      - name: Upload build log (for Grok to debug instantly)
+
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-build-logs-v${{ steps.version.outputs.value }}
           path: radiodoge-gui/build.log
           retention-days: 14
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
