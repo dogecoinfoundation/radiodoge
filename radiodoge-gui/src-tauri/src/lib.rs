@@ -1352,7 +1352,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.11 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.12 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())

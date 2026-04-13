@@ -1,6 +1,6 @@
 [package]
 name = "radiodoge-core"
-version = "0.3.11"
+version = "0.3.12"
 description = "RadioDoge core library — protocol, wallet, and serial for all Rust targets"
 authors = ["RadioDoge Contributors"]
 license = "MIT"
