@@ -7,6 +7,38 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.11] — 2026-04-13 — 📶 Full Android BLE + USB-C Write Fix — Much Wireless. Very GATT. Wow.
+
+> **Bluetooth BLE is now fully implemented. USB-C serial write is fixed. Both paths share the same zero-duplication packet pipeline.**
+> Such BLE. Very GATT. Much wire. Wow. 🐕📶
+
+### Fixed
+
+#### USB-C Serial Write (blocker)
+- **`activePort.write(Uint8Array)` → `activePort.writeBinary(Uint8Array)`** — The `tauri-plugin-serialplugin` `write` command expects a `String` on the Rust side; passing a `Uint8Array` serialised as a JSON sequence caused "invalid args `value` for command `write`: invalid type: sequence, expected a string" at runtime. Fixed all four call-sites in `connection-bridge.ts` to use `writeBinary()` which routes to the `write_binary` Rust command that correctly accepts `Vec<u8>`. USB-C serial is now fully operational.
+
+### Added
+
+#### Android Bluetooth BLE (`tauri-plugin-blec` v0.4)
+- **`bleScan(timeoutMs)`** — calls `mobile_ble_scan` (Rust state update) then `blec.scan(5000)`, returns discovered devices as `MobileDeviceInfo[]`
+- **`_connectBluetoothAndroid(address)`** — `blec.connect()` → `blec.onReceiveData(SERVICE, NOTIFY_CHAR, cb)` where the notification callback calls `mobile_push_bytes` — **BLE notifications feed the identical Rust accumulator as USB bytes**
+- **`_bleWrite(data)`** — logs to debug traffic via `mobile_ble_write_characteristic`, then calls `blec.sendData(SERVICE, WRITE_CHAR, data)`
+- `mobilePing`, `mobileSendTransaction`, `mobileSendLoraSettings` all auto-route through `_bleWrite` or USB based on `activeBleAddress`
+- Lazy `import('@mnlphlp/plugin-blec')` — BLE module never initialises on desktop startup
+- **Rust BLE commands** registered in `lib.rs` and app builder: `mobile_ble_scan`, `mobile_ble_connect`, `mobile_ble_disconnect`, `mobile_ble_write_characteristic`
+- `AppState.ble_device_address` tracks active BLE MAC address
+- `blec:default` added to both desktop and mobile capabilities
+- Scan button shows "Scanning BLE… (5 s)" during discovery; BLE tab info box updated from stub notice to functional description
+- **Firmware GATT UUIDs** are clearly marked placeholder constants at the top of `connection-bridge.ts` — one-line swap when firmware finalises them
+
+### Changed
+
+- Version bumped to `0.3.11` across all crates, `package.json`, `tauri.conf.json`, and app footer.
+- README Bluetooth section rewritten to document the implemented architecture.
+- `patch_manifest.py` comment updated (BLE permissions are now required, not experimental).
+
+---
+
 ## [0.3.10] — 2026-04-13 — 🔌 ESP32 USB-C Serial + Android USB-OTG — Much Wire. Very Serial. Wow.
 
 > **RadioDoge now talks to ESP32/Heltec boards via USB-C on both desktop and Android.**

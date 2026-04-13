@@ -10,6 +10,7 @@
     "shell:allow-open",
     "notification:default",
     "serialplugin:default",
-    "os:default"
+    "os:default",
+    "blec:default"
   ]
 }

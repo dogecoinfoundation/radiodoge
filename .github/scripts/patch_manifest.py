@@ -2,7 +2,7 @@
 """Add Bluetooth permissions to the Tauri-generated AndroidManifest.xml.
 
 USB permissions are added automatically by tauri-plugin-serialplugin.
-These BLE permissions enable future Bluetooth scanning from the UI.
+These BLE permissions are required by tauri-plugin-blec for BLE scan/connect.
 
 Called from .github/workflows/build-android.yml after `tauri android init`.
 Paths are relative to the repository root.
@@ -26,7 +26,7 @@ if "BLUETOOTH_CONNECT" in content:
     sys.exit(0)
 
 bt_perms = (
-    "    <!-- Bluetooth BLE scanning (experimental, v0.3.10) -->\n"
+    "    <!-- Bluetooth BLE permissions (v0.3.11 — tauri-plugin-blec) -->\n"
     '    <uses-permission android:name="android.permission.BLUETOOTH"'
     ' android:maxSdkVersion="30" />\n'
     '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'

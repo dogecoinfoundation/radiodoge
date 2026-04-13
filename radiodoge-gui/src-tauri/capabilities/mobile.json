@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
-  "description": "RadioDoge Android capabilities — v0.3.10 USB serial + Bluetooth",
+  "description": "RadioDoge Android capabilities — v0.3.11 USB serial + Bluetooth BLE",
   "platforms": ["android", "iOS"],
   "windows": ["main"],
   "permissions": [
     "core:default",
     "notification:default",
     "serialplugin:default",
-    "os:default"
+    "os:default",
+    "blec:default"
   ]
 }

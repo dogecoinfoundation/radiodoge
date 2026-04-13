@@ -160,20 +160,23 @@
   /** Firmware version received from the board during Android connect handshake. */
   let mobileFirmwareVersion = $state<string | null>(null);
 
-  /** Scan for Android USB serial devices and update mobileDevices. */
+  /** Scan for Android devices and update mobileDevices. */
   async function mobileRefresh() {
     mobileRefreshing = true;
     setMobileSearching(mobileConnectTab);
     try {
-      const found = await bridge.listDevices();
-      // On Android only show USB devices in USB tab, BT in BT tab.
-      // (On desktop this won't normally be called — handled by refreshPorts.)
-      mobileDevices = found.filter(d =>
-        mobileConnectTab === 'bluetooth' ? d.type === 'bluetooth' : d.type !== 'bluetooth'
-      );
+      let found: MobileDeviceInfo[];
+      if (mobileConnectTab === 'bluetooth') {
+        // BLE scan via tauri-plugin-blec — runs for 5 s then returns results.
+        found = await bridge.bleScan(5000);
+      } else {
+        // USB-OTG device list via tauri-plugin-serialplugin
+        const all = await bridge.listDevices();
+        found = all.filter(d => d.type !== 'bluetooth');
+      }
+      mobileDevices = found;
 
       if (mobileDevices.length > 0) {
-        // Auto-select: Heltec first, then first available
         const heltec = mobileDevices.find(d => d.isLikelyHeltec);
         if (!mobileDevices.some(d => d.path === selectedMobileDevice)) {
           selectedMobileDevice = (heltec ?? mobileDevices[0]).path;
@@ -185,12 +188,7 @@
       console.error('[ConnectionPanel] mobileRefresh error:', e);
     } finally {
       mobileRefreshing = false;
-      if (mobileDevices.length === 0) {
-        // Revert status — no devices found, back to idle so user sees normal message
-        setMobileIdle();
-      } else {
-        setMobileIdle();
-      }
+      setMobileIdle();
     }
   }
 
@@ -201,7 +199,8 @@
     mobileFirmwareVersion = null;
     pingResult = null;
     try {
-      await bridge.connect(selectedMobileDevice);
+      // Pass the connection type so the bridge opens USB-OTG or BLE GATT accordingly.
+      await bridge.connect(selectedMobileDevice, mobileConnectTab === 'bluetooth' ? 'bluetooth' : 'usb');
       // "connection-status: connected" event arrives async via mobile_push_bytes
       // when the board responds to GET_SETTINGS.  The +page.svelte listener calls
       // setConnected() which drives the main UI — we mirror that into mobile state here.
@@ -443,9 +442,11 @@
             margin-bottom: 12px;
             line-height: 1.6;
           ">
-            📶 <strong style="color: var(--doge-orange);">Bluetooth is experimental</strong> — full BLE
-            communication lands in a future release. USB-C is recommended for reliable use.
-            Your Heltec firmware must have BLE serial enabled; see firmware docs for the GATT UUID.
+            📶 <strong style="color: var(--doge-orange);">Bluetooth BLE</strong> — tap
+            <strong>⟳ Scan</strong> to discover nearby Heltec boards. Make sure BLE serial is
+            enabled in the firmware. USB-C is more reliable for development use.
+            <br><span style="font-size:0.72em; opacity:0.75;">Note: firmware GATT UUIDs are
+            placeholders — update <code>connection-bridge.ts</code> once finalised.</span>
           </div>
         {/if}
 
@@ -464,7 +465,7 @@
             >
               {#if mobileRefreshing}
                 <span style="animation: spin-doge 1s linear infinite; display: inline-block;">⟳</span>
-                Scanning…
+                {mobileConnectTab === 'bluetooth' ? 'Scanning BLE… (5 s)' : 'Scanning…'}
               {:else}
                 ⟳ Scan
               {/if}

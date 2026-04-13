@@ -1,10 +1,10 @@
 # RadioDoge — Android APK Build Workflow
 # Builds on every push and on release — exactly like build-windows.yml
 #
-# v0.3.10 additions vs parent branch:
+# v0.3.11 additions vs parent branch:
 #   - patch_jitpack.py  : adds JitPack repo to build.gradle.kts so that
 #                         tauri-plugin-serialplugin can pull usb-serial-for-android
-#   - patch_manifest.py : adds Bluetooth BLE permissions to AndroidManifest.xml
+#   - patch_manifest.py : adds Bluetooth BLE permissions (required by tauri-plugin-blec)
 name: Build Android APK
 on:
   push:

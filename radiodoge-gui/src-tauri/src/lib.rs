@@ -2,12 +2,14 @@
 //!
 //! v0.3.10 additions:
 //!   - Android USB serial via tauri-plugin-serialplugin (CP2102/CH340 over USB-OTG)
+//!   - Android BLE via tauri-plugin-blec (btleplug on desktop, native BLE on Android)
 //!   - Mobile packet bridge: JS feeds raw bytes → Rust frames packets → emits events
 //!   - New commands: mobile_push_bytes, mobile_build_ping, mobile_build_connect_queries,
 //!     mobile_build_tx_packets, mobile_build_lora_settings_packet,
-//!     mobile_set_connected, mobile_set_disconnected, mobile_clear_accumulator
+//!     mobile_set_connected, mobile_set_disconnected, mobile_clear_accumulator,
+//!     mobile_ble_scan, mobile_ble_connect, mobile_ble_disconnect,
+//!     mobile_ble_write_characteristic
 //!   - Platform detection via tauri-plugin-os
-//!   - Bluetooth framework in UI (experimental, BLE scan stub)
 //!
 //! v0.3.8: Battery voltage, board MAC, persistent wallet, address book.
 //! v0.3.7: WiFi toggle, mesh neighbors, addr-conflict detection, ping fix.
@@ -59,6 +61,9 @@ pub struct AppState {
     /// sequence. Stored when GET_FIRMWARE_VERSION (0x20) response is received,
     /// included in the "connection-status: connected" event emitted after GET_SETTINGS.
     pub mobile_fw_version: Arc<Mutex<Option<String>>>,
+    /// v0.3.10 — BLE device address (MAC) when connected via Bluetooth, None otherwise.
+    /// Set by mobile_ble_connect, cleared by mobile_ble_disconnect.
+    pub ble_device_address: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
@@ -73,6 +78,7 @@ impl AppState {
             connection_type: Arc::new(Mutex::new("usb".to_string())),
             mobile_accumulator: Arc::new(Mutex::new(Vec::new())),
             mobile_fw_version: Arc::new(Mutex::new(None)),
+            ble_device_address: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -1175,6 +1181,102 @@ async fn mobile_build_lora_settings_packet(settings: LoraSettings) -> Vec<u8> {
     )
 }
 
+// ─── v0.3.10 Android BLE commands ────────────────────────────────────────────
+//
+// Architecture:
+//   The tauri-plugin-blec plugin provides the actual BLE transport via its own
+//   IPC commands (scan, connect, sendData, onReceiveData).  The four commands
+//   below handle the *RadioDoge-side state machine* that wraps each BLE operation:
+//
+//   • mobile_ble_scan      — update connection_type, emit ble-scan-started event
+//   • mobile_ble_connect   — set ble_device_address, emit "connection-status: connecting"
+//   • mobile_ble_disconnect — clear BLE state, emit "connection-status: disconnected"
+//   • mobile_ble_write_characteristic — log outgoing bytes in the debug traffic stream
+//
+//   Incoming BLE data:
+//     blec plugin → JS onReceiveData callback → invoke('mobile_push_bytes', …)
+//     → same accumulator + parser path as USB-OTG → same "radio-packet" / "board-sync"
+//     events consumed by the existing frontend code.
+//   No protocol duplication between BLE and USB paths.
+
+/// Notify Rust that a BLE device scan is starting.
+/// Updates connection_type and emits "ble-scan-started" so the frontend can
+/// animate a scan spinner independently of the mobileRefreshing state.
+///
+/// The actual scan results come from the blec plugin's JS `scan(timeoutMs)`
+/// function; Rust receives them only if cached via future state extensions.
+#[tauri::command]
+async fn mobile_ble_scan(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    *state.connection_type.lock().await = "ble-android".to_string();
+    let _ = app.emit("ble-scan-started", serde_json::json!({}));
+    log::info!("mobile_ble_scan: BLE scan initiated");
+    Ok(())
+}
+
+/// Notify Rust that a BLE connection to `address` is being opened.
+///
+/// - Caches the device MAC address in `ble_device_address`
+/// - Sets `connection_type` = "ble-android"
+/// - Clears the mobile accumulator and cached firmware version
+/// - Emits "connection-status: connecting" (identical event shape to USB/desktop)
+///
+/// The JS layer then calls the blec plugin's `connect(address)` IPC,
+/// subscribes to characteristic notifications (→ mobile_push_bytes on each chunk),
+/// and sends the GET_FIRMWARE_VERSION + GET_SETTINGS connect queries.
+#[tauri::command]
+async fn mobile_ble_connect(
+    address: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    *state.current_port.lock().await = Some(address.clone());
+    *state.connection_type.lock().await = "ble-android".to_string();
+    *state.ble_device_address.lock().await = Some(address.clone());
+    *state.mobile_fw_version.lock().await = None;
+    state.mobile_accumulator.lock().await.clear();
+    let _ = app.emit("connection-status", ConnectionStatusEvent::connecting(&address));
+    log::info!("mobile_ble_connect: {}", address);
+    Ok(())
+}
+
+/// Notify Rust that the BLE connection has been closed.
+///
+/// Mirrors mobile_set_disconnected but for the BLE transport:
+/// clears ble_device_address, current_port, mobile_fw_version, accumulator,
+/// and emits "connection-status: disconnected".
+#[tauri::command]
+async fn mobile_ble_disconnect(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    *state.current_port.lock().await = None;
+    *state.ble_device_address.lock().await = None;
+    *state.mobile_fw_version.lock().await = None;
+    state.mobile_accumulator.lock().await.clear();
+    let _ = app.emit("connection-status", ConnectionStatusEvent::disconnected());
+    log::info!("mobile_ble_disconnect");
+    Ok(())
+}
+
+/// Log bytes being written to the BLE TX characteristic in the debug traffic stream.
+///
+/// The actual GATT write is performed by the JS layer via the blec plugin's
+/// `sendData(serviceUuid, charUuid, data)` API.  This command exists to:
+///   1. Emit a "TX-BLE" debug-serial-traffic event visible in the Debug Console
+///   2. Provide a single place to add future Rust-side flow-control / rate-limiting
+#[tauri::command]
+async fn mobile_ble_write_characteristic(
+    data: Vec<u8>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let hex = hex::encode(&data);
+    emit_debug_traffic(&app, "TX-BLE", &hex, "BLE write characteristic");
+    Ok(())
+}
+
 // ─── App Builder ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1191,6 +1293,9 @@ pub fn run() {
         .plugin(tauri_plugin_serialplugin::init())
         // v0.3.10 — Platform detection (returns "android", "windows", "linux", …)
         .plugin(tauri_plugin_os::init())
+        // v0.3.10 — BLE client: btleplug on desktop, native Android BLE on mobile.
+        // Exposes scan / connect / sendData / onReceiveData to the JS layer.
+        .plugin(tauri_plugin_blec::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             // ── Desktop serial (existing) ─────────────────────────────────
@@ -1237,11 +1342,17 @@ pub fn run() {
             mobile_build_connect_queries,
             mobile_build_tx_packets,
             mobile_build_lora_settings_packet,
+            // ── v0.3.10 Android BLE bridge ────────────────────────────────
+            // blec plugin handles GATT transport; Rust handles state + debug logging
+            mobile_ble_scan,
+            mobile_ble_connect,
+            mobile_ble_disconnect,
+            mobile_ble_write_characteristic,
         ])
         .setup(|app| {
             #[cfg(desktop)]
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.10 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.11 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())
