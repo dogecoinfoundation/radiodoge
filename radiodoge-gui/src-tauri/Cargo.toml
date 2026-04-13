@@ -29,9 +29,12 @@ tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
 
 # v0.3.10 — Android USB serial support via tauri-plugin-serialplugin (s00d).
+# Pinned to =2.22.0: v2.20.0 has "Unresolved reference: baudRate/dataBits/parity"
+# because it reads UsbSerialPort properties that don't exist as getters; 2.22.0
+# wraps the port in a config object and fixes all property-access Kotlin errors.
 # On Android: bridges to usb-serial-for-android via JitPack + JNI.
 # On desktop: plugin is registered but serial I/O goes through SerialManager.
-tauri-plugin-serialplugin = "2"
+tauri-plugin-serialplugin = "=2.22.0"
 
 # v0.3.10 — Platform detection ("android", "windows", "linux", …)
 tauri-plugin-os = "2"
