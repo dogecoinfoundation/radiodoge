@@ -64,6 +64,14 @@ pub struct AppState {
     /// v0.3.10 — BLE device address (MAC) when connected via Bluetooth, None otherwise.
     /// Set by mobile_ble_connect, cleared by mobile_ble_disconnect.
     pub ble_device_address: Arc<Mutex<Option<String>>>,
+    /// v0.3.15 — Running count of packets received via the Android mobile path.
+    /// Used to synthesize `radio-stats-update` events so the Dashboard packet
+    /// counters and NavBar signal bars stay current on mobile USB/BLE.
+    pub mobile_packets_rx: Arc<Mutex<u32>>,
+    /// v0.3.15 — Last known RSSI seen on the mobile path.
+    /// Always 0 on USB (RSSI is not available over serial); may be non-zero
+    /// in a future BLE path that reports received signal strength.
+    pub mobile_last_rssi: Arc<Mutex<i16>>,
 }
 
 impl AppState {
@@ -79,6 +87,8 @@ impl AppState {
             mobile_accumulator: Arc::new(Mutex::new(Vec::new())),
             mobile_fw_version: Arc::new(Mutex::new(None)),
             ble_device_address: Arc::new(Mutex::new(None)),
+            mobile_packets_rx: Arc::new(Mutex::new(0)),
+            mobile_last_rssi: Arc::new(Mutex::new(0)),
         }
     }
 }
@@ -942,6 +952,8 @@ async fn mobile_set_disconnected(
     *state.current_port.lock().await = None;
     *state.mobile_fw_version.lock().await = None;
     state.mobile_accumulator.lock().await.clear();
+    *state.mobile_packets_rx.lock().await = 0;
+    *state.mobile_last_rssi.lock().await = 0;
     let _ = app.emit("connection-status", ConnectionStatusEvent::disconnected());
     log::info!("mobile_set_disconnected");
     Ok(())
@@ -1097,6 +1109,36 @@ async fn mobile_push_bytes(
         });
         let consumed = consumed.min(acc.len());
         acc.drain(..consumed);
+    }
+
+    // v0.3.15 — Emit radio-stats-update so the Dashboard packet counters and
+    // NavBar signal bars stay current on mobile (USB/BLE).  On USB the RSSI
+    // is always 0 (serial carries no signal-strength metadata), but the
+    // packets_received counter will now increment correctly.
+    if packets_extracted > 0 {
+        let mut rx_count = state.mobile_packets_rx.lock().await;
+        *rx_count += packets_extracted;
+        let count_snap = *rx_count;
+        drop(rx_count);
+
+        // Accept a non-zero RSSI from the caller (future BLE path may supply it).
+        if rssi != 0 {
+            *state.mobile_last_rssi.lock().await = rssi;
+        }
+        let rssi_snap = *state.mobile_last_rssi.lock().await;
+
+        let lora = state.lora_settings.lock().await.clone();
+        let stats = RadioStats {
+            frequency_mhz: lora.frequency_mhz,
+            power_dbm: lora.power_dbm,
+            spreading_factor: lora.spreading_factor,
+            bandwidth_khz: lora.bandwidth_khz,
+            coding_rate: lora.coding_rate.clone(),
+            rssi: rssi_snap,
+            packets_sent: 0,
+            packets_received: count_snap,
+        };
+        let _ = app.emit("radio-stats-update", &stats);
     }
 
     Ok(packets_extracted)
@@ -1352,7 +1394,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             tray::setup_tray(app)?;
-            log::info!("RadioDoge GUI v0.3.14 started — much mesh, very wow 🐕");
+            log::info!("RadioDoge GUI v0.3.15 started — much mesh, very wow 🐕");
             Ok(())
         })
         .run(tauri::generate_context!())

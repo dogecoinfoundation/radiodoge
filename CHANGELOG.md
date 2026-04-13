@@ -7,6 +7,32 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.15] — 2026-04-13 — 📡 Android Status Bar + Packet Stats Fix — Much Safe Area. Very Data. Wow.
+
+> **Nav bar no longer hides behind the Android system status bar. Dashboard packet counters and NavBar signal bars now update in real time on mobile USB/BLE.**
+> Such env(safe-area-inset-top). Very stats. Much data. Wow. 🐕📡
+
+### Fixed
+
+#### Android system status bar overlap (critical — tabs were untappable in portrait)
+- **`NavBar.svelte` was rendered behind the Android system status bar** — the nav `<nav>` element had `height: 56px; padding: 0 16px` with no awareness of the system status bar (typically 24–28dp on Android). Tauri Android runs with an edge-to-edge WebView, so the nav rendered behind the clock/battery/WiFi row and the top 24–28dp of tab icons were blocked by system UI.
+- **Fix**: `height` changed to `calc(56px + env(safe-area-inset-top, 0px))` and `padding-top` changed to `env(safe-area-inset-top, 0px)`. CSS Flexbox respects the padding when computing item positions with `align-items: center`, so the tab row and logo are centered in the 56px *below* the safe area — the status bar region remains transparent system chrome. Zero visual change on desktop (safe-area-inset-top is 0px).
+
+#### Mobile packet counters never updating (Dashboard / Signal Strength)
+- **`mobile_push_bytes` in `lib.rs` never emitted `radio-stats-update`** — the desktop path emits this event every 2 seconds from a polling loop; there was no equivalent for the Android mobile path. As a result, `connection.stats` was always the initial default (`packets_received: 0`, `rssi: 0 = "Very Weak"`), and Dashboard/NavBar signal bars never reflected real activity.
+- **Fix**: After each batch of packets is extracted in `mobile_push_bytes`, a running `mobile_packets_rx` counter in `AppState` is incremented and a `RadioStats` snapshot is emitted as `radio-stats-update`. The packet counter now reflects every received packet. RSSI remains 0 on USB (serial carries no signal-strength metadata) but will auto-update on any transport that passes a non-zero `rssi` to `mobile_push_bytes`.
+- **Counters reset** to zero in `mobile_set_disconnected` so reconnecting starts from a clean slate.
+
+#### Tab touch targets below Android minimum
+- **`min-height`** on `:global(.tab-btn)` bumped from 44px to 48px to match Material Design touch-target guideline.
+- **`touch-action: manipulation`** added to tab buttons to suppress the 300ms tap delay on Android WebView (the WebView default waits 300ms to detect double-tap-to-zoom before dispatching `click`; `manipulation` opts out and makes taps feel native).
+
+### Changed
+- `height: 100svh` on `.app-shell` supplemented with `height: 100dvh` (dynamic viewport height) — adjusts as the Android URL bar / navigation rail shows and hides, preventing the content area from being slightly taller than the visible window.
+- Version bumped to `0.3.15` across all crates, `package.json`, `tauri.conf.json`, and app footer.
+
+---
+
 ## [0.3.14] — 2026-04-13 — 📱 Mobile Layout Fix — Much Responsive. Very Clamp. Wow.
 
 > **Android UI is now correctly sized and usable. Bottom status bar no longer overflows. NavBar port badge truncates. Tab touch targets meet Android guidelines. Hero scales with screen.**

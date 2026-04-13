@@ -250,7 +250,7 @@
   <footer class="app-footer">
     <!-- Left: version + connection info (truncates to fit) -->
     <div class="footer-left">
-      <span class="footer-version">RadioDoge v0.3.14</span>
+      <span class="footer-version">RadioDoge v0.3.15</span>
       <span class="footer-sep" aria-hidden="true">|</span>
       {#if connection.isConnected}
         <span class="footer-port">
@@ -298,6 +298,7 @@
        the full window so both values are equivalent, but svh is explicit. */
     height: 100vh;
     height: 100svh;
+    height: 100dvh; /* dynamic viewport height: adjusts as Android chrome shows/hides */
     background: var(--doge-dark);
     overflow: hidden;
   }
