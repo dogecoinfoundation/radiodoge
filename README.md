@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.10** ✨: Android USB serial is here (experimental)! Connect a Heltec ESP32 to your phone via USB-C OTG cable — the app talks to the board using the same RadioDoge packet protocol as the desktop. Bluetooth BLE framework is wired up too (experimental, full GATT comms coming soon). Much mobile. Very LoRa. Wow!
+> **v0.3.11** ✨: Android USB-C serial **and** Bluetooth BLE are both fully implemented! Connect via USB-C OTG or scan for the Heltec board over BLE — both use the identical RadioDoge packet protocol as the desktop. Firmware GATT UUIDs are a configurable placeholder pending finalisation. Much mobile. Very wireless. Wow!
 
 ---
 
@@ -263,27 +263,31 @@ The Heltec ESP32 LoRa V3 has a built-in **Silicon Labs CP2102** USB-to-serial ch
 
 ---
 
-## 📶 Bluetooth — Android (Experimental Framework)
+## 📶 Bluetooth BLE — Android (v0.3.11)
 
-> Full Bluetooth BLE communication is **not yet implemented**. The UI framework is wired up and the Android permissions are declared; this section will expand when firmware BLE GATT support is finalised.
+> Full Bluetooth BLE communication is **implemented** via `tauri-plugin-blec`. The pipeline is identical to USB: BLE notifications → `mobile_push_bytes` → Rust packet framer → "radio-packet" / "board-sync" events → UI.
 
-**Current state (v0.3.10):**
+**How it works (v0.3.11):**
 - The Connect tab shows a **📶 Bluetooth** tab on Android.
-- Scanning and device selection UI is functional.
-- Actual BLE GATT connection to the board is a stub — tapping Connect shows a "Bluetooth is experimental" notice.
+- Tap **⟳ Scan** — runs a 5-second BLE discovery pass and lists nearby devices.
+- Select the Heltec board and tap **Connect via Bluetooth** — the app opens a GATT connection, subscribes to the notify characteristic, and sends the GET_FIRMWARE_VERSION + GET_SETTINGS handshake.
+- Board responses arrive as BLE notifications and are processed by the same `mobile_push_bytes` Rust accumulator as USB — zero protocol duplication.
+- Ping, send Dogecoin, and change LoRa settings all work over BLE via `_bleWrite` → `blec.sendData()`.
 
-**Planned BLE architecture:**
-- ESP32 firmware will expose a custom BLE GATT service with a single "serial" characteristic (UUID TBD).
-- `tauri-plugin-bluetooth` (or a thin custom JNI plugin) will handle BLE scan, connect, and characteristic read/write.
-- The same `mobile_push_bytes` Rust entry-point will receive BLE data, so the packet protocol is identical to USB.
+**GATT UUID configuration:**
+The firmware GATT service and characteristic UUIDs are placeholder constants at the top of `connection-bridge.ts`. Update them once the firmware BLE service is finalised:
+```typescript
+// connection-bridge.ts — replace with final firmware UUIDs
+const BLE_SERVICE_UUID    = '51ff12bb-3ed8-46e5-b4f9-d64e2fec0001';
+const BLE_WRITE_CHAR_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec0002';
+const BLE_NOTIFY_CHAR_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec021b';
+```
 
-**To enable Bluetooth on the ESP32 firmware side (future):**
+**To enable Bluetooth on the ESP32 firmware side:**
 ```cpp
-// In heltec-firmware.ino — enable BLE serial bridge
-// Uses the Arduino BluetoothSerial library or esp32-nimble
-#include <BluetoothSerial.h>
-BluetoothSerial SerialBT;
-// Forward from HardwareSerial ↔ BluetoothSerial for a transparent bridge
+// In heltec-firmware.ino — enable BLE serial bridge using NimBLE or arduino-esp32 BLE
+// Expose a custom GATT service with write + notify characteristics matching the UUIDs above.
+// Forward data between HardwareSerial (RadioDoge protocol) and the BLE characteristic.
 ```
 
 ---
@@ -452,8 +456,8 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Board MAC address** — displayed in Settings tab
 - ✅ **Light/dark theme toggle** — full theme switcher in Settings
 - ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
-- ✅ **Android USB serial** (v0.3.10, experimental) — USB-OTG CP2102 serial via `tauri-plugin-serialplugin`; status badge ("Searching for device…" / "Connected" / "Connection failed"); full RadioDoge packet protocol identical to desktop
-- 🔜 **Android Bluetooth BLE** (framework in v0.3.10, full GATT coming) — UI tabs, scan, permissions all wired up; waiting on firmware BLE GATT characteristic UUID to be finalised
+- ✅ **Android USB serial** (v0.3.10) — USB-OTG CP2102/CH340 serial via `tauri-plugin-serialplugin`; status badge; full RadioDoge packet protocol identical to desktop
+- ✅ **Android Bluetooth BLE** (v0.3.11) — full GATT scan → connect → notify pipeline via `tauri-plugin-blec`; incoming notifications feed the identical `mobile_push_bytes` accumulator as USB; GATT service/characteristic UUIDs are configurable constants in `connection-bridge.ts` pending firmware finalisation
 
 ---
 

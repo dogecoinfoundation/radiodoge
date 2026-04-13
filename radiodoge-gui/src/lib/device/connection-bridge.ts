@@ -1,5 +1,5 @@
 /**
- * RadioDoge connection bridge — v0.3.10
+ * RadioDoge connection bridge — v0.3.11
  *
  * Platform-aware abstraction over serial communication:
  *
@@ -334,7 +334,7 @@ async function _connectAndroid(devicePath: string): Promise<void> {
 
   const initPackets = await invoke<number[][]>('mobile_build_connect_queries');
   for (let i = 0; i < initPackets.length; i++) {
-    await activePort.write(new Uint8Array(initPackets[i]));
+    await activePort.writeBinary(new Uint8Array(initPackets[i]));
     if (i < initPackets.length - 1) await _sleep(80);
   }
 }
@@ -514,7 +514,7 @@ export async function mobilePing(): Promise<void> {
     await _bleWrite(new Uint8Array(bytes));
   } else {
     _requireActivePort();
-    await activePort!.write(new Uint8Array(bytes));
+    await activePort!.writeBinary(new Uint8Array(bytes));
   }
 }
 
@@ -532,7 +532,7 @@ export async function mobileSendTransaction(tx: TransactionRequest): Promise<voi
       await _bleWrite(chunk);
     } else {
       _requireActivePort();
-      await activePort!.write(chunk);
+      await activePort!.writeBinary(chunk);
     }
     if (packets.length > 1 && i < packets.length - 1) await _sleep(120);
   }
@@ -550,7 +550,7 @@ export async function mobileSendLoraSettings(settings: LoraSettings): Promise<vo
     await _bleWrite(data);
   } else {
     _requireActivePort();
-    await activePort!.write(data);
+    await activePort!.writeBinary(data);
   }
 }
 
