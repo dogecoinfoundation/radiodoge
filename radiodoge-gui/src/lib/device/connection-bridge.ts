@@ -307,30 +307,31 @@ export async function connect(devicePath: string, type?: 'usb' | 'bluetooth'): P
 
 // ─── Raw-bytes extraction helper ─────────────────────────────────────────────
 //
-// tauri-plugin-serialplugin v2.x delivers the listen() callback payload as a
-// ReadData wrapper object — { data: number[] } — because the Tauri IPC layer
-// JSON-serialises the native byte array into that shape before delivering it
-// to JavaScript.  Earlier builds (and BLE onReceiveData) may deliver a plain
-// number[] or Uint8Array directly.  This helper normalises all three forms so
-// the rest of the bridge can always work with a flat number[].
+// tauri-plugin-serialplugin v2.22.0 listen(fn, isDecode=false) delivers the
+// callback payload as a raw Uint8Array.  BLE onReceiveData also delivers
+// Uint8Array.  This helper normalises all possible shapes defensively so the
+// pipeline always receives a flat number[].
 
 /**
- * Extract raw bytes from whatever shape tauri-plugin-serialplugin delivers:
+ * Extract raw bytes from whatever shape the transport layer delivers:
  *
- *   number[]           — plain byte array (older plugin builds)
- *   Uint8Array         — typed array (some native read paths)
- *   { data: number[] } — ReadData wrapper (standard on Android v2.22.0)
- *   { data: Uint8Array }
+ *   Uint8Array         — raw bytes (listen with isDecode=false, BLE notify)
+ *   ArrayBuffer        — raw buffer (some native edge cases)
+ *   number[]           — plain byte array (fallback / older builds)
+ *   { data: Uint8Array | number[] } — wrapped form (some plugin versions)
+ *   string             — should not happen with isDecode=false; ignored
  *
  * Returns an empty array for any unrecognised shape.
  */
 function _extractBytes(raw: unknown): number[] {
-  if (Array.isArray(raw)) return raw as number[];
   if (raw instanceof Uint8Array) return Array.from(raw);
+  if (raw instanceof ArrayBuffer) return Array.from(new Uint8Array(raw));
+  if (Array.isArray(raw)) return raw as number[];
   if (raw !== null && typeof raw === 'object') {
     const inner = (raw as Record<string, unknown>).data;
-    if (Array.isArray(inner)) return inner as number[];
     if (inner instanceof Uint8Array) return Array.from(inner);
+    if (inner instanceof ArrayBuffer) return Array.from(new Uint8Array(inner));
+    if (Array.isArray(inner)) return inner as number[];
   }
   return [];
 }
@@ -345,16 +346,20 @@ async function _connectAndroid(devicePath: string): Promise<void> {
   try {
     activePort = new SerialPort({ path: devicePath, baudRate: 115200 });
     await activePort.open();
+    // startListening() MUST be called after open() to start the native Android
+    // USB read thread.  open() alone does NOT begin reading bytes.
+    await activePort.startListening();
   } catch (e) {
     await invoke('mobile_set_disconnected');
     throw new Error(`USB serial open failed: ${e}`);
   }
 
   try {
-    // IMPORTANT: tauri-plugin-serialplugin v2.x wraps the raw bytes in a
-    // ReadData object { data: number[] }.  We must unwrap via _extractBytes()
-    // rather than treating `data` directly as an array — doing so would pass
-    // an empty array to mobile_push_bytes and no packets would ever be parsed.
+    // CRITICAL: pass isDecode=false (second arg) so the callback receives a
+    // raw Uint8Array.  The default isDecode=true runs the bytes through
+    // TextDecoder, which corrupts binary protocol data and delivers a string
+    // instead of Uint8Array — causing mobile_push_bytes to receive nothing
+    // useful.  With isDecode=false the callback gets a real Uint8Array.
     const teardown = await activePort.listen(
       (data: unknown) => {
         const bytes = _extractBytes(data);
@@ -363,10 +368,11 @@ async function _connectAndroid(devicePath: string): Promise<void> {
           (err) => console.warn('[bridge] mobile_push_bytes error:', err),
         );
       },
-      (err: string) => console.warn('[bridge] USB serial read error:', err),
+      false, // isDecode=false — raw Uint8Array, not UTF-8 decoded string
     );
     activeListenerTeardown = typeof teardown === 'function' ? teardown : null;
   } catch (e) {
+    await activePort.stopListening().catch(() => {});
     await _closePort();
     await invoke('mobile_set_disconnected');
     throw new Error(`USB listener setup failed: ${e}`);
@@ -473,6 +479,13 @@ async function _disconnectAndroid(notifyRust: boolean): Promise<void> {
   if (activeListenerTeardown) {
     try { activeListenerTeardown(); } catch { /* ignore */ }
     activeListenerTeardown = null;
+  }
+
+  // stopListening() MUST be called before close() to shut down the native
+  // Android USB read thread started by startListening().  Skipping it leaks
+  // the read loop and can prevent the port from being re-opened.
+  if (activePort) {
+    await activePort.stopListening().catch(() => {});
   }
 
   await _closePort();
