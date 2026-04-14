@@ -1329,6 +1329,30 @@ async fn mobile_ble_disconnect(
     Ok(())
 }
 
+/// Log bytes written to the USB serial port in the debug traffic stream.
+///
+/// The Android USB mobile path performs physical writes in JS via the
+/// serialplugin's `writeBinary()` API.  This command exists to:
+///   1. Emit a "TX-USB" debug-serial-traffic event visible in the Debug Console
+///   2. Mirror the equivalent `mobile_ble_write_characteristic` for the BLE path
+#[tauri::command]
+async fn mobile_emit_debug_tx(bytes: Vec<u8>, app: AppHandle) -> Result<(), String> {
+    let hex = hex::encode(&bytes);
+    let note = bytes.first().map(|cmd| match *cmd {
+        0x02 => "CMD_PING",
+        0x10 => "CMD_DOGE_TX",
+        0x20 => "CMD_GET_FIRMWARE_VERSION",
+        0x22 => "CMD_GET_SETTINGS",
+        0x23 => "CMD_SET_GATEWAY",
+        0x24 => "CMD_WIFI_TOGGLE",
+        0x26 => "CMD_GET_BATTERY",
+        0x27 => "CMD_GET_MAC",
+        _    => "CMD_?",
+    }).unwrap_or("(empty)");
+    emit_debug_traffic(&app, "TX-USB", &hex, note);
+    Ok(())
+}
+
 /// Log bytes being written to the BLE TX characteristic in the debug traffic stream.
 ///
 /// The actual GATT write is performed by the JS layer via the blec plugin's
@@ -1410,6 +1434,10 @@ pub fn run() {
             mobile_build_connect_queries,
             mobile_build_tx_packets,
             mobile_build_lora_settings_packet,
+            // ── v0.3.10 Android BLE bridge ────────────────────────────────
+            // blec plugin handles GATT transport; Rust handles state + debug logging
+            // ── v0.3.16 Android USB TX debug ──────────────────────────────
+            mobile_emit_debug_tx,
             // ── v0.3.10 Android BLE bridge ────────────────────────────────
             // blec plugin handles GATT transport; Rust handles state + debug logging
             mobile_ble_scan,
