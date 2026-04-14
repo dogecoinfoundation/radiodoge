@@ -231,9 +231,10 @@
     const start = performance.now();
     try {
       // mobilePingWait() registers a radio-packet listener BEFORE writing the
-      // PING bytes, then waits up to 500 ms for CMD_PING (0x02) to come back.
-      // This mirrors the desktop ping_device Rust command exactly.
-      const ok = await bridge.mobilePingWait(500);
+      // PING bytes, then waits up to 2000 ms for CMD_PING (0x02) to come back.
+      // 2000 ms matches the desktop serial.ping() which was raised from 500 ms
+      // after debug logs confirmed the firmware response arriving at ~548 ms.
+      const ok = await bridge.mobilePingWait(2000);
       const ms = Math.round(performance.now() - start);
       pingResult = ok
         ? { success: true,  message: `Pong! Device responded in ~${ms} ms 🐕` }

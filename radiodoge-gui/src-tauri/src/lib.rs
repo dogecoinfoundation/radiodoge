@@ -611,9 +611,27 @@ async fn get_board_settings(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Option<BoardSettings>, String> {
+    // Android mobile path: the serial port is owned by the JS bridge, not by
+    // the Rust SerialManager.  is_connected() is always false on mobile.
+    // Return the board settings cached by mobile_push_bytes when CMD_GET_SETTINGS
+    // last arrived — this is the same data the frontend already has from board-sync.
+    let is_mobile_connected = state.current_port.lock().await.is_some()
+        && !state.serial.is_connected();
+
+    if is_mobile_connected {
+        let cached = state.serial.get_board_settings().await;
+        emit_debug_traffic(
+            &app, "INFO", "",
+            "get_board_settings: Android path — returning cached settings from last board-sync",
+        );
+        return Ok(cached);
+    }
+
     if !state.serial.is_connected() {
         return Ok(None);
     }
+
+    // Desktop path: actively query the board over the Rust-owned serial port.
     let src = state.serial.get_node_address().await;
     let pkt = radio::build_get_settings(&src);
     let pkt_hex = hex::encode(&pkt);
@@ -1095,6 +1113,11 @@ async fn mobile_push_bytes(
                             gateway_mode: gw,
                             wifi_enabled: wifi,
                         };
+
+                        // Cache board settings in SerialManager so `get_board_settings()`
+                        // returns the right value on Android (without the desktop read loop).
+                        state.serial.update_board_settings(bs.clone()).await;
+
                         let _ = app.emit("board-sync", &bs);
 
                         // Now emit "connected" — we have everything we need.
@@ -1172,10 +1195,15 @@ async fn mobile_push_bytes(
 
 /// Build a raw PING packet for the Android USB bridge to write directly to serial.
 /// Uses the current node address from AppState (synced from board on connect).
+///
+/// Mirrors the desktop `serial::ping()` which sends CMD_PING from `local` to `local`
+/// (self-addressed).  The firmware only echoes back a CMD_PING response when the
+/// destination address matches the board's own address — broadcast PINGs are silently
+/// ignored by some firmware builds.
 #[tauri::command]
 async fn mobile_build_ping(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
     let src = state.serial.get_node_address().await;
-    Ok(radio::build_ping(&src, &NodeAddress::broadcast()))
+    Ok(radio::build_ping(&src, &src)) // self-addressed, same as desktop serial::ping()
 }
 
 /// Build the two-packet connect sequence for the Android USB bridge:

@@ -590,6 +590,14 @@ impl SerialManager {
         *self.node_address.lock().await = addr;
     }
 
+    /// Update the cached board settings (called by the Android mobile path when
+    /// CMD_GET_SETTINGS (0x22) arrives via `mobile_push_bytes`).
+    /// Allows `get_board_settings()` to return valid data on Android without the
+    /// desktop Rust serial loop needing to be active.
+    pub async fn update_board_settings(&self, settings: BoardSettings) {
+        *self.board_settings.lock().await = Some(settings);
+    }
+
     /// The firmware version string reported by the connected device, if available.
     pub async fn get_firmware_version(&self) -> Option<String> {
         self.firmware_version.lock().await.clone()

@@ -642,7 +642,7 @@ function _sleep(ms: number): Promise<void> {
  *
  * Returns true if a PONG was received, false on timeout.
  */
-export async function mobilePingWait(timeoutMs = 500): Promise<boolean> {
+export async function mobilePingWait(timeoutMs = 2000): Promise<boolean> {
   const pingBytes = await invoke<number[]>('mobile_build_ping');
 
   // Deferred-resolve pattern: create the promise first, capture its resolver.
