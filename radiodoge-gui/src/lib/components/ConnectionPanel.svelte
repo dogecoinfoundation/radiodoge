@@ -246,6 +246,29 @@
     }
   }
 
+  // ── v0.3.16: BLE advertising toggle (Android — USB-C and BLE connected) ──────
+  // Board starts advertising by default; this lets the user disable it quickly
+  // from the Connect panel without navigating to Settings.
+  let panelBleEnabled = $state(true);
+  let isPanelTogglingBle = $state(false);
+  let panelBleError = $state<string | null>(null);
+
+  async function panelToggleBle() {
+    if (!connection.isConnected) return;
+    isPanelTogglingBle = true;
+    panelBleError = null;
+    try {
+      const nextState = !panelBleEnabled;
+      const bytes = await invoke<number[]>('mobile_build_ble_toggle', { enable: nextState });
+      await bridge.mobileSendBytes(new Uint8Array(bytes));
+      panelBleEnabled = nextState;
+    } catch (e: unknown) {
+      panelBleError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isPanelTogglingBle = false;
+    }
+  }
+
   // ── v0.3.10: derived helper for the selected mobile device info ────────────
   const selectedMobileDeviceInfo = $derived(
     mobileDevices.find(d => d.path === selectedMobileDevice) ?? null
@@ -623,6 +646,46 @@
               {pingResult.success ? '✅' : '❌'} {pingResult.message}
             </div>
           {/if}
+
+          <!-- ── BLE Advertising toggle (v0.3.16) ────────────────────────── -->
+          <!-- Only meaningful when the board is connected — enables/disables
+               the board's BLE advertising so other phones can find it via BLE. -->
+          <div style="
+            padding: 10px 14px;
+            background: rgba(100,100,255,0.06);
+            border: 1px solid rgba(100,100,255,0.2);
+            border-radius: 10px;
+            margin-bottom: 10px;
+          ">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 600; color: var(--doge-text);">
+                  📶 BLE Advertising
+                </div>
+                <div style="font-size: 0.71rem; color: var(--doge-muted); margin-top: 2px;">
+                  {panelBleEnabled ? 'Board is broadcasting NUS (RadioDoge-…)' : 'Board BLE advertising disabled'}
+                </div>
+              </div>
+              <button
+                onclick={panelToggleBle}
+                disabled={isPanelTogglingBle}
+                style="
+                  padding: 6px 14px;
+                  border-radius: 20px;
+                  border: 1px solid {panelBleEnabled ? 'rgba(100,100,255,0.5)' : 'rgba(255,100,100,0.4)'};
+                  background: {panelBleEnabled ? 'rgba(100,100,255,0.15)' : 'rgba(255,100,100,0.1)'};
+                  color: {panelBleEnabled ? '#9090ff' : 'var(--doge-red)'};
+                  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+                  opacity: {isPanelTogglingBle ? 0.6 : 1};
+                "
+              >
+                {isPanelTogglingBle ? '⟳' : panelBleEnabled ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+            {#if panelBleError}
+              <div style="font-size: 0.7rem; color: var(--doge-red); margin-top: 6px;">❌ {panelBleError}</div>
+            {/if}
+          </div>
 
           <button
             onclick={mobileDisconnect}

@@ -66,6 +66,15 @@ jobs:
         run: |
           sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0"
 
+      # Generate all platform icons (32×32, 128×128, 1024×1024, .ico, .icns)
+      # from the RadioDoge source image before tauri android init consumes them.
+      # Without this step tauri android init uses the default Tauri placeholder
+      # icon.png (64×64) which results in the default Tauri icon on the home screen.
+      - name: Generate icons from RadioDoge source image
+        working-directory: radiodoge-gui
+        shell: bash
+        run: npm run tauri -- icon src-tauri/icons/doge-radio.png
+
       - name: Initialize Tauri Android platform
         working-directory: radiodoge-gui
         shell: bash

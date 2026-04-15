@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.16** ✨: Android USB-C serial **and** Bluetooth BLE are both production-ready! Settings tab (Gateway, WiFi, BLE advertising toggle, Read MAC) fully functional on Android. Live Packet Log readable on 360dp phones. Debug log export uses native Android share sheet. Much mobile. Very wireless. Wow!
+> **v0.3.16** ✨: Android USB-C and Bluetooth BLE both production-ready! RadioDoge icon on the home screen. BLE connection fixed (CCCD timing + sendData byte format). Settings tab fully functional on Android. BLE advertising toggle in Connect panel AND Settings. Live Packet Log readable on 360dp phones with proper wrapping. Debug export uses Android share sheet. Much mobile. Very wireless. Such polish. Wow!
 
 ---
 

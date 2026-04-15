@@ -62,6 +62,24 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### BLE UUID normalization
 - All BLE service and characteristic UUIDs in `connection-bridge.ts` normalized to lowercase (`6e400001-...`) — required by Android's BLE stack, which rejects uppercase UUIDs on some devices/API levels.
 
+#### Android home screen showing default Tauri icon
+- **Root cause**: `tauri android init` uses `icons/icon.png` (64×64 default Tauri placeholder) as the source for Android launcher icon generation rather than `icons/doge-radio.png` (1024×1024 RadioDoge image). The placeholder was the original icon generated when the project was initialized and never replaced.
+- **Fix**: Added a `tauri icon src-tauri/icons/doge-radio.png` step in `build-android.yml` BEFORE `tauri android init`. The `tauri icon` command re-generates all platform icon files (including `icon.png` at the correct size) from `doge-radio.png`. When `tauri android init` then runs, it generates the Android mipmap assets (mdpi / hdpi / xhdpi / xxhdpi / xxxhdpi) from the RadioDoge image.
+
+#### BLE GATT connection silently producing no data (board "connected" but unresponsive)
+- **Root cause 1 (timing)**: Some Android BLE stacks silently drop the CCCD descriptor write (NOTIFY enable) when it arrives within ~200 ms of the GATT Connected callback, resulting in a state where `blec.connect()` succeeds and `onReceiveData()` returns without error, but notifications are never actually enabled. The board sends data but nothing arrives in the app.
+- **Fix**: Added a 250 ms delay between `blec.connect()` and `blec.onReceiveData()` in `_connectBluetoothAndroid()` to let the GATT connection stabilise before enabling notifications.
+- **Root cause 2 (sendData type)**: `blec.sendData()` in some `@mnlphlp/plugin-blec@0.4.x` builds expects a `number[]` rather than `Uint8Array` in the underlying Tauri IPC serialisation. Passing `Uint8Array` directly could silently send zero bytes.
+- **Fix**: `_bleWrite()` now passes `Array.from(data)` (cast to the plugin's expected type) for `blec.sendData()`.
+- **Root cause 3 (silent failure)**: `onReceiveData()` subscribe failure was caught and logged as a warning, allowing the connection to appear successful while the board was deaf. Without notifications the board can only receive but never respond.
+- **Fix**: `onReceiveData` failure now throws (propagates to `mobileConnect()` → UI shows the error), immediately disconnects, and clears the BLE address so the user can retry.
+
+#### BLE advertising toggle only accessible in Settings tab
+- **Fix**: BLE advertising toggle card added to the Android connected view in `ConnectionPanel.svelte` — visible immediately when connected via USB-C or BLE, without navigating to Settings. Same `mobile_build_ble_toggle` → `bridge.mobileSendBytes()` path.
+
+#### Live Packet Log horizontal overflow on narrow phones
+- **Fix**: Log container now has `overflow-x: hidden; min-width: 0` so the scrollbox never creates a horizontal scrollbar. Each packet entry card has `min-width: 0; overflow: hidden` to prevent flex children from escaping the card width.
+
 ### Changed
 - `serial.rs`: Added `update_board_settings()` and `update_board_mac()` cache-update helpers used by `mobile_push_bytes`.
 - `mobile_push_bytes` `KNOWN_CMDS` list updated to include `0x28` (CMD_BLE_TOGGLE).

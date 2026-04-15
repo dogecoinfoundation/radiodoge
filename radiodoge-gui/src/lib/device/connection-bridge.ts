@@ -412,6 +412,13 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
 
   activeBleAddress = address;
 
+  // Allow the Android BLE stack 250 ms to stabilise after GATT connect before
+  // enabling characteristic notifications.  Some Android BLE implementations
+  // silently drop the CCCD descriptor write if it arrives too quickly after
+  // the GATT Connected callback, resulting in a "connected" state where the
+  // board never sends data back.
+  await _sleep(250);
+
   // Subscribe to characteristic notifications (board → host data path).
   // Each notification chunk feeds directly into mobile_push_bytes, which runs
   // the identical accumulator + framing logic as the USB-OTG path.
@@ -430,9 +437,15 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
       },
     );
     bleNotifyTeardown = typeof teardown === 'function' ? teardown : null;
+    if (!bleNotifyTeardown) {
+      console.warn('[bridge-ble] onReceiveData returned non-function teardown — notifications may not work');
+    }
   } catch (e) {
-    // Non-fatal: we can still send but won't receive from the board.
-    console.warn('[bridge-ble] notification subscribe failed (UUID mismatch?):', e);
+    // Propagate: without notifications the board can never respond and the
+    // connection is silently broken.  Surface the error so the UI can show it.
+    activeBleAddress = null;
+    await invoke('mobile_ble_disconnect').catch(() => {});
+    throw new Error(`BLE notification subscribe failed (UUID mismatch?): ${e}`);
   }
 
   // Register the same Tauri event listeners as the USB path
@@ -597,7 +610,10 @@ async function _bleWrite(data: Uint8Array): Promise<void> {
   // Debug logging (non-blocking — fire-and-forget is fine here)
   invoke('mobile_ble_write_characteristic', { data: Array.from(data) }).catch(() => {});
   const blec = await _blec();
-  await blec.sendData(BLE_SERVICE_UUID, BLE_WRITE_CHAR_UUID, data);
+  // Pass bytes as number[] to ensure compatibility across @mnlphlp/plugin-blec
+  // versions (some 0.4.x builds expect number[] rather than Uint8Array in the
+  // underlying Tauri IPC serialisation).
+  await blec.sendData(BLE_SERVICE_UUID, BLE_WRITE_CHAR_UUID, Array.from(data) as unknown as Uint8Array);
 }
 
 // ─── Port helpers ─────────────────────────────────────────────────────────────

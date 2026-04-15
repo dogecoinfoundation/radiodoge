@@ -297,9 +297,11 @@
       <div style="
         height: 300px;
         overflow-y: auto;
+        overflow-x: hidden;
         display: flex;
         flex-direction: column;
         gap: 5px;
+        min-width: 0;
       " role="log" aria-label="Live packet log" aria-live="polite">
         {#if radio.packets.length === 0}
           <div style="
@@ -325,6 +327,8 @@
                 border: 1px solid var(--doge-border);
                 border-left: 3px solid {isTx ? 'var(--doge-neon)' : 'var(--doge-blue)'};
                 font-size: clamp(0.65rem, 2vw, 0.76rem);
+                min-width: 0;
+                overflow: hidden;
               "
             >
               <!-- Row 1: metadata — all no-wrap items -->
