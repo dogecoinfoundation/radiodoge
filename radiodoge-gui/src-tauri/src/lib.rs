@@ -841,15 +841,25 @@ async fn query_battery(state: State<'_, AppState>, app: AppHandle) -> Result<Opt
 /// Returns the WiFi station MAC as a colon-separated hex string, or None if unavailable.
 #[tauri::command]
 async fn query_mac(state: State<'_, AppState>, app: AppHandle) -> Result<Option<String>, String> {
+    // Android mobile path: MAC is cached by mobile_push_bytes on CMD_GET_MAC arrival.
+    // Return the cached value immediately; the JS caller writes GET_MAC via bridge first.
+    let is_mobile_connected = state.current_port.lock().await.is_some()
+        && !state.serial.is_connected();
+    if is_mobile_connected {
+        return Ok(state.serial.get_board_mac().await);
+    }
+
     if !state.serial.is_connected() {
         return Ok(None);
     }
+
+    // Desktop path: send CMD_GET_MAC via Rust-owned serial port and wait for response.
     let src = state.serial.get_node_address().await;
     let pkt = radio::build_get_mac(&src);
     let pkt_hex = hex::encode(&pkt);
     emit_debug_traffic(&app, "TX", &pkt_hex, "CMD_GET_MAC (0x27)");
     state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;  // raised from 400ms (too tight)
     Ok(state.serial.get_board_mac().await)
 }
 
@@ -1011,7 +1021,7 @@ async fn mobile_push_bytes(
     const KNOWN_CMDS: &[u8] = &[
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
         0x10, 0x11,
-        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, // 0x28 = CMD_BLE_TOGGLE (v0.3.16)
         0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE,
     ];
 
@@ -1152,6 +1162,23 @@ async fn mobile_push_bytes(
                 }));
             }
 
+            radio::CMD_GET_MAC => {
+                // Cache the board MAC so query_mac() works on Android (same as desktop
+                // serial.rs read loop).  Emit "mobile-board-mac" so SettingsTab can
+                // update the UI without polling.
+                if let Ok(payload) = hex::decode(&packet.payload_hex) {
+                    if payload.len() >= 6 {
+                        let mac = format!(
+                            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                            payload[0], payload[1], payload[2],
+                            payload[3], payload[4], payload[5]
+                        );
+                        state.serial.update_board_mac(mac.clone()).await;
+                        let _ = app.emit("mobile-board-mac", &mac);
+                    }
+                }
+            }
+
             _ => {}
         }
 
@@ -1204,6 +1231,61 @@ async fn mobile_push_bytes(
 async fn mobile_build_ping(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
     let src = state.serial.get_node_address().await;
     Ok(radio::build_ping(&src, &src)) // self-addressed, same as desktop serial::ping()
+}
+
+/// Build a SET_GATEWAY packet for the Android USB bridge.
+/// The JS layer writes the bytes to USB/BLE; the board responds via CMD_GET_SETTINGS
+/// board-sync which updates gateway_mode in the connection store.
+#[tauri::command]
+async fn mobile_build_set_gateway(enable: bool, state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(radio::build_set_gateway(&src, enable))
+}
+
+/// Build a WIFI_TOGGLE packet for the Android USB bridge.
+#[tauri::command]
+async fn mobile_build_wifi_toggle(enable: bool, state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(radio::build_wifi_toggle(&src, enable))
+}
+
+/// Build a BLE_TOGGLE packet for the Android USB bridge.
+/// Enables or disables BLE advertising on the board (persisted to NVS).
+/// Requires firmware v0.3.16+.
+#[tauri::command]
+async fn mobile_build_ble_toggle(enable: bool, state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(radio::build_ble_toggle(&src, enable))
+}
+
+/// Build a GET_MAC packet for the Android USB bridge.
+/// After writing, the board sends CMD_GET_MAC (0x27) response;
+/// mobile_push_bytes processes it and emits "mobile-board-mac".
+#[tauri::command]
+async fn mobile_build_get_mac(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let src = state.serial.get_node_address().await;
+    Ok(radio::build_get_mac(&src))
+}
+
+/// v0.3.16 — Enable/disable BLE advertising on the board (desktop path).
+/// Mirrors set_wifi_enabled but uses CMD_BLE_TOGGLE (0x28).
+/// Requires board firmware v0.3.16+.
+#[tauri::command]
+async fn set_ble_enabled(
+    enable: bool,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    if !state.serial.is_connected() {
+        return Err("Not connected to board.".to_string());
+    }
+    let src = state.serial.get_node_address().await;
+    let pkt = radio::build_ble_toggle(&src, enable);
+    let pkt_hex = hex::encode(&pkt);
+    emit_debug_traffic(&app, "TX", &pkt_hex, &format!("CMD_BLE_TOGGLE (0x28) → {}", if enable { "ON" } else { "OFF" }));
+    state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
+    // BLE toggle ACK is just the 9-byte echo — no follow-up GET_SETTINGS needed.
+    Ok(enable)
 }
 
 /// Build the two-packet connect sequence for the Android USB bridge:
@@ -1462,8 +1544,12 @@ pub fn run() {
             mobile_build_connect_queries,
             mobile_build_tx_packets,
             mobile_build_lora_settings_packet,
-            // ── v0.3.10 Android BLE bridge ────────────────────────────────
-            // blec plugin handles GATT transport; Rust handles state + debug logging
+            // ── v0.3.16 Settings-tab mobile commands ──────────────────────
+            mobile_build_set_gateway,
+            mobile_build_wifi_toggle,
+            mobile_build_ble_toggle,
+            mobile_build_get_mac,
+            set_ble_enabled,
             // ── v0.3.16 Android USB TX debug ──────────────────────────────
             mobile_emit_debug_tx,
             // ── v0.3.10 Android BLE bridge ────────────────────────────────

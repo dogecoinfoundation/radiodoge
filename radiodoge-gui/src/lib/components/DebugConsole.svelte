@@ -86,21 +86,37 @@
     } catch { /* sandboxed — fail silently */ }
   }
 
-  function exportToTxt() {
+  async function exportToTxt() {
     const filename = `radiodoge-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
     const header = `RadioDoge Debug Console Export\nGenerated: ${new Date().toISOString()}\n${'─'.repeat(72)}\n\n`;
     const text = header + entries.map(entryToText).join('\n');
     const blob = new Blob([text], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
+
+    // On Android/mobile: use the native share sheet (routes to Files / Downloads)
+    // On desktop: fall back to anchor download
+    if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [new File([blob], filename)] })) {
+      try {
+        const file = new File([blob], filename, { type: 'text/plain' });
+        await navigator.share({ files: [file], title: 'RadioDoge Debug Log' });
+        if (exportToastTimer) clearTimeout(exportToastTimer);
+        exportToast = 'Shared via system share sheet';
+        exportToastTimer = setTimeout(() => { exportToast = null; }, 4000);
+        return;
+      } catch (err) {
+        // User cancelled share or share failed — fall through to anchor download
+        if ((err as DOMException).name === 'AbortError') return;
+      }
+    }
+
+    // Desktop / WebView fallback: anchor download
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
     a.href     = url;
     a.download = filename;
-    // Must be in the DOM for Tauri's WebView to honour the download attribute
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    // Show a friendly toast with the filename so the user knows where it went
     if (exportToastTimer) clearTimeout(exportToastTimer);
     exportToast = `Downloads/${filename}`;
     exportToastTimer = setTimeout(() => { exportToast = null; }, 4000);
@@ -300,7 +316,7 @@
     role="status"
     aria-live="polite"
   >
-    💾 Saved to <strong>{exportToast}</strong>
+    💾 {exportToast}
   </div>
 {/if}
 

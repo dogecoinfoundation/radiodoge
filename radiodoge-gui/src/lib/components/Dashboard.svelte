@@ -319,69 +319,80 @@
             <div
               class="slide-up"
               style="
-                display: flex;
-                align-items: flex-start;
-                gap: 8px;
-                padding: 7px 10px;
+                padding: 6px 10px;
                 background: var(--doge-dark);
                 border-radius: 8px;
                 border: 1px solid var(--doge-border);
                 border-left: 3px solid {isTx ? 'var(--doge-neon)' : 'var(--doge-blue)'};
-                font-size: 0.76rem;
+                font-size: clamp(0.65rem, 2vw, 0.76rem);
               "
             >
-              <!-- Direction icon -->
-              <span
-                title="{isTx ? '↑ TX — Sent by this node' : '↓ RX — Received from remote node'}"
-                style="color: {isTx ? 'var(--doge-neon)' : 'var(--doge-blue)'}; font-weight: 700; flex-shrink: 0; min-width: 14px; cursor: help;"
-              >
-                {isTx ? '↑' : '↓'}
-              </span>
-
-              <!-- Timestamp -->
-              <span style="color: var(--doge-subtle); font-family: var(--font-mono); flex-shrink: 0; white-space: nowrap;">
-                {formatTimestamp(packet.timestamp)}
-              </span>
-
-              <!-- Command badge -->
-              <span style="
-                background: rgba(245, 197, 24, 0.1);
-                color: var(--doge-yellow);
-                border-radius: 4px;
-                padding: 1px 5px;
-                flex-shrink: 0;
-                font-family: var(--font-mono);
-              ">
-                {commandName(packet.command)}
-              </span>
-
-              <!-- Source -->
-              <span style="color: var(--doge-muted); flex-shrink: 0;">
-                {packet.source.region}.{packet.source.community}.{packet.source.node}
-              </span>
-
-              <!-- Content -->
-              <span style="color: {isTx ? '#b3ffe0' : 'var(--doge-text)'}; flex: 1; word-break: break-all;">
-                {packet.decoded ?? packet.payloadHex}
-              </span>
-
-              <!-- RSSI (RX only) -->
-              {#if !isTx}
-                <span style="color: var(--doge-subtle); flex-shrink: 0; font-family: var(--font-mono); white-space: nowrap;">
-                  {packet.rssi}dBm
+              <!-- Row 1: metadata — all no-wrap items -->
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden;">
+                <!-- Direction icon -->
+                <span
+                  title="{isTx ? '↑ TX — Sent by this node' : '↓ RX — Received from remote node'}"
+                  style="color: {isTx ? 'var(--doge-neon)' : 'var(--doge-blue)'}; font-weight: 700; flex-shrink: 0; min-width: 14px; cursor: help;"
+                >
+                  {isTx ? '↑' : '↓'}
                 </span>
-              {/if}
 
-              <!-- Copy -->
-              <button
-                onclick={() => copyPacket(packet.decoded ?? packet.payloadHex, i)}
-                class="btn-ghost"
-                title="Copy packet data to clipboard"
-                aria-label="Copy packet"
-                style="padding: 1px 5px; font-size: 0.66rem; flex-shrink: 0; border-color: transparent;"
-              >
-                {copiedPacketIdx === i ? '✅' : '📋'}
-              </button>
+                <!-- Timestamp -->
+                <span style="color: var(--doge-subtle); font-family: var(--font-mono); flex-shrink: 0; white-space: nowrap;">
+                  {formatTimestamp(packet.timestamp)}
+                </span>
+
+                <!-- Command badge -->
+                <span style="
+                  background: rgba(245, 197, 24, 0.1);
+                  color: var(--doge-yellow);
+                  border-radius: 4px;
+                  padding: 1px 5px;
+                  flex-shrink: 0;
+                  font-family: var(--font-mono);
+                  white-space: nowrap;
+                ">
+                  {commandName(packet.command)}
+                </span>
+
+                <!-- Source -->
+                <span style="color: var(--doge-muted); flex-shrink: 0; white-space: nowrap;">
+                  {packet.source.region}.{packet.source.community}.{packet.source.node}
+                </span>
+
+                <!-- Spacer -->
+                <span style="flex: 1;"></span>
+
+                <!-- RSSI (RX only) -->
+                {#if !isTx}
+                  <span style="color: var(--doge-subtle); flex-shrink: 0; font-family: var(--font-mono); white-space: nowrap;">
+                    {packet.rssi}dBm
+                  </span>
+                {/if}
+
+                <!-- Copy -->
+                <button
+                  onclick={() => copyPacket(packet.decoded ?? packet.payloadHex, i)}
+                  class="btn-ghost"
+                  title="Copy packet data to clipboard"
+                  aria-label="Copy packet"
+                  style="padding: 1px 5px; font-size: 0.66rem; flex-shrink: 0; border-color: transparent;"
+                >
+                  {copiedPacketIdx === i ? '✅' : '📋'}
+                </button>
+              </div>
+
+              <!-- Row 2: content — freely wrapping -->
+              <div style="
+                color: {isTx ? '#b3ffe0' : 'var(--doge-text)'};
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                padding-left: 14px;
+                margin-top: 2px;
+                line-height: 1.4;
+              ">
+                {packet.decoded ?? packet.payloadHex}
+              </div>
             </div>
           {/each}
         {/if}

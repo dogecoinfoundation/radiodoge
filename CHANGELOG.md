@@ -7,6 +7,67 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.16] — 2026-04-15 — 🐕 Android Settings + BLE Toggle + Live Log Polish — Much Polish. Very Stable. Wow.
+
+> **Settings tab actions now work on Android. Start Gateway double-press fixed on desktop. Live Packet Log fully readable on 360dp phones. Debug export uses native share sheet on Android. BLE advertising toggle added. Board MAC read fixed for both platforms.**
+> Such cross-platform. Very consistent. Much UX. Wow. 🐕📡
+
+### Fixed
+
+#### Settings tab actions failing on Android ("Not connected to board")
+- **Root cause**: All Rust commands (`set_gateway_mode`, `set_wifi_enabled`, `query_mac`) checked `state.serial.is_connected()` which is always `false` on Android (the JS bridge owns the USB port, not the Rust `SerialManager`). Every Settings tab action immediately returned an error.
+- **Fix**: Added four new `mobile_build_*` Tauri commands that return raw packet bytes for the JS bridge to write:
+  - `mobile_build_set_gateway(enable: bool)` — builds a `CMD_SET_GATEWAY` packet
+  - `mobile_build_wifi_toggle(enable: bool)` — builds a `CMD_WIFI_TOGGLE` packet
+  - `mobile_build_ble_toggle(enable: bool)` — builds a `CMD_BLE_TOGGLE` packet
+  - `mobile_build_get_mac()` — builds a `CMD_GET_MAC` packet
+- **`SettingsTab.svelte`** detects Android via `bridge.isAndroid()` and takes the mobile path (invoke → get bytes → `bridge.mobileSendBytes(bytes)` → optimistic state update) instead of the Rust-serial path.
+- **`mobileSendBytes`** — new exported function in `connection-bridge.ts` that routes to `_bleWrite` or `_usbWrite` depending on the active transport.
+
+#### Start Gateway double-press required on desktop
+- **Root cause**: `invoke('set_gateway_mode')` returned before the async `board-sync` Tauri event was processed by JS, so `connection.gatewayMode` still showed the old value when the button re-rendered, requiring a second press to visually confirm.
+- **Fix**: `set_gateway_mode` already returns the confirmed `bool` from the board. JS now uses it directly (`connection.gatewayMode = confirmed`) instead of waiting for the `board-sync` event.
+
+#### Read MAC failing on desktop (timeout too tight)
+- **Root cause**: `query_mac` sent a `CMD_GET_MAC` packet and waited 400ms for the board response before reading the cache. Boards with a slow UART or queue delay missed the window.
+- **Fix**: Timeout extended to 600ms.
+
+#### Read MAC failing on Android
+- **Root cause**: `query_mac` had no mobile path. It sent the packet via `state.serial.send()` (no-op on Android) and waited, always returning `None`.
+- **Fix**: `mobile_push_bytes` now handles `CMD_GET_MAC` responses: parses the 6-byte MAC, caches it via `state.serial.update_board_mac()`, and emits a `mobile-board-mac` Tauri event. `SettingsTab.svelte` listens for this event and updates `connection.boardMac`. The Rust `query_mac` command also returns the cached value immediately on mobile (when `current_port` is set but `serial.is_connected()` is false).
+
+#### Live Packet Log text cut off / overlapping on Android phones
+- **Root cause**: All packet metadata (direction, timestamp, command, source, content, RSSI, copy button) was in a single `display: flex` row with `gap: 8px`. On 360dp phones the total content far exceeded the viewport width; content was clipped or pushed off-screen.
+- **Fix**: Restructured each packet entry into two rows:
+  - **Row 1** (`flex-wrap: nowrap`): direction arrow, timestamp, command badge, source address — all `flex-shrink: 0` with `white-space: nowrap` — then a spacer, RSSI, and copy button pinned to the right.
+  - **Row 2**: packet content with `word-break: break-all; overflow-wrap: anywhere` so long hex strings and decoded text wrap freely.
+  - Font size: `clamp(0.65rem, 2vw, 0.76rem)` — scales with viewport width on phones, caps at desktop readable size.
+
+#### Debug log export unreliable on Android
+- **Root cause**: The `<a download="...">` anchor click approach is not reliably honoured by Tauri's Android WebView — the file was silently discarded with no user-visible feedback or file manager entry.
+- **Fix**: `exportToTxt` now checks for `navigator.share` + `navigator.canShare({ files: [...] })` (both present on Android). When available, it calls `navigator.share({ files: [file], title: 'RadioDoge Debug Log' })` which triggers the native Android share sheet (user can choose Files, Gmail, etc.). On desktop / WebView without share-file support, the existing anchor download fallback runs unchanged.
+
+### Added
+
+#### BLE advertising toggle
+- **`CMD_BLE_TOGGLE` (0x28)** — new protocol command added to `radio.rs`. Sends a 1-byte payload (`0x01` = enable, `0x00` = disable) to instruct the board to start or stop BLE advertising.
+- **`build_ble_toggle(src, enable)`** — packet builder in `radio.rs`.
+- **`set_ble_enabled(enable: bool)`** — new desktop Tauri command (writes via Rust serial).
+- **`mobile_build_ble_toggle(enable: bool)`** — new mobile Tauri command (returns bytes for JS to write).
+- **BLE Advertising card** added to `SettingsTab.svelte` — mirrors the WiFi toggle card; shows current state and lets the user enable/disable BLE advertising. Works on both Android (mobile path) and desktop.
+
+#### `mobileSendBytes` bridge function
+- `connection-bridge.ts` now exports `mobileSendBytes(data: Uint8Array)` — routes to `_bleWrite` or `_usbWrite` based on active transport. Used by all Android Settings actions.
+
+#### BLE UUID normalization
+- All BLE service and characteristic UUIDs in `connection-bridge.ts` normalized to lowercase (`6e400001-...`) — required by Android's BLE stack, which rejects uppercase UUIDs on some devices/API levels.
+
+### Changed
+- `serial.rs`: Added `update_board_settings()` and `update_board_mac()` cache-update helpers used by `mobile_push_bytes`.
+- `mobile_push_bytes` `KNOWN_CMDS` list updated to include `0x28` (CMD_BLE_TOGGLE).
+
+---
+
 ## [0.3.15] — 2026-04-13 — 📡 Android Status Bar + Packet Stats Fix — Much Safe Area. Very Data. Wow.
 
 > **Nav bar no longer hides behind the Android system status bar. Dashboard packet counters and NavBar signal bars now update in real time on mobile USB/BLE.**

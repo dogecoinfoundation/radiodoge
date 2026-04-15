@@ -11,9 +11,17 @@
    */
 
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { radio, updateSettings } from '$lib/stores/radio.svelte';
   import { connection, setBoardMac } from '$lib/stores/connection.svelte';
+  import { bridge } from '$lib/device/connection-bridge';
   import DogeSpinner from './DogeSpinner.svelte';
+
+  // ── Platform detection ────────────────────────────────────────────────────
+  let isAndroidPlatform = $state(false);
+  $effect(() => {
+    bridge.isAndroid().then(v => { isAndroidPlatform = v; });
+  });
 
   let isSaving = $state(false);
   let saveSuccess = $state(false);
@@ -49,12 +57,29 @@
     if (!connection.isConnected) return;
     isQueryingMac = true;
     try {
-      const mac = await invoke<string | null>('query_mac');
-      setBoardMac(mac ?? null);
-    } catch { /* ignore */ } finally {
-      isQueryingMac = false;
-    }
+      if (isAndroidPlatform) {
+        // Android: write GET_MAC bytes via bridge; response arrives as 'mobile-board-mac' event
+        const bytes = await invoke<number[]>('mobile_build_get_mac');
+        await bridge.mobileSendBytes(new Uint8Array(bytes));
+        // isQueryingMac cleared by the mobile-board-mac listener below (or timeout)
+        setTimeout(() => { isQueryingMac = false; }, 1200);
+      } else {
+        const mac = await invoke<string | null>('query_mac');
+        setBoardMac(mac ?? null);
+        isQueryingMac = false;
+      }
+    } catch { isQueryingMac = false; }
   }
+  // Listen for MAC arriving from board on Android (mobile_push_bytes → "mobile-board-mac" event)
+  $effect(() => {
+    if (!isAndroidPlatform) return;
+    let unlisten: (() => void) | undefined;
+    listen<string>('mobile-board-mac', (ev) => {
+      setBoardMac(ev.payload);
+      isQueryingMac = false;
+    }).then(fn => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  });
   $effect(() => {
     if (connection.isConnected && !connection.boardMac) { fetchMac(); }
   });
@@ -67,8 +92,16 @@
     isTogglingWifi = true;
     wifiError = null;
     try {
-      await invoke<boolean>('set_wifi_enabled', { enable: !connection.wifiEnabled });
-      // board-sync event will update connection.wifiEnabled
+      const nextState = !connection.wifiEnabled;
+      if (isAndroidPlatform) {
+        // Android: write WIFI_TOGGLE bytes via bridge; board-sync event confirms
+        const bytes = await invoke<number[]>('mobile_build_wifi_toggle', { enable: nextState });
+        await bridge.mobileSendBytes(new Uint8Array(bytes));
+        connection.wifiEnabled = nextState; // optimistic update
+      } else {
+        const confirmed = await invoke<boolean>('set_wifi_enabled', { enable: nextState });
+        connection.wifiEnabled = confirmed; // use confirmed value directly — fixes board-sync race
+      }
     } catch (e: unknown) {
       wifiError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -82,14 +115,49 @@
   let isStartingDaemon = $state(false);
   let daemonError = $state<string | null>(null);
 
+  // ── v0.3.16 — BLE Advertising toggle ────────────────────────────────────
+  // Tracks local UI state only — board state persists independently in NVS.
+  // Assumes BLE advertising is ON by default (board always starts advertising).
+  let bleAdvertisingEnabled = $state(true);
+  let isTogglingBle = $state(false);
+  let bleError = $state<string | null>(null);
+  async function toggleBleAdvertising() {
+    if (!connection.isConnected) return;
+    isTogglingBle = true;
+    bleError = null;
+    try {
+      const nextState = !bleAdvertisingEnabled;
+      if (isAndroidPlatform) {
+        const bytes = await invoke<number[]>('mobile_build_ble_toggle', { enable: nextState });
+        await bridge.mobileSendBytes(new Uint8Array(bytes));
+      } else {
+        await invoke('set_ble_enabled', { enable: nextState });
+      }
+      bleAdvertisingEnabled = nextState;
+    } catch (e: unknown) {
+      bleError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isTogglingBle = false;
+    }
+  }
+
   async function toggleGatewayMode() {
     if (!connection.isConnected) return;
     isSettingGateway = true;
     gatewayError = null;
     try {
       const nextState = !connection.gatewayMode;
-      await invoke<boolean>('set_gateway_mode', { enable: nextState });
-      // board-sync event updates connection.gatewayMode via +page.svelte
+      if (isAndroidPlatform) {
+        // Android: write SET_GATEWAY bytes via bridge; board-sync event confirms
+        const bytes = await invoke<number[]>('mobile_build_set_gateway', { enable: nextState });
+        await bridge.mobileSendBytes(new Uint8Array(bytes));
+        connection.gatewayMode = nextState; // optimistic update; board-sync will confirm
+      } else {
+        // Desktop: Rust command sends + confirms.  Use returned value to update immediately
+        // (fixes the "double-press" bug where board-sync event races with UI re-render).
+        const confirmed = await invoke<boolean>('set_gateway_mode', { enable: nextState });
+        connection.gatewayMode = confirmed;
+      }
     } catch (e: unknown) {
       gatewayError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -702,6 +770,54 @@
       {#if daemonError}
         <div style="margin-top: 8px; color: var(--doge-red); font-size: 0.78rem;" role="alert">❌ Daemon: {daemonError}</div>
       {/if}
+    </div>
+
+    <!-- ── v0.3.16 — BLE Advertising toggle ──────────────────────────────── -->
+    <div class="card-doge" aria-label="BLE advertising toggle">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <p style="display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 4px 0;">
+            📶 BLE Advertising
+          </p>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--doge-muted);">
+            Enable/disable board BLE advertising. Disable to save power. Requires firmware v0.3.16+.
+          </p>
+        </div>
+        {#if connection.isConnected}
+          <span style="
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: {bleAdvertisingEnabled ? 'rgba(0,255,136,0.12)' : 'rgba(100,100,100,0.1)'};
+            color: {bleAdvertisingEnabled ? 'var(--doge-neon)' : 'var(--doge-subtle)'};
+            border: 1px solid {bleAdvertisingEnabled ? 'rgba(0,255,136,0.35)' : 'var(--doge-border)'};
+          ">
+            {bleAdvertisingEnabled ? '🟢 BLE ON' : '⚫ BLE OFF'}
+          </span>
+        {/if}
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
+        <button
+          onclick={toggleBleAdvertising}
+          disabled={!connection.isConnected || isTogglingBle}
+          style="
+            padding: 9px 18px;
+            border: 1px solid {bleAdvertisingEnabled ? 'var(--doge-neon)' : 'var(--doge-border)'};
+            background: {bleAdvertisingEnabled ? 'rgba(0,255,136,0.08)' : 'transparent'};
+            color: {bleAdvertisingEnabled ? 'var(--doge-neon)' : 'var(--doge-muted)'};
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            opacity: {!connection.isConnected || isTogglingBle ? 0.5 : 1};
+          "
+        >
+          {isTogglingBle ? '⏳ Applying…' : bleAdvertisingEnabled ? '📴 Disable BLE' : '📶 Enable BLE'}
+        </button>
+        {#if bleError}
+          <span style="font-size: 0.75rem; color: #ff6060;">{bleError}</span>
+        {/if}
+      </div>
     </div>
 
     <!-- ── v0.3.6 — Board Sync ────────────────────────────────────────────── -->

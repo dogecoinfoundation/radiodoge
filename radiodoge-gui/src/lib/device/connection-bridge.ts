@@ -82,9 +82,10 @@ export type MobileConnectionStatus =
 //   BLE_WRITE_CHAR_UUID  = NUS RX char  (we write to it)
 //   BLE_NOTIFY_CHAR_UUID = NUS TX char  (we subscribe for notifications)
 
-const BLE_SERVICE_UUID     = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS service
-const BLE_WRITE_CHAR_UUID  = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS RX — host writes
-const BLE_NOTIFY_CHAR_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'; // NUS TX — board notifies
+// Lowercase UUIDs are required by some Android BLE implementations.
+const BLE_SERVICE_UUID     = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'; // NUS service
+const BLE_WRITE_CHAR_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // NUS RX — host writes
+const BLE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // NUS TX — board notifies
 
 // ─── USB VID/PID recognition ─────────────────────────────────────────────────
 
@@ -694,6 +695,24 @@ export async function mobilePingWait(timeoutMs = 2000): Promise<boolean> {
 }
 
 /**
+ * Write raw bytes to the active transport (USB or BLE).
+ *
+ * Used by SettingsTab and other UI components that need to send arbitrary
+ * command packets (SET_GATEWAY, WIFI_TOGGLE, BLE_TOGGLE, GET_MAC, etc.)
+ * to the board on Android without going through the desktop Rust serial path.
+ *
+ * Routes to USB serial or BLE GATT depending on which transport is active.
+ * Throws if no transport is active.
+ */
+export async function mobileSendBytes(data: Uint8Array): Promise<void> {
+  if (activeBleAddress) {
+    await _bleWrite(data);
+  } else {
+    await _usbWrite(data);
+  }
+}
+
+/**
  * Send a PING to the board (fire-and-forget, no wait for PONG).
  *
  * Routes through USB serial or BLE write depending on which transport is active.
@@ -760,6 +779,7 @@ export const bridge = {
   disconnect,
   mobilePing,
   mobilePingWait,
+  mobileSendBytes,
   mobileSendTransaction,
   mobileSendLoraSettings,
 };

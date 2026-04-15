@@ -598,6 +598,13 @@ impl SerialManager {
         *self.board_settings.lock().await = Some(settings);
     }
 
+    /// Update the cached board MAC address (called by the Android mobile path when
+    /// CMD_GET_MAC (0x27) arrives via `mobile_push_bytes`).
+    /// Allows `get_board_mac()` to return a value on Android.
+    pub async fn update_board_mac(&self, mac: String) {
+        *self.board_mac.lock().await = Some(mac);
+    }
+
     /// The firmware version string reported by the connected device, if available.
     pub async fn get_firmware_version(&self) -> Option<String> {
         self.firmware_version.lock().await.clone()

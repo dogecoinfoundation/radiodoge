@@ -51,6 +51,7 @@ pub const CMD_WIFI_TOGGLE: u8 = 0x24;          // v0.3.7: Enable/disable WiFi ra
 pub const CMD_ADDR_CONFLICT: u8 = 0x25;        // v0.3.7: Board-initiated: duplicate node address detected
 pub const CMD_GET_BATTERY: u8 = 0x26;          // v0.3.8: Query battery voltage (2-byte u16 mV in payload)
 pub const CMD_GET_MAC: u8 = 0x27;              // v0.3.8: Query board MAC address (6 bytes in payload)
+pub const CMD_BLE_TOGGLE: u8 = 0x28;          // v0.3.16: Enable/disable BLE advertising (persists to NVS)
 
 /// Single packet header length in bytes
 pub const SINGLE_HDR_LEN: usize = 8;
@@ -135,6 +136,15 @@ pub fn build_get_mac(src: &NodeAddress) -> Vec<u8> {
     build_header(CMD_GET_MAC, FLAG_STANDARD, src, &NodeAddress::broadcast())
 }
 
+/// Build a BLE_TOGGLE command (CMD 0x28) — v0.3.16.
+/// Payload byte: 1 = enable BLE advertising, 0 = disable (power saving).
+/// Board persists setting to NVS.
+pub fn build_ble_toggle(src: &NodeAddress, enable: bool) -> Vec<u8> {
+    let mut packet = build_header(CMD_BLE_TOGGLE, FLAG_STANDARD, src, &NodeAddress::broadcast());
+    packet.push(if enable { 1u8 } else { 0u8 });
+    packet
+}
+
 /// Return the exact total byte count for commands with fixed-size replies.
 /// Returns None for variable-length commands (e.g., CMD_MESSAGE, CMD_GET_FIRMWARE_VERSION).
 /// Used by the serial read loop to advance the accumulator precisely, avoiding
@@ -152,6 +162,7 @@ pub fn exact_packet_len(cmd: u8) -> Option<usize> {
         CMD_GET_SETTINGS    => Some(13), // header + 5 bytes [region, community, node, gw, wifi]
         CMD_GET_BATTERY     => Some(10), // header + 2 bytes (voltage_mv big-endian)
         CMD_GET_MAC         => Some(14), // header + 6 bytes (MAC address)
+        CMD_BLE_TOGGLE      => Some(9),  // header + 1 byte (ble_enabled)
         _ => None,                       // variable length (0x03 MSG, 0x20 FW version, etc.)
     }
 }
@@ -332,6 +343,13 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
                     payload[0], payload[1], payload[2], payload[3], payload[4], payload[5]))
             } else {
                 Some("🔑 GET_MAC".to_string())
+            }
+        }
+        CMD_BLE_TOGGLE => {
+            if !payload.is_empty() {
+                Some(format!("📶 BLE: {}", if payload[0] != 0 { "ON" } else { "OFF" }))
+            } else {
+                Some("📶 BLE_TOGGLE".to_string())
             }
         }
         _ => None,

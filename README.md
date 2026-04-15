@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.11** ✨: Android USB-C serial **and** Bluetooth BLE are both fully implemented! Connect via USB-C OTG or scan for the Heltec board over BLE — both use the identical RadioDoge packet protocol as the desktop. Firmware GATT UUIDs are a configurable placeholder pending finalisation. Much mobile. Very wireless. Wow!
+> **v0.3.16** ✨: Android USB-C serial **and** Bluetooth BLE are both production-ready! Settings tab (Gateway, WiFi, BLE advertising toggle, Read MAC) fully functional on Android. Live Packet Log readable on 360dp phones. Debug log export uses native Android share sheet. Much mobile. Very wireless. Wow!
 
 ---
 
@@ -49,7 +49,7 @@ Every push also triggers an Android build. The APK is signed with the Gradle deb
 5. Enable **Settings → Install unknown apps** for your file manager
 6. Tap the `.apk` → Install → done! 🐕
 
-> **⚠️ USB-C connection is experimental and needs testing.** Connect your Heltec to your Android phone via a USB-C OTG cable. The app will ask for USB permission on first use. Serial baud rate is 115,200 — same as desktop. Bluetooth BLE is also present in the UI but GATT comms are a stub pending firmware BLE UUID finalisation.
+> **USB-C** — Connect your Heltec to your Android phone via a USB-C OTG cable. The app will request USB permission on first use. Baud rate 115,200 — same as desktop. **BLE** — The app scans for boards advertising the Nordic UART Service ("RadioDoge-X.X.X"). Once connected, all packet commands work over BLE — no cable needed. Both transports are production-ready as of v0.3.16.
 
 ---
 
@@ -61,7 +61,8 @@ Every push also triggers an Android build. The APK is signed with the Gradle deb
 - **Pure Rust crypto** — no browser, no cloud, generate real Dogecoin keys locally
 - **Open hardware** — works with standard Heltec ESP32 LoRa V3 boards (~$20)
 - **Android app** — installable debug APK built by CI on every push, runs on Android 7.0+
-- **Android USB serial** (experimental) — connect a Heltec via USB-C OTG cable; full protocol support
+- **Android USB serial** — connect a Heltec via USB-C OTG cable; full protocol support, production-ready
+- **Android BLE** — connect wirelessly to a board advertising Nordic UART Service; production-ready
 - **Instant builds** — every push to master compiles a fresh Windows MSI and Android APK
 
 ---
