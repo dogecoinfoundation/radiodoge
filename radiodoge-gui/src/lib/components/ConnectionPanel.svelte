@@ -445,7 +445,7 @@
             { id: 'bluetooth' as const, label: '📶 Bluetooth', subtitle: 'BLE' },
           ] as tab}
             <button
-              onclick={() => { mobileConnectTab = tab.id; selectedMobileDevice = ''; mobileDevices = []; setMobileIdle(); }}
+              onclick={() => { mobileConnectTab = tab.id; selectedMobileDevice = ''; mobileDevices = []; mobileRefreshing = false; setMobileIdle(); }}
               style="
                 flex: 1;
                 padding: 10px 8px;

@@ -12,6 +12,7 @@
    */
 
   import { invoke } from '@tauri-apps/api/core';
+  import { onMount } from 'svelte';
   import { wallet, loadWallet, togglePrivateKeyVisibility } from '$lib/stores/wallet.svelte';
   import QRCode from './QRCode.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
@@ -118,8 +119,12 @@
     walletSaved = false;
   }
 
-  // On mount: try to load saved wallet (no reactive deps → runs once)
-  $effect(() => {
+  // On mount: try to load saved wallet.
+  // Must use onMount (not $effect) — $effect re-runs each time the component mounts,
+  // which happens on every tab switch ({#if activeTab === 'wallet'} unmounts on exit).
+  // Re-running load_saved_wallet would overwrite an in-memory generated/imported wallet
+  // with the older saved one each time the user navigates back to this tab.
+  onMount(() => {
     invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>('load_saved_wallet')
       .then(w => { if (w) { loadWallet(w); walletSaved = true; } })
       .catch(() => {});

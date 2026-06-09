@@ -341,7 +341,7 @@ impl SerialManager {
                         const KNOWN_CMDS: &[u8] = &[
                             0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
                             0x10, 0x11, 0x20, 0x21, 0x22, 0x23,  // 0x22/0x23 = v0.3.6
-                            0x24, 0x25, 0x26, 0x27,               // v0.3.7/0.3.8
+                            0x24, 0x25, 0x26, 0x27, 0x28,         // v0.3.7/0.3.8/0.3.16 (CMD_BLE_TOGGLE)
                             0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE, // firmware-side IDs
                         ];
                         while !accumulator.is_empty() {

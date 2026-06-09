@@ -135,6 +135,8 @@
     if (!connection.isConnected) {
       bleAdvertisingEnabled = true;
       bleError = null;
+      wifiError = null;
+      gatewayError = null;
     }
   });
   async function toggleBleAdvertising() {
@@ -637,8 +639,8 @@
         {:else}
           <button
             onclick={fetchMac}
-            disabled={!connection.isConnected || isQueryingMac}
-            style="padding: 6px 14px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-yellow); border-radius: 6px; cursor: pointer; font-size: 0.8rem; opacity: {!connection.isConnected || isQueryingMac ? 0.5 : 1};"
+            disabled={!connection.isConnected || isAndroidPlatform === null || isQueryingMac}
+            style="padding: 6px 14px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-yellow); border-radius: 6px; cursor: pointer; font-size: 0.8rem; opacity: {!connection.isConnected || isAndroidPlatform === null || isQueryingMac ? 0.5 : 1};"
           >
             {isQueryingMac ? '⏳ Reading…' : '🔍 Read MAC'}
           </button>

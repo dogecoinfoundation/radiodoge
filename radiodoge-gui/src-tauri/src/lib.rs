@@ -1355,7 +1355,7 @@ async fn mobile_build_lora_settings_packet(settings: LoraSettings) -> Vec<u8> {
         bw_idx,
         cr,
         freq_khz,
-        settings.power_dbm as u8,
+        settings.power_dbm.max(2).min(22) as u8,
     )
 }
 

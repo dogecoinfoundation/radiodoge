@@ -398,7 +398,10 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
   // Connect via the blec plugin (triggers Android BLE GATT connect)
   try {
     await blec.connect(address, () => {
-      // onDisconnect: board dropped the connection unexpectedly — reset global state
+      // onDisconnect: board dropped the connection unexpectedly — reset global state.
+      // Guard: if activeBleAddress is already null we initiated the disconnect ourselves
+      // (see _disconnectBluetoothAndroid), so skip to avoid double-setDisconnected().
+      if (!activeBleAddress) return;
       console.warn('[bridge-ble] BLE device disconnected:', address);
       activeBleAddress = null;
       invoke('mobile_ble_disconnect').catch(() => {});
@@ -562,13 +565,16 @@ async function _disconnectBluetoothAndroid(notifyRust: boolean): Promise<void> {
     bleNotifyTeardown = null;
   }
 
-  // Disconnect GATT
+  // Disconnect GATT.
+  // Clear activeBleAddress BEFORE calling blec.disconnect() so the onDisconnect
+  // callback (registered in blec.connect()) sees null and early-returns, preventing
+  // a double setDisconnected() + duplicate Rust invocations.
   if (activeBleAddress) {
+    activeBleAddress = null;
     try {
       const blec = await _blec();
       await blec.disconnect();
     } catch { /* ignore — device may already be gone */ }
-    activeBleAddress = null;
   }
 
   if (notifyRust) {

@@ -95,6 +95,35 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: Log container height was hardcoded at `300px`. On a ~600 px-tall viewport (keyboard open on a small Android phone), the packet log occupied half the screen.
 - **Fix**: Changed to `height: clamp(180px, 38vh, 320px)` — scales proportionally with viewport height, floors at 180px (readable), caps at 320px on large screens.
 
+#### BLE user-initiated disconnect triggering double `setDisconnected()` + duplicate Rust invocations
+- **Root cause**: `_disconnectBluetoothAndroid()` called `blec.disconnect()` while `activeBleAddress` was still set. This triggered the `onDisconnect` callback registered in `blec.connect()`, which called `setDisconnected()` and `invoke('mobile_ble_disconnect')`. Then `_disconnectBluetoothAndroid` called both again (since `notifyRust=true`), producing a double-disconnect and two duplicate Rust invocations per clean disconnect.
+- **Fix A**: In `_disconnectBluetoothAndroid`, `activeBleAddress` is now cleared to `null` *before* calling `blec.disconnect()`. The callback checks `activeBleAddress` on entry and returns immediately when null — making it a pure "unexpected board-side disconnect" handler.
+- **Fix B**: Added `if (!activeBleAddress) return;` guard at the start of the `onDisconnect` callback.
+
+#### `mobileRefreshing` spinner persists after switching USB↔BLE tabs
+- **Root cause**: The USB/BLE tab-switch `onclick` handler cleared `selectedMobileDevice` and `mobileDevices` but did not reset `mobileRefreshing`. If a 5-second BLE scan was in progress when the user tapped the USB tab, the USB tab displayed the spinning "Scanning BLE… (5 s)" label and the Scan button remained disabled until the scan finished.
+- **Fix**: Added `mobileRefreshing = false;` to the tab-switch handler.
+
+#### `WalletTab` `load_saved_wallet` overwrites in-memory wallet on tab return
+- **Root cause**: The `$effect` that calls `invoke('load_saved_wallet')` on mount ran on every mount. Since `{#if activeTab === 'wallet'}` unmounts WalletTab when the user navigates away, navigating back always re-ran the effect — overwriting any wallet the user had generated or imported in memory since the last disk save.
+- **Fix**: Changed `$effect` to `onMount` so the load runs exactly once per component lifetime.
+
+#### `wifiError` and `gatewayError` not cleared on disconnect
+- **Root cause**: The existing `$effect` that resets `bleAdvertisingEnabled` and `bleError` on disconnect did not include `wifiError` or `gatewayError`. After disconnecting, the Settings tab could show a stale red error from the previous session.
+- **Fix**: Added `wifiError = null; gatewayError = null;` to the disconnect `$effect`.
+
+#### "Read MAC" button clickable while platform detection is unresolved
+- **Root cause**: `fetchMac()` returns early silently when `isAndroidPlatform === null`. If the user tapped the button in the brief window before `bridge.isAndroid()` resolved, nothing happened — no spinner, no error, no feedback.
+- **Fix**: Added `isAndroidPlatform === null` to the button's `disabled` condition so it is visually inactive until the platform is known.
+
+#### Desktop serial framing drops `0x28` (CMD_BLE_TOGGLE) response as unknown byte
+- **Root cause**: The `KNOWN_CMDS` array in `serial.rs` (used to re-sync framing when a non-packet byte is seen) did not include `0x28`. When the board responds to a BLE_TOGGLE command on desktop, the framing loop discarded the leading `0x28` byte and attempted to re-parse the remaining bytes as a new packet, causing a framing desync.
+- **Fix**: Added `0x28` to `KNOWN_CMDS` in `crates/radiodoge-core/src/serial.rs`.
+
+#### `mobile_build_lora_settings_packet` — unchecked `power_dbm as u8` cast
+- **Root cause**: The desktop `update_lora_settings` command clamps TX power with `.max(2).min(22) as u8`. The mobile equivalent did a raw `settings.power_dbm as u8` — an `i8` to `u8` cast without bounds validation. Negative values (e.g. -1) would wrap to large `u8` values (255), sending an invalid TX power byte to the board.
+- **Fix**: Applied `.max(2).min(22) as u8` to match the desktop path.
+
 ### Added
 
 #### BLE advertising toggle
