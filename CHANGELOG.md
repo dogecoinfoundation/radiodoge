@@ -60,6 +60,41 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause 3 — silent failure**: `onReceiveData()` subscribe failure was previously caught and only logged as a warning, leaving the connection in a state where the app appeared connected but the board was deaf.
 - **Fix**: `onReceiveData` failure now throws, propagates to `mobileConnect()` as a visible error, disconnects, and clears the BLE address so the user can retry.
 
+#### BLE disconnect-during-stabilisation race
+- **Root cause**: After the 250 ms `_sleep()` in `_connectBluetoothAndroid()`, if the user called `disconnect()` during the delay, `activeBleAddress` was already cleared — but `onReceiveData()` was still called against the now-closed GATT connection, silently failing or throwing.
+- **Fix**: Added a guard immediately after the sleep: `if (!activeBleAddress) return;` — connection attempt aborts cleanly if a disconnect raced the delay.
+
+#### Ping timeout error message incorrect (said "500 ms", actual timeout is 2 s on Android)
+- **Root cause**: The mobile ping path in `ConnectionPanel.svelte` used a 2000 ms timeout but the error string read `"No response within 500 ms."` — copied from the desktop path which genuinely times out at 500 ms via the Rust serial layer.
+- **Fix**: Message corrected to `"No response within 2 s."` for the Android path only; desktop message unchanged.
+
+#### BLE toggle state not reset on disconnect
+- **Root cause 1 — `ConnectionPanel.svelte`**: `panelBleEnabled` and `panelBleError` were not cleared in `mobileDisconnect()`. After disconnect+reconnect, the toggle showed the last-used state instead of the board's default (enabled).
+- **Fix**: Added `panelBleEnabled = true; panelBleError = null;` to `mobileDisconnect()`.
+- **Root cause 2 — `SettingsTab.svelte`**: Same issue for `bleAdvertisingEnabled` and `bleError` — no disconnect handler existed.
+- **Fix**: Added a `$effect` that resets both to default (`true` / `null`) whenever `connection.isConnected` becomes `false`.
+
+#### `fetchMac()` race on Android — wrong code path taken on fast connect
+- **Root cause**: `isAndroidPlatform` was initialised as `$state(false)`. If `fetchMac()` fired before the `bridge.isAndroid()` Promise resolved (possible on fast connects), the desktop branch (`invoke('query_mac')`) ran on Android — a no-op at best, broken at worst.
+- **Fix**: Changed initial value to `$state<boolean | null>(null)`. `fetchMac()` returns early if `isAndroidPlatform === null`, and the auto-fetch `$effect` is gated on `isAndroidPlatform !== null`. Platform detection resolves in the same microtask queue, so the fetch fires on the very next effect re-run with the correct branch.
+
+#### Debug Console export: File constructor outside try-catch + AbortError bypassed fallback
+- **Root cause 1**: `new File([blob], filename)` was constructed before the try-catch block in `exportToTxt()`. If the `File` constructor threw in an exotic WebView, the exception propagated uncaught and the entire export silently failed.
+- **Root cause 2**: On `AbortError` (user cancelled the native share sheet), the function did an early `return` — bypassing the anchor-download fallback. On desktop Chrome/Firefox where `navigator.share` exists, cancelling the sheet meant no file was saved at all.
+- **Fix**: Moved `File` construction inside the try block. Removed the early `return` on `AbortError` so the anchor download always runs as a fallback when sharing is unavailable or cancelled.
+
+#### `commandName(0x28)` returning generic "CMD(0x28)" in Live Packet Log
+- **Root cause**: `0x28` (CMD_BLE_TOGGLE) was missing from the `commandName()` map in `types/index.ts`.
+- **Fix**: Added `0x28: 'BLE TOGGLE'` to the map.
+
+#### Debug Console showing "CMD_?" for BLE toggle packets
+- **Root cause**: `0x28` was missing from the `match` arm in `mobile_emit_debug_tx` in `lib.rs`.
+- **Fix**: Added `0x28 => "CMD_BLE_TOGGLE"`.
+
+#### Live Packet Log too tall on short phones (keyboard-open state)
+- **Root cause**: Log container height was hardcoded at `300px`. On a ~600 px-tall viewport (keyboard open on a small Android phone), the packet log occupied half the screen.
+- **Fix**: Changed to `height: clamp(180px, 38vh, 320px)` — scales proportionally with viewport height, floors at 180px (readable), caps at 320px on large screens.
+
 ### Added
 
 #### BLE advertising toggle

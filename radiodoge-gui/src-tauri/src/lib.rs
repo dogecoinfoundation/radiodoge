@@ -1457,6 +1457,7 @@ async fn mobile_emit_debug_tx(bytes: Vec<u8>, app: AppHandle) -> Result<(), Stri
         0x24 => "CMD_WIFI_TOGGLE",
         0x26 => "CMD_GET_BATTERY",
         0x27 => "CMD_GET_MAC",
+        0x28 => "CMD_BLE_TOGGLE",
         _    => "CMD_?",
     }).unwrap_or("(empty)");
     emit_debug_traffic(&app, "TX-USB", &hex, note);

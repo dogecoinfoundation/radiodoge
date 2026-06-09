@@ -295,7 +295,7 @@
       </div>
 
       <div style="
-        height: 300px;
+        height: clamp(180px, 38vh, 320px);
         overflow-y: auto;
         overflow-x: hidden;
         display: flex;

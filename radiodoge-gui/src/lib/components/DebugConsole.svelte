@@ -92,19 +92,25 @@
     const text = header + entries.map(entryToText).join('\n');
     const blob = new Blob([text], { type: 'text/plain' });
 
-    // On Android/mobile: use the native share sheet (routes to Files / Downloads)
-    // On desktop: fall back to anchor download
-    if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [new File([blob], filename)] })) {
+    // On Android/mobile: use the native share sheet (routes to Files / Downloads).
+    // File construction is inside the try-catch so any exotic failures fall through
+    // to the anchor download rather than propagating uncaught.
+    // AbortError (user cancelled share) also falls through — the file is still saved.
+    if (typeof navigator.share === 'function') {
       try {
         const file = new File([blob], filename, { type: 'text/plain' });
-        await navigator.share({ files: [file], title: 'RadioDoge Debug Log' });
-        if (exportToastTimer) clearTimeout(exportToastTimer);
-        exportToast = 'Shared via system share sheet';
-        exportToastTimer = setTimeout(() => { exportToast = null; }, 4000);
-        return;
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'RadioDoge Debug Log' });
+          if (exportToastTimer) clearTimeout(exportToastTimer);
+          exportToast = 'Shared via system share sheet';
+          exportToastTimer = setTimeout(() => { exportToast = null; }, 4000);
+          return;  // Only return on actual success
+        }
       } catch (err) {
-        // User cancelled share or share failed — fall through to anchor download
-        if ((err as DOMException).name === 'AbortError') return;
+        // User cancelled (AbortError) or share failed — fall through to anchor download
+        if ((err as DOMException).name !== 'AbortError') {
+          console.warn('[debug-export] share failed, falling back to download:', err);
+        }
       }
     }
 

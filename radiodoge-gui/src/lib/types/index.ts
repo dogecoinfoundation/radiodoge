@@ -182,6 +182,7 @@ export function commandName(cmd: number): string {
     0x25: 'ADDR CONFLICT',
     0x26: 'GET BATTERY',
     0x27: 'GET MAC',
+    0x28: 'BLE TOGGLE',
   };
   return map[cmd] ?? `CMD(0x${cmd.toString(16).toUpperCase()})`;
 }

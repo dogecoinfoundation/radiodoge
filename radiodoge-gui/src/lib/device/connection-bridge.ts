@@ -419,6 +419,9 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
   // board never sends data back.
   await _sleep(250);
 
+  // Guard: if the user disconnected during the stabilisation delay, abort cleanly.
+  if (!activeBleAddress) return;
+
   // Subscribe to characteristic notifications (board → host data path).
   // Each notification chunk feeds directly into mobile_push_bytes, which runs
   // the identical accumulator + framing logic as the USB-OTG path.

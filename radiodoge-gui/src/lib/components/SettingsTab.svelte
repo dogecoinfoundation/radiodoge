@@ -18,7 +18,9 @@
   import DogeSpinner from './DogeSpinner.svelte';
 
   // ── Platform detection ────────────────────────────────────────────────────
-  let isAndroidPlatform = $state(false);
+  // Use null as "not yet resolved" to prevent fetchMac() from taking the wrong
+  // code path (desktop query_mac) on Android before the Promise settles.
+  let isAndroidPlatform = $state<boolean | null>(null);
   $effect(() => {
     bridge.isAndroid().then(v => { isAndroidPlatform = v; });
   });
@@ -55,6 +57,8 @@
   let isQueryingMac = $state(false);
   async function fetchMac() {
     if (!connection.isConnected) return;
+    // isAndroidPlatform is null until the platform Promise resolves — wait for it.
+    if (isAndroidPlatform === null) return;
     isQueryingMac = true;
     try {
       if (isAndroidPlatform) {
@@ -80,8 +84,12 @@
     }).then(fn => { unlisten = fn; });
     return () => { unlisten?.(); };
   });
+  // Auto-fetch MAC only once platform is known (isAndroidPlatform !== null) — prevents
+  // the desktop query_mac path from running on Android before the Promise settles.
   $effect(() => {
-    if (connection.isConnected && !connection.boardMac) { fetchMac(); }
+    if (connection.isConnected && !connection.boardMac && isAndroidPlatform !== null) {
+      fetchMac();
+    }
   });
 
   // ── v0.3.7 — WiFi toggle ─────────────────────────────────────────────────
@@ -121,6 +129,14 @@
   let bleAdvertisingEnabled = $state(true);
   let isTogglingBle = $state(false);
   let bleError = $state<string | null>(null);
+  // Reset BLE toggle to default when the board disconnects so reconnect shows the
+  // correct initial state (board always restarts with BLE advertising enabled).
+  $effect(() => {
+    if (!connection.isConnected) {
+      bleAdvertisingEnabled = true;
+      bleError = null;
+    }
+  });
   async function toggleBleAdvertising() {
     if (!connection.isConnected) return;
     isTogglingBle = true;

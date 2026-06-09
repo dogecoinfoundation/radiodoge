@@ -215,6 +215,9 @@
   /** Disconnect on Android. */
   async function mobileDisconnect() {
     pingResult = null;
+    // Reset BLE toggle to default (board always starts advertising on next connect)
+    panelBleEnabled = true;
+    panelBleError = null;
     try {
       await bridge.disconnect();
     } catch (e) {
@@ -238,7 +241,7 @@
       const ms = Math.round(performance.now() - start);
       pingResult = ok
         ? { success: true,  message: `Pong! Device responded in ~${ms} ms 🐕` }
-        : { success: false, message: `No response within 500 ms. Is the firmware running?` };
+        : { success: false, message: `No response within 2 s. Is the firmware running?` };
     } catch (e) {
       pingResult = { success: false, message: String(e) };
     } finally {
