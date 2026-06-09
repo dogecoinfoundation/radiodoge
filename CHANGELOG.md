@@ -124,6 +124,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: The desktop `update_lora_settings` command clamps TX power with `.max(2).min(22) as u8`. The mobile equivalent did a raw `settings.power_dbm as u8` — an `i8` to `u8` cast without bounds validation. Negative values (e.g. -1) would wrap to large `u8` values (255), sending an invalid TX power byte to the board.
 - **Fix**: Applied `.max(2).min(22) as u8` to match the desktop path.
 
+#### SendTab success-clear timer overwrites form while user is typing a follow-up send
+- **Root cause**: After a successful send, a 5-second `setTimeout` cleared `toAddress`, `amountDoge`, and `memo`. If the user started typing a second transaction before the 5-second window elapsed, the timer fired and wiped their in-progress input.
+- **Fix**: The timer ID is now stored in `_successClearTimer`. At the start of each `sendTransaction()` call, the pending timer is cancelled so the clear never races the next send. The timer is also cancelled on component unmount (tab switch).
+
+#### `HistoryTab.copyAddr` missing try/catch — unhandled clipboard exception
+- **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
+- **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
+
 ### Added
 
 #### BLE advertising toggle

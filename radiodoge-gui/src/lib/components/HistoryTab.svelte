@@ -40,9 +40,11 @@
 
   let copiedTx = $state<Record<number, boolean>>({});
   async function copyAddr(addr: string, idx: number) {
-    await navigator.clipboard.writeText(addr);
-    copiedTx[idx] = true;
-    setTimeout(() => { copiedTx[idx] = false; }, 1500);
+    try {
+      await navigator.clipboard.writeText(addr);
+      copiedTx[idx] = true;
+      setTimeout(() => { copiedTx[idx] = false; }, 1500);
+    } catch { /* sandboxed / permission denied — fail silently */ }
   }
 </script>
 
