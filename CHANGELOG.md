@@ -132,6 +132,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
 - **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
 
+#### `mobile_push_bytes` accumulator unbounded — memory exhaustion on misbehaving board
+- **Root cause**: `acc.extend_from_slice(&bytes)` had no size guard. In normal operation the packet-drain loop keeps the accumulator to a few hundred bytes. But a board stuck in a debug-print loop, or one that sends valid command-byte headers that never complete into packets, could grow the accumulator without bound — an OOM risk on Android.
+- **Fix**: Added an 8 KB ceiling in `mobile_push_bytes`. If the new data would exceed it, the accumulator is cleared (framing recovers on the next valid packet) and a warning is printed to stderr.
+
+#### `load_history_from_disk` silently discards tx history on JSON corruption
+- **Root cause**: `serde_json::from_str(&json).unwrap_or_default()` returned an empty Vec if `tx_history.json` was corrupted (e.g., power loss during write). No log message was emitted, making the data loss invisible.
+- **Fix**: Changed to a `match` block that prints an `eprintln!` warning with the parse error before falling back to an empty Vec.
+
+#### `load_address_book` silently discards address book on JSON corruption
+- **Root cause**: Identical pattern to the history bug — `unwrap_or_default()` on `address_book.json` parse failure.
+- **Fix**: Same match-with-warning approach.
+
+#### `wallet.rs` `build_transaction_payload` — no NaN/Infinity guard before `f64 → u64` cast
+- **Root cause**: `(amount_doge * 1e8).round() as u64` had no pre-flight check. While `f64::NAN as u64` is now defined (= 0) and `f64::INFINITY as u64` saturates in Rust ≥1.45, both produce wrong packet data silently. The frontend and Tauri IPC filter these inputs in practice, but the backend should not trust the caller.
+- **Fix**: Added `if !amount_doge.is_finite() || amount_doge < 0.0 { anyhow::bail!(...) }` before the cast.
+
 ### Added
 
 #### BLE advertising toggle

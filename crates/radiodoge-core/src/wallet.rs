@@ -154,7 +154,12 @@ pub fn encode_transaction_payload(
     amount_doge: f64,
     memo: Option<&str>,
 ) -> Result<Vec<u8>> {
-    // Convert DOGE to koinus (satoshi equivalent), round to nearest
+    // Convert DOGE to koinus (satoshi equivalent), round to nearest.
+    // Guard against NaN/Infinity before cast — while the frontend validates and Tauri IPC
+    // rejects non-finite JSON floats, the backend should not trust the caller.
+    if !amount_doge.is_finite() || amount_doge < 0.0 {
+        anyhow::bail!("Invalid amount: {}", amount_doge);
+    }
     let koinus: u64 = (amount_doge * 1e8).round() as u64;
 
     let addr_bytes = to_address.as_bytes();

@@ -117,7 +117,13 @@ async fn load_history_from_disk(app: &AppHandle) -> Vec<TxHistoryEntry> {
         Err(_) => return vec![],
     };
     match tokio::fs::read_to_string(&path).await {
-        Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Ok(json) => match serde_json::from_str(&json) {
+            Ok(entries) => entries,
+            Err(e) => {
+                eprintln!("[history] tx_history.json parse failed ({}), starting fresh", e);
+                vec![]
+            }
+        },
         Err(_) => vec![],
     }
 }
@@ -918,7 +924,13 @@ async fn load_address_book(app: AppHandle) -> Result<Vec<serde_json::Value>, Str
         Err(_) => return Ok(vec![]),
     };
     match tokio::fs::read_to_string(&path).await {
-        Ok(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        Ok(json) => match serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+            Ok(entries) => Ok(entries),
+            Err(e) => {
+                eprintln!("[addrbook] address_book.json parse failed ({}), starting fresh", e);
+                Ok(vec![])
+            }
+        },
         Err(_) => Ok(vec![]),
     }
 }
@@ -1025,7 +1037,17 @@ async fn mobile_push_bytes(
         0x3F, 0x62, 0x64, 0x68, 0x6D, 0xFE,
     ];
 
+    // Guard against unbounded accumulator growth from a misbehaving or spamming board.
+    // In normal operation the packet-drain loop below keeps the accumulator small
+    // (a few hundred bytes at most).  If the board enters a debug-print loop or sends
+    // malformed data that never forms complete packets, the accumulator would otherwise
+    // grow until the process is OOM-killed (especially risky on Android).
+    const MOBILE_ACCUMULATOR_CAP: usize = 8 * 1024;
     let mut acc = state.mobile_accumulator.lock().await;
+    if acc.len() + bytes.len() > MOBILE_ACCUMULATOR_CAP {
+        eprintln!("[mobile_push_bytes] accumulator overflow ({} bytes) — discarding stale data", acc.len());
+        acc.clear();
+    }
     acc.extend_from_slice(&bytes);
 
     let mut packets_extracted: u32 = 0;
