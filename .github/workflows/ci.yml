@@ -11,10 +11,10 @@ name: 🐕 CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, '0.0.1-Beta-1', 'claude/**']
     tags: ['v*']
   pull_request:
-    branches: [master, main]
+    branches: [master, main, '0.0.1-Beta-1']
   workflow_dispatch:
 
 concurrency:

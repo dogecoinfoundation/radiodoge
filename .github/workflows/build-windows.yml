@@ -22,7 +22,7 @@ name: 🐕 Build Windows MSI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, '0.0.1-Beta-1']
     tags: ['v*']
   release:
     types: [created]
