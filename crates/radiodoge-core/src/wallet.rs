@@ -289,6 +289,8 @@ async fn fetch_utxos_blockbook(address: &str) -> Result<Vec<UtxoEntry>> {
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("UTXO fetch failed: {}", e))?
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("UTXO fetch failed: HTTP {}", e.status().map(|s| s.as_u16()).unwrap_or(0)))?
         .json()
         .await
         .map_err(|e| anyhow::anyhow!("UTXO response parse failed: {}", e))?;
@@ -454,6 +456,8 @@ pub async fn fetch_balance_blockbook(address: &str) -> Result<u64> {
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Balance fetch failed: {}", e))?
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("Balance fetch failed: HTTP {}", e.status().map(|s| s.as_u16()).unwrap_or(0)))?
         .json()
         .await
         .map_err(|e| anyhow::anyhow!("Balance response parse failed: {}", e))?;
@@ -478,6 +482,8 @@ pub async fn broadcast_raw_tx(raw_hex: &str) -> Result<String> {
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Broadcast request failed: {}", e))?
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("Broadcast request failed: HTTP {}", e.status().map(|s| s.as_u16()).unwrap_or(0)))?
         .json()
         .await
         .map_err(|e| anyhow::anyhow!("Broadcast response parse failed: {}", e))?;

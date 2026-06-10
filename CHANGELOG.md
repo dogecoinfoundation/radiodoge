@@ -176,6 +176,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: Identical pattern to the history bug — `unwrap_or_default()` on `address_book.json` parse failure.
 - **Fix**: Same match-with-warning approach.
 
+#### Blockbook HTTP errors surface as confusing JSON-parse failures
+- **Root cause**: All three Blockbook callers (`fetch_utxos_blockbook`, `fetch_balance_blockbook`, `broadcast_raw_tx`) called `.json()` directly after `.send()` without first checking the HTTP status code. A non-2xx response (e.g. 500 Internal Server Error with an HTML body) caused a misleading "… response parse failed" error instead of an actionable HTTP error.
+- **Fix**: Added `.error_for_status()` between `.send()` and `.json()` in all three functions. HTTP errors now surface as "… failed: HTTP 500" (or similar) before JSON parsing is attempted.
+
 #### LoRa frequency truncated to wrong kHz value due to missing `round()` before `as u32` cast
 - **Root cause**: `update_lora_settings` and `mobile_build_lora_settings_packet` both computed `freq_khz` with `(settings.frequency_mhz * 1000.0) as u32`. Rust `as` truncates toward zero, so a floating-point representation like `914.9999...` would produce `914_999` kHz instead of `915_000` kHz, sending the board a slightly wrong frequency.
 - **Fix**: Added `.round()` before the cast in both places: `(settings.frequency_mhz * 1000.0).round() as u32`.
