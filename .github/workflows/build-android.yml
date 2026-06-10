@@ -8,7 +8,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [master, main, '0.0.1-Beta-1']
+    branches: [master, main, '0.0.1-Beta-1', 'claude/**']
     tags: ['v*']
   release:
     types: [created]
