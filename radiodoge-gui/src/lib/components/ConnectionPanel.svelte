@@ -163,6 +163,7 @@
   /** Scan for Android devices and update mobileDevices. */
   async function mobileRefresh() {
     mobileRefreshing = true;
+    const scanTab = mobileConnectTab; // capture so we can detect tab switches mid-scan
     setMobileSearching(mobileConnectTab);
     try {
       let found: MobileDeviceInfo[];
@@ -174,6 +175,9 @@
         const all = await bridge.listDevices();
         found = all.filter(d => d.type !== 'bluetooth');
       }
+      // Discard results if the user switched tabs while the scan was running —
+      // a BLE result arriving on the USB tab would populate the wrong device list.
+      if (mobileConnectTab !== scanTab) return;
       mobileDevices = found;
 
       if (mobileDevices.length > 0) {
