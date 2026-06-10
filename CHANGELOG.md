@@ -159,6 +159,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`WalletTab.svelte`** — save modal replaced with a passphrase entry form (passphrase + confirm, min. 8 chars, visual feedback). Startup now calls `wallet_needs_passphrase()`; if true, shows an unlock modal before loading. Legacy plaintext wallets are detected and a nudge is shown to re-save with encryption.
 - New dependencies: `argon2 = "0.5"`, `chacha20poly1305 = "0.10"` added to workspace and `radiodoge-core`.
 
+#### Repo shrink — removed vendored legacy code
+- **`libdogecoin/`** (117 MB, 651 files): vendored C libdogecoin source tree. Replaced entirely by the pure Rust secp256k1/sha2/ripemd/bs58 stack in `radiodoge-core`. No FFI is needed.
+- **`RadioDogeSharp/`** (5.2 MB, 27 files): C# RadioDogeSharp application (predecessor to `radiodoge-cli`). Contained `dogecoin.dll` and `event.dll` Windows binaries. Replaced by the Rust CLI in `crates/radiodoge-cli`.
+- **`serdog/`** (8 MB, 17 files): C serial helper (predecessor to `radiodoge-core::serial`). Contained a compiled `libdogecoin.a` static library. Replaced by async Rust serial in `crates/radiodoge-core`.
+- **`Radio_Doge.png`** (452 KB) at repo root: duplicate of `images/Radio_Doge.png` (different resolution, not referenced by any build config or README).
+- **Total removed**: ~130 MB, 696 files.
+
 #### Balance query via Blockbook
 - **`fetch_balance_blockbook(address)`** — new async function in `wallet.rs`. Queries `https://doge1.trezor.io/api/v2/address/{address}` and returns the confirmed balance in koinus.
 - **`get_balance(address)`** — new Tauri command. Validates the address, calls `fetch_balance_blockbook`, returns DOGE as `f64`.
