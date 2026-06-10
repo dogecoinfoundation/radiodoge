@@ -430,9 +430,13 @@ async fn cmd_connect(port: &str) -> Result<()> {
 /// Headless daemon — replaces serdog (C serial daemon).
 ///
 /// Connects to the device, logs all received packets indefinitely.
+/// When a signed Dogecoin transaction is received (CMD_DOGE_TX with a raw
+/// transaction payload), broadcasts it to the Dogecoin network via Trezor
+/// Blockbook and sends a TX_ACK message back to the originator.
+///
 /// Designed for Raspberry Pi gateway deployments.
 async fn cmd_daemon(port: &str) -> Result<()> {
-    println!("🐕 RadioDoge Daemon — Headless Mode (replaces serdog)");
+    println!("🐕 RadioDoge Daemon — Gateway Mode (replaces serdog)");
     println!("Serial port: {}", port);
     println!("Press Ctrl-C to stop.\n");
 
@@ -443,8 +447,9 @@ async fn cmd_daemon(port: &str) -> Result<()> {
     .init();
 
     let manager = Arc::new(SerialManager::new());
+    let manager_for_ack = Arc::clone(&manager);
 
-    let on_packet = Arc::new(|pkt: IncomingPacket| {
+    let on_packet = Arc::new(move |pkt: IncomingPacket| {
         log::info!(
             "PACKET  {} → {}  cmd=0x{:02X}  rssi={}  payload={}{}",
             pkt.source.to_display_string(),
@@ -457,6 +462,24 @@ async fn cmd_daemon(port: &str) -> Result<()> {
                 .map(|d| format!("  decoded={}", d))
                 .unwrap_or_default(),
         );
+
+        // When a signed Dogecoin transaction arrives, broadcast it to the network.
+        if pkt.command == radio::CMD_DOGE_TX {
+            let payload_bytes = hex::decode(&pkt.payload_hex).unwrap_or_default();
+            if wallet::is_signed_tx_payload(&payload_bytes) {
+                let raw_hex = pkt.payload_hex.clone();
+                let mgr = Arc::clone(&manager_for_ack);
+                let source = pkt.source.clone();
+                log::info!(
+                    "GATEWAY  signed tx detected ({} bytes) from {} — broadcasting to Dogecoin network",
+                    payload_bytes.len(),
+                    source.to_display_string()
+                );
+                tokio::spawn(async move {
+                    daemon_broadcast_and_ack(raw_hex, mgr, source).await;
+                });
+            }
+        }
     });
 
     log::info!("Connecting to {} ...", port);
@@ -465,6 +488,7 @@ async fn cmd_daemon(port: &str) -> Result<()> {
 
     let addr = manager.get_node_address().await;
     log::info!("Connected — node address: {}", addr.to_display_string());
+    log::info!("Gateway ready — monitoring for signed Dogecoin transactions");
 
     // Run until Ctrl-C
     tokio::signal::ctrl_c().await.context("Failed to listen for Ctrl-C")?;
@@ -473,4 +497,43 @@ async fn cmd_daemon(port: &str) -> Result<()> {
     manager.disconnect().await.ok();
 
     Ok(())
+}
+
+/// Broadcast a signed transaction to the Dogecoin network with exponential-backoff
+/// retry (up to 3 attempts), then radio an ACK back to the originating node.
+async fn daemon_broadcast_and_ack(
+    raw_hex: String,
+    mgr: Arc<SerialManager>,
+    source: NodeAddress,
+) {
+    let mut delay_secs = 2u64;
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+            delay_secs *= 2;
+        }
+        match wallet::broadcast_raw_tx(&raw_hex).await {
+            Ok(txid) => {
+                log::info!("GATEWAY  broadcast OK  txid={}", txid);
+                // Send ACK back to the originating node via radio
+                let gateway_addr = mgr.get_node_address().await;
+                let ack_msg = format!("TX_ACK:{}", &txid[..txid.len().min(40)]);
+                let ack_pkt = radio::build_message(&gateway_addr, &source, &ack_msg);
+                if let Err(e) = mgr.send_raw(ack_pkt).await {
+                    log::warn!("GATEWAY  ACK send failed: {}", e);
+                }
+                return;
+            }
+            Err(e) => {
+                log::warn!(
+                    "GATEWAY  broadcast attempt {}/3 failed: {}",
+                    attempt + 1, e
+                );
+            }
+        }
+    }
+    log::error!(
+        "GATEWAY  broadcast failed after 3 attempts for tx {}…",
+        &raw_hex[..raw_hex.len().min(16)]
+    );
 }

@@ -150,6 +150,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Real Dogecoin P2PKH transaction signing (`wallet.rs`)
+- **`build_signed_transaction(from_wif, to_address, amount_doge, fee_doge)`** — async function that fetches UTXOs from Trezor Blockbook (`https://doge1.trezor.io/api/v2/utxo/{address}`), selects coins with a greedy largest-first algorithm, builds inputs and change outputs, and signs each input with SIGHASH_ALL (secp256k1 ECDSA). Returns the raw serialized binary transaction.
+- **`broadcast_raw_tx(raw_hex)`** — async function that POSTs a hex-encoded raw transaction to Trezor Blockbook (`/api/v2/sendtx/`) and returns the txid on success.
+- **`DEFAULT_TX_FEE_DOGE`** (1.0 DOGE) — exported constant for callers that don't need custom fee logic.
+- **`is_signed_tx_payload(payload)`** — helper that returns true when a CMD_DOGE_TX payload starts with the Dogecoin v1 transaction header (`[0x01, 0x00, 0x00, 0x00]`) and is ≥ 100 bytes, distinguishing signed transactions from the legacy stub format.
+- **`reqwest` dependency** added to `radiodoge-core` and workspace (version 0.12, `rustls-tls` feature — no OpenSSL required).
+
+#### `send_transaction` Tauri command now builds and sends real signed transactions
+- When `fromPrivateKeyWif` is present in the request, `send_transaction` calls `wallet::build_signed_transaction()` to produce a real Dogecoin P2PKH transaction before sending the payload over LoRa. Falls back to the legacy stub format when no WIF is available.
+- `mobile_build_tx_packets` updated with the same real-signing logic for the Android USB/BLE path.
+
+#### Gateway daemon broadcasts signed transactions to the Dogecoin network
+- `cmd_daemon` in `radiodoge-cli` now detects incoming `CMD_DOGE_TX` packets whose payload matches a signed transaction, broadcasts them to the Dogecoin network via Trezor Blockbook, and radios a `TX_ACK:<txid>` message back to the originating node.
+- Broadcast uses exponential-backoff retry (3 attempts, delays 2 s / 4 s).
+- **Note**: full LoRa → gateway firmware → daemon delivery requires an updated Heltec firmware that forwards binary CMD_DOGE_TX packets to the serial host. The daemon broadcast logic is complete and will activate automatically once firmware support is in place.
+
 #### BLE advertising toggle
 - **`CMD_BLE_TOGGLE` (0x28)** — new protocol command added to `radio.rs`. Sends a 1-byte payload (`0x01` = enable, `0x00` = disable) to instruct the board to start or stop BLE advertising.
 - **`build_ble_toggle(src, enable)`** — packet builder in `radio.rs`.

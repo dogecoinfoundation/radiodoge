@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.16** ✨: Android USB-C and Bluetooth BLE both production-ready! RadioDoge icon on the home screen. BLE connection fixed (CCCD timing + sendData byte format). Settings tab fully functional on Android. BLE advertising toggle in Connect panel AND Settings. Live Packet Log readable on 360dp phones with proper wrapping. Debug export uses Android share sheet. Much mobile. Very wireless. Such polish. Wow!
+> **v0.3.16** ✨: **Real Dogecoin P2PKH transactions!** The wallet now builds, signs (secp256k1 SIGHASH_ALL), and broadcasts genuine transactions over LoRa. UTXOs are fetched from Trezor Blockbook; the gateway daemon broadcasts signed transactions to the Dogecoin network with retry logic and sends a TX_ACK back to the sender. Android USB-C and Bluetooth BLE both production-ready! Settings tab fully functional on Android. BLE advertising toggle added. Live Packet Log readable on 360dp phones. Much real. Very on-chain. Wow!
 
 ---
 
@@ -85,11 +85,14 @@ Your PC / Phone
                         [Dogecoin Network]
 ```
 
-1. Your desktop app (RadioDoge GUI) sends a signed transaction to the Heltec device via USB serial
-2. The device broadcasts it over LoRa radio to nearby nodes
-3. Nodes relay the packet through the mesh (up to 3 hops)
-4. A gateway node (connected to internet) forwards it to the Dogecoin network
-5. 🎉 Your transaction is confirmed on-chain!
+1. Your desktop app (RadioDoge GUI) **builds and signs a real Dogecoin P2PKH transaction** locally (UTXO fetch → coin selection → secp256k1 SIGHASH_ALL signing)
+2. The raw signed transaction is sent to the Heltec device via USB serial and broadcast over LoRa
+3. Nodes relay the packet through the mesh (up to 15 km range)
+4. A gateway node running `radiodoge-cli daemon` receives the packet and **POSTs the raw transaction to Trezor Blockbook** for broadcast to the Dogecoin network
+5. The gateway sends a `TX_ACK:<txid>` radio message back to the sender
+6. 🎉 Your transaction is confirmed on-chain!
+
+> **Gateway note**: Full end-to-end flow (LoRa → firmware → daemon → network) requires the gateway Heltec to forward incoming binary packets to the serial host. The daemon broadcast logic is complete; gateway firmware integration is in progress.
 
 ---
 

@@ -459,12 +459,24 @@ async fn send_transaction(
         return Err("Amount must be greater than 0 DOGE".to_string());
     }
 
-    let payload = wallet::encode_transaction_payload(
-        &tx.to_address,
-        tx.amount_doge,
-        tx.memo.as_deref(),
-    )
-    .map_err(|e| e.to_string())?;
+    // Build payload: real signed transaction when WIF is available, legacy stub otherwise.
+    let payload = if let Some(ref wif) = tx.from_private_key_wif {
+        wallet::build_signed_transaction(
+            wif,
+            &tx.to_address,
+            tx.amount_doge,
+            wallet::DEFAULT_TX_FEE_DOGE,
+        )
+        .await
+        .map_err(|e| format!("Transaction signing failed: {}", e))?
+    } else {
+        wallet::encode_transaction_payload(
+            &tx.to_address,
+            tx.amount_doge,
+            tx.memo.as_deref(),
+        )
+        .map_err(|e| e.to_string())?
+    };
 
     let src = state.serial.get_node_address().await;
     let dst = NodeAddress::broadcast();
@@ -472,22 +484,31 @@ async fn send_transaction(
     if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
         let pkt = radio::build_doge_tx(&src, &dst, &payload);
         let pkt_hex = hex::encode(&pkt);
-        emit_debug_traffic(&app, "TX", &pkt_hex, "CMD_DOGE_TX (single packet)");
+        let label = if tx.from_private_key_wif.is_some() { "CMD_DOGE_TX signed (single)" } else { "CMD_DOGE_TX (single packet)" };
+        emit_debug_traffic(&app, "TX", &pkt_hex, label);
         state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
     } else {
         let pkts = radio::build_multipart_packets(&src, &dst, radio::CMD_DOGE_TX, &payload);
+        let label = if tx.from_private_key_wif.is_some() { "CMD_DOGE_TX signed" } else { "CMD_DOGE_TX" };
         for (i, pkt) in pkts.iter().enumerate() {
             let pkt_hex = hex::encode(pkt);
-            emit_debug_traffic(&app, "TX", &pkt_hex, &format!("CMD_DOGE_TX (multipart {}/{})", i + 1, pkts.len()));
+            emit_debug_traffic(&app, "TX", &pkt_hex, &format!("{} (multipart {}/{})", label, i + 1, pkts.len()));
             state.serial.send_raw(pkt.clone()).await.map_err(|e| e.to_string())?;
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
-    let msg = format!(
-        "Broadcast {:.8} DOGE → {} via LoRa! 🐕🌙",
-        tx.amount_doge, tx.to_address
-    );
+    let msg = if tx.from_private_key_wif.is_some() {
+        format!(
+            "Signed tx broadcast: {:.8} DOGE → {} via LoRa! 🐕🌙",
+            tx.amount_doge, tx.to_address
+        )
+    } else {
+        format!(
+            "Broadcast {:.8} DOGE → {} via LoRa! 🐕🌙",
+            tx.amount_doge, tx.to_address
+        )
+    };
 
     let _ = app.emit("transaction-sent", &msg);
 
@@ -1339,13 +1360,23 @@ async fn mobile_build_tx_packets(
     let src = state.serial.get_node_address().await;
     let dst = NodeAddress::broadcast();
 
-    // encode_transaction_payload signature: (to_address, amount_doge, memo)
-    let payload = wallet::encode_transaction_payload(
-        &tx.to_address,
-        tx.amount_doge,
-        tx.memo.as_deref(),
-    )
-    .map_err(|e| e.to_string())?;
+    let payload = if let Some(ref wif) = tx.from_private_key_wif {
+        wallet::build_signed_transaction(
+            wif,
+            &tx.to_address,
+            tx.amount_doge,
+            wallet::DEFAULT_TX_FEE_DOGE,
+        )
+        .await
+        .map_err(|e| format!("Transaction signing failed: {}", e))?
+    } else {
+        wallet::encode_transaction_payload(
+            &tx.to_address,
+            tx.amount_doge,
+            tx.memo.as_deref(),
+        )
+        .map_err(|e| e.to_string())?
+    };
 
     if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
         Ok(vec![radio::build_doge_tx(&src, &dst, &payload)])
