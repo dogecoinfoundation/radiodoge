@@ -352,7 +352,29 @@ impl SerialManager {
                             if accumulator.len() < radio::SINGLE_HDR_LEN {
                                 break;
                             }
-                            if let Some(packet) = radio::parse_incoming(&accumulator, 0) {
+                            // Pre-compute the exact byte span for this packet so that
+                            // parse_incoming receives only the bytes belonging to it.
+                            // Without this, back-to-back packets in the accumulator
+                            // cause next-packet bytes to appear in payload_hex.
+                            // Mirrors the equivalent logic in mobile_push_bytes (lib.rs).
+                            let cmd = accumulator[0];
+                            let packet_len = {
+                                let after_hdr = accumulator.get(radio::SINGLE_HDR_LEN..).unwrap_or(&[]);
+                                match radio::exact_packet_len(cmd) {
+                                    Some(n) => n,
+                                    None => {
+                                        let payload_len = if cmd == radio::CMD_GET_FIRMWARE_VERSION {
+                                            after_hdr.iter().position(|&b| b == 0)
+                                                .map(|i| i + 1)
+                                                .unwrap_or_else(|| after_hdr.len().min(radio::MAX_SINGLE_PAYLOAD_LEN))
+                                        } else {
+                                            after_hdr.len().min(radio::MAX_SINGLE_PAYLOAD_LEN)
+                                        };
+                                        radio::SINGLE_HDR_LEN + payload_len
+                                    }
+                                }
+                            }.min(accumulator.len());
+                            if let Some(packet) = radio::parse_incoming(&accumulator[..packet_len], 0) {
                                 // Update stats
                                 {
                                     let mut stats = stats_clone.lock().await;
@@ -470,25 +492,13 @@ impl SerialManager {
                                 // Broadcast to all subscribers
                                 let _ = packet_tx_clone.send(packet.clone());
 
-                                // Save command before packet is moved into callback
-                                let cmd = packet.command;
-
                                 // Invoke the caller-supplied callback (GUI emitter, CLI printer…)
                                 on_packet(packet);
 
-                                // Consume the processed bytes.
-                                // For commands with known fixed reply sizes, drain exactly that many
-                                // bytes so back-to-back packets in the accumulator are not lost.
-                                // For variable-length commands (messages, FW version), drain
-                                // what's available up to MAX_SINGLE_PAYLOAD_LEN.
-                                let consumed = radio::exact_packet_len(cmd)
-                                    .unwrap_or_else(|| {
-                                        radio::SINGLE_HDR_LEN
-                                            + (accumulator.len() - radio::SINGLE_HDR_LEN)
-                                                .min(radio::MAX_SINGLE_PAYLOAD_LEN)
-                                    });
-                                let consumed = consumed.min(accumulator.len());
-                                accumulator.drain(..consumed);
+                                // Drain the bytes that belong to this packet.
+                                // packet_len was computed above from exact_packet_len / null-scan,
+                                // so this is exact for both fixed- and variable-length commands.
+                                accumulator.drain(..packet_len);
                             } else {
                                 // parse_incoming returned None (buffer too short) — wait for more data
                                 break;
