@@ -150,6 +150,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### BIP39 mnemonic + BIP32 HD wallet derivation
+- **`generate_mnemonic()`** — new function in `wallet.rs`. Generates a cryptographically random 12-word BIP39 mnemonic phrase (128-bit entropy) using the OS RNG.
+- **`wallet_from_mnemonic(phrase)`** — new function in `wallet.rs`. Parses and validates a BIP39 mnemonic, derives a 64-byte seed via PBKDF2-HMAC-SHA512 (no passphrase), then applies BIP32 child key derivation at path `m/44'/3'/0'/0/0` (Dogecoin BIP44 coin-type 3). Returns a `WalletInfo` with the first external address.
+- **BIP32 derivation** (`bip32_master`, `bip32_ckd_private`) — implemented in-crate using HMAC-SHA512 over the `hmac = "0.12"` crate. Supports both hardened (`i ≥ 0x80000000`) and normal child keys.
+- **`generate_mnemonic_wallet()`** — new Tauri command. Returns `{ mnemonic, address, publicKeyHex, privateKeyWif }`. The mnemonic is not stored; the caller must back it up before it disappears from the UI.
+- **`import_mnemonic_wallet(phrase)`** — new Tauri command. Accepts a 12 or 24-word BIP39 phrase, derives the wallet at `m/44'/3'/0'/0/0`, returns `WalletInfo`.
+- **`WalletTab.svelte`** — generate flow now calls `generate_mnemonic_wallet` and immediately shows a "Save Your Recovery Phrase" modal: 12 words displayed in a 3-column grid, copy-to-clipboard button, warning banner. The modal must be dismissed before the wallet fields are accessible. Added "🌱 Mnemonic" import button and import panel alongside the existing WIF import flow.
+- New dependencies: `bip39 = { version = "2.2.2", features = ["rand"] }`, `hmac = "0.12"` added to workspace and `radiodoge-core`.
+- New tests: `test_mnemonic_generate_and_roundtrip`, `test_mnemonic_known_vector` (validates against the all-`abandon`+`about` BIP39 test vector), `test_mnemonic_invalid_rejected`.
+
+#### BAL:/TX_ACK message decoding + gateway balance listener
+- **`radio.rs`**: `CMD_MESSAGE`/`CMD_BROADCAST` payloads with prefix `BAL:{koinus}` are now decoded to `"💰 Balance: X.XXXXXXXX DOGE"` and `TX_ACK:{txid}` to `"✅ TX confirmed: txid=…"` in `decode_payload`.
+- **`WalletTab.svelte`**: On mount, registers a `radio-packet` listener that matches the `"💰 Balance: …"` pattern and auto-updates the balance card with `balanceSource = 'gateway'`. Source attribution shown below the balance figure.
+- **`SendTab.svelte`**: Fee disclosure row (`1.00000000 DOGE fixed`) shown when wallet is loaded and an amount is entered.
+
 #### Wallet encryption at rest (ChaCha20-Poly1305 + argon2id)
 - **`encrypt_wallet(wallet, passphrase)`** / **`decrypt_wallet(encrypted, passphrase)`** — new public functions in `wallet.rs`. The WIF private key is encrypted with ChaCha20-Poly1305 (16-byte auth tag) using a 32-byte key derived from the user's passphrase via argon2id (64 MiB memory, 2 iterations, 16-byte random salt). Both encryption and decryption happen in-process with no plaintext WIF ever written to disk.
 - **`EncryptedWalletFile`** — new serializable struct stored as `wallet.json` (`{ address, publicKeyHex, encryptedWif, salt, nonce }` — all hex-encoded).

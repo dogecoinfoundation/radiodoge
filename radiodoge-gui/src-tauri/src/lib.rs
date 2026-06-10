@@ -438,6 +438,29 @@ async fn import_wif(wif: String) -> Result<WalletInfo, String> {
     wallet::import_wif(&wif).map_err(|e| e.to_string())
 }
 
+/// v0.3.16 — Generate a new wallet with a 12-word BIP39 recovery phrase.
+/// Returns the mnemonic alongside the derived WalletInfo.
+/// The mnemonic is NOT stored — the caller must back it up before it disappears.
+#[tauri::command]
+async fn generate_mnemonic_wallet() -> Result<serde_json::Value, String> {
+    let mnemonic = wallet::generate_mnemonic().map_err(|e| e.to_string())?;
+    let phrase = mnemonic.to_string();
+    let info = wallet::wallet_from_mnemonic(&phrase).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "mnemonic": phrase,
+        "address": info.address,
+        "publicKeyHex": info.public_key_hex,
+        "privateKeyWif": info.private_key_wif,
+    }))
+}
+
+/// v0.3.16 — Import a wallet from a BIP39 mnemonic phrase.
+/// Derives the key at m/44'/3'/0'/0/0 (Dogecoin BIP44 path).
+#[tauri::command]
+async fn import_mnemonic_wallet(phrase: String) -> Result<WalletInfo, String> {
+    wallet::wallet_from_mnemonic(&phrase).map_err(|e| e.to_string())
+}
+
 /// v0.3.16 — Query the confirmed Dogecoin balance for an address via Trezor Blockbook.
 /// Returns the balance as a floating-point DOGE amount.
 #[tauri::command]
@@ -1609,6 +1632,8 @@ pub fn run() {
             ping_device,
             generate_wallet,
             import_wif,
+            generate_mnemonic_wallet,
+            import_mnemonic_wallet,
             get_balance,
             send_transaction,
             update_lora_settings,

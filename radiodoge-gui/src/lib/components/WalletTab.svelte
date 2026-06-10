@@ -30,6 +30,16 @@
   let isImporting = $state(false);
   let importError = $state<string | null>(null);
 
+  // ── v0.3.16 — Mnemonic import ──────────────────────────────────────────
+  let showMnemonicImport = $state(false);
+  let importMnemonicPhrase = $state('');
+  let isImportingMnemonic = $state(false);
+  let importMnemonicError = $state<string | null>(null);
+
+  // ── v0.3.16 — Mnemonic backup modal (shown after generating a new wallet)
+  let showMnemonicBackup = $state(false);
+  let generatedMnemonic = $state<string | null>(null);
+
   async function importWallet() {
     if (!importWif.trim()) {
       importError = 'Enter a WIF private key (starts with "Q" for Dogecoin mainnet).';
@@ -51,13 +61,40 @@
     }
   }
 
+  async function importMnemonicWallet() {
+    if (!importMnemonicPhrase.trim()) {
+      importMnemonicError = 'Enter your 12 or 24 word recovery phrase.';
+      return;
+    }
+    isImportingMnemonic = true;
+    importMnemonicError = null;
+    wallet.error = null;
+    showQR = false;
+    try {
+      const info = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string }>(
+        'import_mnemonic_wallet', { phrase: importMnemonicPhrase.trim() }
+      );
+      loadWallet(info);
+      importMnemonicPhrase = '';
+      showMnemonicImport = false;
+    } catch (e: unknown) {
+      importMnemonicError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isImportingMnemonic = false;
+    }
+  }
+
   async function generateWallet() {
     isGenerating = true;
     wallet.error = null;
-    showQR = false; // close QR on new wallet
+    showQR = false;
     try {
-      const info = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string }>('generate_wallet');
-      loadWallet(info);
+      const result = await invoke<{ mnemonic: string; address: string; publicKeyHex: string; privateKeyWif: string }>(
+        'generate_mnemonic_wallet'
+      );
+      loadWallet({ address: result.address, publicKeyHex: result.publicKeyHex, privateKeyWif: result.privateKeyWif });
+      generatedMnemonic = result.mnemonic;
+      showMnemonicBackup = true;
     } catch (e: unknown) {
       wallet.error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -251,12 +288,20 @@
         {/if}
       </button>
       <button
-        onclick={() => { showImport = !showImport; importError = null; }}
+        onclick={() => { showImport = !showImport; importError = null; showMnemonicImport = false; }}
         class="btn-ghost"
         title="Import an existing wallet from a WIF private key (starts with 'Q'). Hot wallet — test amounts only!"
         style="display: flex; align-items: center; gap: 6px;"
       >
         📥 Import WIF
+      </button>
+      <button
+        onclick={() => { showMnemonicImport = !showMnemonicImport; importMnemonicError = null; showImport = false; }}
+        class="btn-ghost"
+        title="Restore a wallet from a 12 or 24-word BIP39 recovery phrase. Derives m/44'/3'/0'/0/0."
+        style="display: flex; align-items: center; gap: 6px;"
+      >
+        🌱 Mnemonic
       </button>
     </div>
   </div>
@@ -336,6 +381,72 @@
             Cancel
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── v0.3.16 — Import Mnemonic panel ──────────────────────────────────── -->
+  {#if showMnemonicImport}
+    <div
+      class="card-doge slide-up"
+      style="
+        margin-bottom: 20px;
+        border-color: rgba(0, 200, 100, 0.4);
+        background: rgba(0, 200, 100, 0.04);
+      "
+      role="region"
+      aria-label="Import from mnemonic phrase"
+    >
+      <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 10px;">🌱 Restore from Recovery Phrase</div>
+      <p style="margin: 0 0 12px 0; font-size: 0.8rem; color: var(--doge-muted); line-height: 1.6;">
+        Enter your 12 or 24-word BIP39 recovery phrase (space-separated).
+        Derives key at <span class="mono" style="font-size: 0.75rem;">m/44'/3'/0'/0/0</span> (Dogecoin BIP44).
+      </p>
+      <textarea
+        bind:value={importMnemonicPhrase}
+        placeholder="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"
+        rows="3"
+        class="input-doge"
+        style="width: 100%; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem;"
+        aria-label="BIP39 mnemonic phrase input"
+        spellcheck="false"
+        autocomplete="off"
+      ></textarea>
+      {#if importMnemonicError}
+        <div style="
+          margin-top: 8px;
+          padding: 8px 12px;
+          background: rgba(255, 68, 68, 0.1);
+          border: 1px solid rgba(255, 68, 68, 0.3);
+          border-radius: 6px;
+          color: var(--doge-red);
+          font-size: 0.78rem;
+        " role="alert">
+          ❌ {importMnemonicError}
+        </div>
+      {/if}
+      <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+        <button
+          onclick={importMnemonicWallet}
+          disabled={isImportingMnemonic || !importMnemonicPhrase.trim()}
+          class="btn-doge"
+          style="display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; min-width: 140px;"
+          title="Derive Dogecoin wallet from this recovery phrase at m/44'/3'/0'/0/0"
+        >
+          {#if isImportingMnemonic}
+            <DogeSpinner size="sm" message="" />
+            Restoring...
+          {:else}
+            🌱 Restore Wallet
+          {/if}
+        </button>
+        <button
+          onclick={() => { showMnemonicImport = false; importMnemonicPhrase = ''; importMnemonicError = null; }}
+          class="btn-ghost"
+          style="padding: 8px 16px;"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   {/if}
@@ -744,6 +855,89 @@
             {isSavingWallet ? '⏳ Encrypting…' : '🔐 Save Encrypted'}
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- v0.3.16 — Recovery phrase backup modal (shown after generating a new wallet) -->
+  {#if showMnemonicBackup && generatedMnemonic}
+    <div
+      style="
+        position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; padding: 24px;
+      "
+      role="dialog" aria-modal="true" aria-label="Back up your recovery phrase"
+    >
+      <div style="
+        background: var(--doge-card);
+        border: 2px solid rgba(0, 220, 110, 0.45);
+        border-radius: 16px;
+        padding: 28px;
+        max-width: 500px;
+        width: 100%;
+        box-shadow: 0 0 48px rgba(0,220,110,0.12);
+      ">
+        <div style="font-size: 2.2rem; text-align: center; margin-bottom: 10px;">🌱</div>
+        <h3 style="margin: 0 0 6px 0; color: #00dc6e; font-size: 1.05rem; text-align: center;">Save Your Recovery Phrase</h3>
+        <p style="margin: 0 0 18px 0; font-size: 0.82rem; color: var(--doge-muted); text-align: center; line-height: 1.6;">
+          Write these 12 words down on paper and store them offline.
+          Anyone with this phrase can access your wallet.
+          <strong style="color: var(--doge-text);">Never share it.</strong>
+        </p>
+        <!-- 12-word grid -->
+        <div style="
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-bottom: 18px;
+          padding: 16px;
+          background: var(--doge-dark);
+          border: 1px solid rgba(0,220,110,0.2);
+          border-radius: 12px;
+        ">
+          {#each generatedMnemonic.split(' ') as word, i}
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              padding: 6px 10px;
+              background: rgba(0,220,110,0.06);
+              border: 1px solid rgba(0,220,110,0.15);
+              border-radius: 6px;
+              font-size: 0.82rem;
+            ">
+              <span style="color: var(--doge-subtle); font-size: 0.7rem; min-width: 18px;">{i + 1}.</span>
+              <span class="mono" style="color: var(--doge-text);">{word}</span>
+            </div>
+          {/each}
+        </div>
+        <button
+          onclick={() => copyToClipboard(generatedMnemonic ?? '', 'mnemonic')}
+          class="btn-ghost"
+          style="width: 100%; margin-bottom: 14px; font-size: 0.82rem;"
+        >
+          {copyFeedback.mnemonic ? '✅ Copied!' : '📋 Copy phrase to clipboard'}
+        </button>
+        <div style="
+          padding: 10px 14px;
+          background: rgba(255, 140, 0, 0.08);
+          border: 1px solid rgba(255, 140, 0, 0.3);
+          border-radius: 8px;
+          font-size: 0.78rem;
+          color: var(--doge-orange);
+          margin-bottom: 16px;
+          line-height: 1.6;
+        " role="alert">
+          ⚠️ This phrase will not be shown again. Store it offline before continuing.
+        </div>
+        <button
+          onclick={() => { showMnemonicBackup = false; generatedMnemonic = null; }}
+          class="btn-doge"
+          style="width: 100%; padding: 12px; font-size: 0.9rem;"
+        >
+          ✅ I've saved my recovery phrase
+        </button>
       </div>
     </div>
   {/if}
