@@ -110,6 +110,17 @@ enum Commands {
         #[arg(short, long)]
         port: String,
     },
+
+    /// Query the confirmed Dogecoin balance for an address via Trezor Blockbook
+    ///
+    /// Requires an internet connection.
+    ///
+    /// Example: radiodoge-cli balance -a DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L
+    Balance {
+        /// Dogecoin address to query
+        #[arg(short, long)]
+        address: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -169,6 +180,7 @@ async fn main() -> Result<()> {
         Commands::Ping { port } => cmd_ping(&port).await,
         Commands::Connect { port } => cmd_connect(&port).await,
         Commands::Daemon { port } => cmd_daemon(&port).await,
+        Commands::Balance { address } => cmd_balance(&address).await,
     }
 }
 
@@ -638,4 +650,15 @@ async fn daemon_fetch_and_send_balance(
             log::warn!("GATEWAY  balance fetch failed for {}: {}", address, e);
         }
     }
+}
+
+/// Query the confirmed balance for a Dogecoin address from Trezor Blockbook.
+async fn cmd_balance(address: &str) -> Result<()> {
+    if !wallet::is_valid_address(address) {
+        anyhow::bail!("'{}' is not a valid Dogecoin address (must start with 'D')", address);
+    }
+    println!("🌐 Querying Blockbook for {}...", address);
+    let koinus = wallet::fetch_balance_blockbook(address).await?;
+    println!("💰 Balance: {:.8} DOGE  ({} koinus)", koinus as f64 / 1e8, koinus);
+    Ok(())
 }
