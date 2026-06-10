@@ -159,6 +159,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`WalletTab.svelte`** — save modal replaced with a passphrase entry form (passphrase + confirm, min. 8 chars, visual feedback). Startup now calls `wallet_needs_passphrase()`; if true, shows an unlock modal before loading. Legacy plaintext wallets are detected and a nudge is shown to re-save with encryption.
 - New dependencies: `argon2 = "0.5"`, `chacha20poly1305 = "0.10"` added to workspace and `radiodoge-core`.
 
+#### Balance query via Blockbook
+- **`fetch_balance_blockbook(address)`** — new async function in `wallet.rs`. Queries `https://doge1.trezor.io/api/v2/address/{address}` and returns the confirmed balance in koinus.
+- **`get_balance(address)`** — new Tauri command. Validates the address, calls `fetch_balance_blockbook`, returns DOGE as `f64`.
+- **`build_request_balance(src, doge_address)`** — new packet builder in `radio.rs`. Builds a `CMD_REQUEST_BALANCE` (0x11) packet carrying the Dogecoin address to query. For the LoRa gateway path.
+- **`daemon_fetch_and_send_balance`** — new async function in `radiodoge-cli`. When the gateway daemon receives a `CMD_REQUEST_BALANCE` packet, it extracts the address from the payload, fetches the balance from Blockbook, and sends a `CMD_MESSAGE` back to the requesting node with text `"BAL:{koinus}"`.
+- **`WalletTab.svelte`** — new Balance card between Address and Public Key: shows confirmed balance with a "Check Balance" button. Error and loading states handled.
+- **`radio.rs` `decode_payload`**: `CMD_REQUEST_BALANCE` now shows `"💰 REQUEST BALANCE: D…"` in the Live Packet Log.
+
 #### Incoming transaction signature verification
 - **`verify_signed_tx(raw_tx)`** — new public function in `wallet.rs` that verifies all ECDSA input signatures in a raw Dogecoin P2PKH transaction without any network access. Extracts the pubkey from each input's scriptSig, reconstructs the UTXO scriptPubKey, computes the SIGHASH_ALL preimage, and calls `secp256k1::verify_ecdsa`. Returns `(sender_address, recipients)` on success.
 - **`describe_signed_tx(raw_tx)`** — formats the verification result into a human-readable string: `"✅ DOGE TX: 1.00000000 DOGE → D… [from D…]"` on success, or `"⚠️ DOGE TX (unverified) — N bytes"` on failure.

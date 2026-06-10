@@ -74,6 +74,24 @@
     }
   }
 
+  // ── v0.3.16 — Balance query ────────────────────────────────────────────────
+  let balance = $state<number | null>(null);
+  let isFetchingBalance = $state(false);
+  let balanceError = $state<string | null>(null);
+
+  async function checkBalance() {
+    if (!wallet.address) return;
+    isFetchingBalance = true;
+    balanceError = null;
+    try {
+      balance = await invoke<number>('get_balance', { address: wallet.address });
+    } catch (e: unknown) {
+      balanceError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isFetchingBalance = false;
+    }
+  }
+
   // ── v0.3.16 — Encrypted persistent wallet ────────────────────────────────
   let showSaveModal = $state(false);
   let savePassphrase = $state('');
@@ -422,6 +440,39 @@
               {copyFeedback.addrQR ? '✅ Copied!' : '📋 Copy Address'}
             </button>
           </div>
+        {/if}
+      </div>
+
+      <!-- Balance -->
+      <div class="card-doge" aria-label="Wallet balance">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+          <div class="stat-label">💰 Balance</div>
+          <button
+            onclick={checkBalance}
+            disabled={isFetchingBalance}
+            class="btn-ghost"
+            style="padding: 4px 12px; font-size: 0.78rem;"
+            title="Query confirmed balance from Blockbook (Trezor)"
+          >
+            {isFetchingBalance ? '⏳ Fetching…' : '🔄 Check Balance'}
+          </button>
+        </div>
+        {#if balance !== null}
+          <div style="
+            font-size: 1.5rem; font-weight: 700;
+            color: var(--doge-yellow);
+            font-family: var(--font-mono);
+            letter-spacing: -0.02em;
+          ">
+            {balance.toFixed(8)} DOGE
+          </div>
+          <div style="font-size: 0.75rem; color: var(--doge-muted); margin-top: 4px;">
+            Confirmed balance from Trezor Blockbook
+          </div>
+        {:else if balanceError}
+          <div style="font-size: 0.8rem; color: #ff6060;">{balanceError}</div>
+        {:else}
+          <div style="font-size: 0.82rem; color: var(--doge-muted);">Click "Check Balance" to query the Dogecoin network.</div>
         {/if}
       </div>
 

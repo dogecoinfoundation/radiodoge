@@ -438,6 +438,19 @@ async fn import_wif(wif: String) -> Result<WalletInfo, String> {
     wallet::import_wif(&wif).map_err(|e| e.to_string())
 }
 
+/// v0.3.16 — Query the confirmed Dogecoin balance for an address via Trezor Blockbook.
+/// Returns the balance as a floating-point DOGE amount.
+#[tauri::command]
+async fn get_balance(address: String) -> Result<f64, String> {
+    if !wallet::is_valid_address(&address) {
+        return Err("Invalid Dogecoin address".to_string());
+    }
+    let koinus = wallet::fetch_balance_blockbook(&address)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(koinus as f64 / 1e8)
+}
+
 #[tauri::command]
 async fn send_transaction(
     tx: TransactionRequest,
@@ -1596,6 +1609,7 @@ pub fn run() {
             ping_device,
             generate_wallet,
             import_wif,
+            get_balance,
             send_transaction,
             update_lora_settings,
             get_lora_settings,

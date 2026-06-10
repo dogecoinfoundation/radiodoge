@@ -480,6 +480,23 @@ async fn cmd_daemon(port: &str) -> Result<()> {
                 });
             }
         }
+
+        // When a balance request arrives, query Blockbook and send the result back.
+        if pkt.command == radio::CMD_REQUEST_BALANCE {
+            let payload_bytes = hex::decode(&pkt.payload_hex).unwrap_or_default();
+            let addr = String::from_utf8_lossy(&payload_bytes)
+                .trim_matches('\0')
+                .trim()
+                .to_string();
+            if !addr.is_empty() {
+                let mgr = Arc::clone(&manager_for_ack);
+                let source = pkt.source.clone();
+                log::info!("GATEWAY  balance request from {} for {}", source.to_display_string(), addr);
+                tokio::spawn(async move {
+                    daemon_fetch_and_send_balance(addr, mgr, source).await;
+                });
+            }
+        }
     });
 
     log::info!("Connecting to {} ...", port);
@@ -536,4 +553,30 @@ async fn daemon_broadcast_and_ack(
         "GATEWAY  broadcast failed after 3 attempts for tx {}…",
         &raw_hex[..raw_hex.len().min(16)]
     );
+}
+
+/// Fetch the balance for `address` from Blockbook and send it back to `source` via radio.
+/// The response is a CMD_MESSAGE with text `"BAL:{koinus}"` so the GUI can parse it.
+async fn daemon_fetch_and_send_balance(
+    address: String,
+    mgr: Arc<SerialManager>,
+    source: NodeAddress,
+) {
+    match wallet::fetch_balance_blockbook(&address).await {
+        Ok(koinus) => {
+            log::info!(
+                "GATEWAY  balance for {}: {} koinus ({:.8} DOGE)",
+                address, koinus, koinus as f64 / 1e8
+            );
+            let gateway_addr = mgr.get_node_address().await;
+            let msg = format!("BAL:{}", koinus);
+            let pkt = radio::build_message(&gateway_addr, &source, &msg);
+            if let Err(e) = mgr.send_raw(pkt).await {
+                log::warn!("GATEWAY  balance reply send failed: {}", e);
+            }
+        }
+        Err(e) => {
+            log::warn!("GATEWAY  balance fetch failed for {}: {}", address, e);
+        }
+    }
 }

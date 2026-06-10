@@ -426,6 +426,30 @@ pub async fn build_signed_transaction(
     Ok(tx)
 }
 
+/// Fetch the confirmed balance for a Dogecoin address from Trezor Blockbook.
+/// Returns the balance in koinus (1 DOGE = 1e8 koinus).
+pub async fn fetch_balance_blockbook(address: &str) -> Result<u64> {
+    #[derive(serde::Deserialize)]
+    struct AddressInfo {
+        balance: String,
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| anyhow::anyhow!("HTTP client init failed: {}", e))?;
+    let url = format!("{}/address/{}", BLOCKBOOK_BASE, address);
+    let info: AddressInfo = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Balance fetch failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("Balance response parse failed: {}", e))?;
+    info.balance.parse::<u64>()
+        .map_err(|_| anyhow::anyhow!("Invalid balance value in Blockbook response"))
+}
+
 /// Broadcast a raw signed Dogecoin transaction to the network via Trezor Blockbook.
 /// `raw_hex` is the hex-encoded serialized transaction (output of
 /// `hex::encode(build_signed_transaction(...))`).

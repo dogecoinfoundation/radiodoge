@@ -145,6 +145,15 @@ pub fn build_ble_toggle(src: &NodeAddress, enable: bool) -> Vec<u8> {
     packet
 }
 
+/// Build a CMD_REQUEST_BALANCE packet.
+/// The gateway that receives this will query Blockbook for `doge_address` and reply with
+/// a CMD_MESSAGE containing `"BAL:{koinus}"` addressed back to `src`.
+pub fn build_request_balance(src: &NodeAddress, doge_address: &str) -> Vec<u8> {
+    let mut packet = build_header(CMD_REQUEST_BALANCE, FLAG_STANDARD, src, &NodeAddress::broadcast());
+    packet.extend_from_slice(doge_address.as_bytes());
+    packet
+}
+
 /// Return the exact total byte count for commands with fixed-size replies.
 /// Returns None for variable-length commands (e.g., CMD_MESSAGE, CMD_GET_FIRMWARE_VERSION).
 /// Used by the serial read loop to advance the accumulator precisely, avoiding
@@ -153,7 +162,7 @@ pub fn exact_packet_len(cmd: u8) -> Option<usize> {
     match cmd {
         CMD_GET_NODE_ADDR   => Some(8),  // header only
         CMD_PING            => Some(8),  // header only (ACK)
-        CMD_REQUEST_BALANCE => Some(8),  // header only (ACK)
+        // CMD_REQUEST_BALANCE has a variable-length payload (Dogecoin address) — handled as variable
         CMD_SET_LORA_PARAMS => Some(8),  // header only (ACK)
         CMD_ADDR_CONFLICT   => Some(8),  // header only
         CMD_SET_NODE_ADDRS  => Some(8),  // header only (ACK)
@@ -294,6 +303,17 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
             } else {
                 crate::wallet::decode_transaction_payload(payload)
                     .map(|s| format!("🐕 {}", s))
+            }
+        }
+        CMD_REQUEST_BALANCE => {
+            if payload.is_empty() {
+                Some("💰 REQUEST BALANCE".to_string())
+            } else {
+                let addr = std::str::from_utf8(payload)
+                    .unwrap_or("?")
+                    .trim_matches('\0')
+                    .trim();
+                Some(format!("💰 REQUEST BALANCE: {}", addr))
             }
         }
         CMD_GET_FIRMWARE_VERSION => {
