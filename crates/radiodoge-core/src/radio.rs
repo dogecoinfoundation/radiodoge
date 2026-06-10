@@ -83,7 +83,7 @@ pub fn build_ping(src: &NodeAddress, dst: &NodeAddress) -> Vec<u8> {
 /// Build a text MESSAGE packet.
 pub fn build_message(src: &NodeAddress, dst: &NodeAddress, text: &str) -> Vec<u8> {
     let mut packet = build_header(CMD_MESSAGE, FLAG_STANDARD, src, dst);
-    let payload = &text.as_bytes()[..text.as_bytes().len().min(MAX_SINGLE_PAYLOAD_LEN)];
+    let payload = &text.as_bytes()[..text.len().min(MAX_SINGLE_PAYLOAD_LEN)];
     packet.extend_from_slice(payload);
     packet
 }

@@ -28,7 +28,7 @@
       "menuOnLeftClick": false
     },
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' https://doge1.trezor.io ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
@@ -43,7 +43,7 @@
       "icons/icon.ico"
     ],
     "resources": [],
-    "externalBin": [],
+    "externalBin": ["binaries/radiodoge-cli"],
     "copyright": "© 2026 RadioDoge Contributors",
     "category": "Finance",
     "shortDescription": "Wireless P2P Dogecoin transactions over LoRa radio",

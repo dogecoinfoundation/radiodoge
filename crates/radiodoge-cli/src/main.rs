@@ -336,7 +336,7 @@ async fn cmd_connect(port: &str) -> Result<()> {
         if std::io::stdin().read_line(&mut line).is_err() || line.trim().is_empty() {
             continue;
         }
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         match parts.as_slice() {
             ["quit"] | ["exit"] | ["q"] => {
                 println!("👋 Disconnecting. Much goodbye. Wow.");

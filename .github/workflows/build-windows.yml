@@ -22,6 +22,8 @@ name: 🐕 Build Windows MSI
 
 on:
   push:
+    branches: [master, main]
+    tags: ['v*']
   release:
     types: [created]
   workflow_dispatch:
@@ -93,7 +95,22 @@ jobs:
         working-directory: radiodoge-gui
         run: npm install
 
-      # ── 7. Build the MSI ─────────────────────────────────────────────────────
+      # ── 7a. Build radiodoge-cli sidecar ──────────────────────────────────────
+      # Build the headless CLI and copy it into the src-tauri directory so Tauri
+      # bundles it alongside the main executable in the MSI.
+      # Tauri sidecar convention: binary name must end in the target triple.
+      - name: 🔨 Build radiodoge-cli sidecar
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          cargo build -p radiodoge-cli --release --target x86_64-pc-windows-msvc
+          New-Item -ItemType Directory -Force -Path "radiodoge-gui\src-tauri\binaries" | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\radiodoge-cli.exe" `
+            "radiodoge-gui\src-tauri\binaries\radiodoge-cli-x86_64-pc-windows-msvc.exe"
+          Write-Host "radiodoge-cli sidecar built and staged ✅"
+        shell: pwsh
+
+      # ── 7b. Build the MSI ────────────────────────────────────────────────────
       # --bundles msi  : WiX MSI only; skip NSIS (regularly 502s during CI)
       # --verbose      : full output so failures are diagnosable
       # CARGO_INCREMENTAL=0 : avoids stale/corrupt incremental cache artefacts

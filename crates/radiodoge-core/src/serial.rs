@@ -659,7 +659,7 @@ impl SerialManager {
 
         let expected_owned = expected.clone();
         let deadline = std::time::Duration::from_millis(timeout_ms);
-        match tokio::time::timeout(deadline, async move {
+        tokio::time::timeout(deadline, async move {
             loop {
                 match rx.recv().await {
                     Ok(pkt) if pkt.command == radio::CMD_GET_NODE_ADDR
@@ -670,10 +670,7 @@ impl SerialManager {
             }
         })
         .await
-        {
-            Ok(verified) => verified,
-            Err(_) => false, // timeout
-        }
+        .unwrap_or_default()
     }
 }
 

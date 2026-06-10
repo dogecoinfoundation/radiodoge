@@ -461,22 +461,19 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Light/dark theme toggle** — full theme switcher in Settings
 - ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
 - ✅ **Android USB serial** (v0.3.10) — USB-OTG CP2102/CH340 serial via `tauri-plugin-serialplugin`; status badge; full RadioDoge packet protocol identical to desktop
-- ✅ **Android Bluetooth BLE** (v0.3.11) — full GATT scan → connect → notify pipeline via `tauri-plugin-blec`; incoming notifications feed the identical `mobile_push_bytes` accumulator as USB; GATT service/characteristic UUIDs are configurable constants in `connection-bridge.ts` pending firmware finalisation
+- ✅ **Android Bluetooth BLE** (v0.3.11) — full GATT scan → connect → notify pipeline via `tauri-plugin-blec`; incoming notifications feed the identical `mobile_push_bytes` accumulator as USB; Nordic UART Service UUIDs aligned with `heltec-firmware-v3` (v0.3.13)
 
 ---
 
-### 🚀 v0.4.x — Full Dogecoin Transactions Over LoRa
+### 🚀 v0.4.x — Roadmap
 
-End-to-end on-chain transactions — no internet required on your device:
-
-- 🔜 **Dogecoin Core RPC bridge (optional)** — when Core is running on the same machine, RadioDoge can discover existing wallets/addresses/balances via localhost RPC, use them for signing, then fall back to pure offline LoRa mode (read-only RPC by default for maximum safety)
-- 🔜 **UTXO fetching via gateway** — broadcast `REQUEST_BALANCE`; gateway queries Dogecoin RPC and relays UTXO set back over LoRa mesh
+- ✅ **Full P2PKH transaction signing** (v0.3.16) — UTXO fetch + secp256k1 SIGHASH_ALL + gateway broadcast via Trezor Blockbook; TX_ACK feedback over LoRa
+- 🔜 **Wallet encryption at rest** — argon2id + ChaCha20-Poly1305 passphrase encryption for the WIF private key; OS keychain integration
+- 🔜 **Incoming TX verification** — parse and verify the embedded secp256k1 signature before displaying "received" UI; until then, incoming notices are labelled "unverified"
+- 🔜 **Balance query** — `CMD_REQUEST_BALANCE` (0x11) handler: gateway fetches balance from Blockbook and relays back over LoRa mesh
 - 🔜 **BIP32/BIP44 HD wallet** — derive multiple addresses from a single mnemonic seed (m/44'/3'/0'/0/n)
-- 🔜 **Full raw transaction signing** — construct + sign a valid Dogecoin transaction in pure Rust; no internet touched
-- 🔜 **Transaction confirmation feedback** — gateway ACKs broadcast and reports `txid` back over LoRa
 - 🔜 **SPV verification** — lightweight header chain validation; app can verify inclusion without a full node
 - 🔜 **Multi-hop relay status** — show hop count and intermediate node addresses in the packet log
-- 🔜 **Address book** — save labelled Dogecoin addresses in encrypted local storage
 - 🔜 **QR code scanning** — camera/image input for recipient field (no hand-typing long addresses)
 - 🔜 **Fee estimation** — gateway reports current mempool fee rate; app sets appropriate sat/byte fee
 

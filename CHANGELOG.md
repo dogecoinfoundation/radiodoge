@@ -174,6 +174,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **BLE Advertising card** added to `SettingsTab.svelte` — mirrors the WiFi toggle card; shows current state and lets the user enable/disable BLE advertising. Works on both Android (mobile path) and desktop.
 - **BLE Advertising card** also added to `ConnectionPanel.svelte` connected view — visible immediately when connected via USB-C or BLE, without navigating to Settings.
 
+#### `radiodoge-cli` bundled in Windows MSI
+- `build-windows.yml`: added step to compile `radiodoge-cli --release --target x86_64-pc-windows-msvc` and stage the binary as `radiodoge-gui/src-tauri/binaries/radiodoge-cli-x86_64-pc-windows-msvc.exe` before the Tauri bundle step.
+- `tauri.conf.json`: added `"binaries/radiodoge-cli"` to `bundle.externalBin` — Tauri's WiX bundler now includes the CLI sidecar in the MSI and places it next to the main executable. The existing `start_gateway` code finds it automatically.
+
+#### Content-Security-Policy set
+- `tauri.conf.json`: replaced `"csp": null` with a real CSP:
+  `default-src 'self'; connect-src 'self' https://doge1.trezor.io ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'`
+  Allows Trezor Blockbook calls (UTXO fetch + broadcast from items 1/2), blocks all other outbound origins.
+
+#### Fast CI workflow
+- Added `.github/workflows/ci.yml` — runs on every push/PR to `master`/`main`:
+  - `cargo check -p radiodoge-core -p radiodoge-cli`
+  - `cargo test -p radiodoge-core -p radiodoge-cli`
+  - `cargo clippy -p radiodoge-core -p radiodoge-cli -- -D warnings`
+  - `npm run check` (Svelte type-check via svelte-check)
+- `build-windows.yml` and `build-android.yml` trigger scoped to `branches: [master, main]` and `tags: ['v*']` — previously fired on all branches, burning full platform builds on every dev push.
+
 #### `mobileSendBytes` bridge function
 - `connection-bridge.ts` now exports `mobileSendBytes(data: Uint8Array)` — routes to `_bleWrite` or `_usbWrite` based on active transport. Used by all Android Settings actions.
 
