@@ -132,6 +132,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
 - **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
 
+#### Auto-reconnect watchdog race condition — reconnects after user clicked Disconnect
+- **Root cause**: The reconnect watchdog checked `reconnect_enabled` at the top of its loop, then spent time building the `on_pkt` closure before calling `connect()`. If `disconnect_port()` was called in that narrow window (setting `reconnect_enabled = false`), the already-executing iteration did not see the updated flag and proceeded to reconnect anyway — creating an unwanted connection after the user explicitly disconnected.
+- **Fix**: Added a second `reconnect_enabled` guard immediately before the `connect()` call. The loop now breaks at both the top-of-loop check and again just before attempting the connection, closing most of the race window with a single-line addition.
+
 #### `build_request_balance` — missing payload length clamp
 - **Root cause**: `build_request_balance` in `radio.rs` called `packet.extend_from_slice(doge_address.as_bytes())` with no length check. Every other packet builder (`build_message`, `build_doge_tx`, `build_broadcast`) clamps via `.min(MAX_SINGLE_PAYLOAD_LEN)`. An abnormally long address string (theoretical — Dogecoin addresses are 34 chars) would produce an oversized packet that the board firmware cannot process.
 - **Fix**: Added `.min(MAX_SINGLE_PAYLOAD_LEN)` clamp to match the pattern used by all other variable-payload builders.

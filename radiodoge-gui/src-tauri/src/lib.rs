@@ -324,6 +324,10 @@ async fn connect_port(
                 }
             });
 
+            // Re-check the flag after building the callback — disconnect_port may have
+            // been called in the narrow window between the check above and here.
+            if !reconnect_enabled_wr.load(Ordering::Relaxed) { break; }
+
             match serial_wr.connect(&port_wr, on_pkt).await {
                 Ok(_) => {
                     *current_port_wr.lock().await = Some(port_wr.clone());
