@@ -132,6 +132,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
 - **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
 
+#### `SettingsTab` mobile-board-mac listener leak on fast re-mount
+- **Root cause**: The `$effect` that listens for `"mobile-board-mac"` events used a `let unlisten: (() => void) | undefined` variable assigned asynchronously via `.then()`. If the effect re-ran (e.g., `isAndroidPlatform` changed) before the `listen()` Promise resolved, the effect cleanup fired with `unlisten` still `undefined`, leaving the old listener registered and uncleared.
+- **Fix**: Captured the Promise directly (`const unlisten = listen(...)`) and changed cleanup to `unlisten.then(fn => fn())` — the same pattern already used by `DebugConsole.svelte`. The cleanup always cancels the listener regardless of whether the Promise had resolved.
+
+#### `WalletTab` gateway balance listener skipped for non-saved wallets
+- **Root cause**: The `radio-packet` listener that auto-updates the balance from a gateway `BAL:` response was registered inside `onMount` after a `wallet_needs_passphrase` check. When `hasWallet` was `false` (fresh wallet, no saved data), an early `return` skipped listener registration entirely — so freshly generated wallets never received gateway balance updates. The same async-assignment pattern also had the cleanup race described above.
+- **Fix**: Moved listener registration to module-level (outside `onMount`), unconditional, using the Promise-capture cleanup pattern. The `onMount` now handles only wallet loading. Removed the now-dead `_unlistenBalance` variable and its `onDestroy` cleanup.
+
 #### `ping_device` timeout message said "500 ms" — actual timeout is 1500 ms
 - **Root cause**: When `serial.rs` raised the PING timeout from 500 ms to 1500 ms (v0.3.7), the debug traffic strings in `lib.rs` were not updated. The user-visible log message `"No PONG within 500 ms"` was wrong.
 - **Fix**: Updated both the success and failure debug strings to `"1500 ms"`.

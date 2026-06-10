@@ -18,6 +18,23 @@
   import QRCode from './QRCode.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
 
+  // Register the gateway-balance listener unconditionally so any wallet (saved or freshly
+  // generated) receives BAL responses from the LoRa gateway.  Uses the Promise-capture
+  // pattern so cleanup always cancels the listener regardless of mount timing.
+  const _balanceListenPromise = listen<{ decoded?: string }>('radio-packet', (ev) => {
+    const decoded = ev.payload?.decoded ?? '';
+    const match = decoded.match(/^💰 Balance: ([\d.]+) DOGE$/);
+    if (match) {
+      const amount = parseFloat(match[1]);
+      if (isFinite(amount)) {
+        balance = amount;
+        balanceSource = 'gateway';
+        balanceError = null;
+      }
+    }
+  });
+  onDestroy(() => { _balanceListenPromise.then(fn => fn()); });
+
   let isGenerating = $state(false);
   let copyFeedback = $state<Record<string, boolean>>({});
 
@@ -132,10 +149,6 @@
     }
   }
 
-  // Listen for "💰 Balance: X.XXXXXXXX DOGE" decoded messages from the gateway.
-  // These arrive as radio-packet events when a gateway responds to CMD_REQUEST_BALANCE.
-  let _unlistenBalance: (() => void) | null = null;
-  onDestroy(() => { _unlistenBalance?.(); });
 
 
   // ── v0.3.16 — Encrypted persistent wallet ────────────────────────────────
@@ -244,19 +257,6 @@
       }
     }
 
-    // Listen for gateway balance responses: decoded text "💰 Balance: X.XXXXXXXX DOGE"
-    _unlistenBalance = await listen<{ decoded?: string }>('radio-packet', (ev) => {
-      const decoded = ev.payload?.decoded ?? '';
-      const match = decoded.match(/^💰 Balance: ([\d.]+) DOGE$/);
-      if (match) {
-        const amount = parseFloat(match[1]);
-        if (isFinite(amount)) {
-          balance = amount;
-          balanceSource = 'gateway';
-          balanceError = null;
-        }
-      }
-    });
   });
 </script>
 

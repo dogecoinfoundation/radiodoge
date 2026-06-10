@@ -77,12 +77,13 @@
   // Listen for MAC arriving from board on Android (mobile_push_bytes → "mobile-board-mac" event)
   $effect(() => {
     if (!isAndroidPlatform) return;
-    let unlisten: (() => void) | undefined;
-    listen<string>('mobile-board-mac', (ev) => {
+    // Capture the Promise so cleanup always cancels the listener regardless of whether
+    // the Promise had already resolved when the effect was torn down.
+    const unlisten = listen<string>('mobile-board-mac', (ev) => {
       setBoardMac(ev.payload);
       isQueryingMac = false;
-    }).then(fn => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    });
+    return () => { unlisten.then(fn => fn()); };
   });
   // Auto-fetch MAC only once platform is known (isAndroidPlatform !== null) — prevents
   // the desktop query_mac path from running on Android before the Promise settles.
