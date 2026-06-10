@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.16** ✨: **Real Dogecoin P2PKH transactions + wallet encryption + TX verification + balance query!** The wallet builds, signs (secp256k1 SIGHASH_ALL), and broadcasts real transactions. Private keys are encrypted with ChaCha20-Poly1305 + argon2id and protected by a user passphrase. Incoming signed transactions are verified in-process — ✅ verified or ⚠️ unverified in every packet view. Balance queries go directly to Trezor Blockbook. The gateway daemon handles balance requests and broadcasts transactions over LoRa. Android USB-C and Bluetooth BLE both production-ready! Much real. Very encrypted. Wow!
+> **v0.3.16** ✨: **Real P2PKH transactions + BIP39 mnemonic + wallet encryption + TX verification + balance!** The wallet generates 12-word BIP39 recovery phrases and derives keys at `m/44'/3'/0'/0/0`. Builds, signs (secp256k1 SIGHASH_ALL), and broadcasts real transactions. Private keys are encrypted with ChaCha20-Poly1305 + argon2id. Incoming signed transactions are verified in-process. Balance queries go directly to Trezor Blockbook or over LoRa via the gateway daemon. Android USB-C and Bluetooth BLE both production-ready! Much real. Very encrypted. Wow!
 
 ---
 
@@ -471,7 +471,7 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Wallet encryption at rest** (v0.3.16) — argon2id (64 MiB) + ChaCha20-Poly1305 passphrase encryption; passphrase entry modal on save and unlock modal on startup
 - ✅ **Incoming TX verification** (v0.3.16) — secp256k1 ECDSA signature verified in-process; ✅ verified or ⚠️ unverified label in all packet views
 - ✅ **Balance query** (v0.3.16) — direct Blockbook query from the GUI; `CMD_REQUEST_BALANCE` daemon handler for LoRa gateway path; Balance card in WalletTab
-- 🔜 **BIP32/BIP44 HD wallet** — derive multiple addresses from a single mnemonic seed (m/44'/3'/0'/0/n)
+- ✅ **BIP32/BIP44 HD wallet** (v0.3.16) — 12-word BIP39 mnemonic generation; derive key at `m/44'/3'/0'/0/0` (Dogecoin coin type 3) via HMAC-SHA512 BIP32; recovery phrase backup modal on generate; mnemonic import panel in WalletTab
 - 🔜 **SPV verification** — lightweight header chain validation; app can verify inclusion without a full node
 - 🔜 **Multi-hop relay status** — show hop count and intermediate node addresses in the packet log
 - 🔜 **QR code scanning** — camera/image input for recipient field (no hand-typing long addresses)
