@@ -150,6 +150,15 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Wallet encryption at rest (ChaCha20-Poly1305 + argon2id)
+- **`encrypt_wallet(wallet, passphrase)`** / **`decrypt_wallet(encrypted, passphrase)`** — new public functions in `wallet.rs`. The WIF private key is encrypted with ChaCha20-Poly1305 (16-byte auth tag) using a 32-byte key derived from the user's passphrase via argon2id (64 MiB memory, 2 iterations, 16-byte random salt). Both encryption and decryption happen in-process with no plaintext WIF ever written to disk.
+- **`EncryptedWalletFile`** — new serializable struct stored as `wallet.json` (`{ address, publicKeyHex, encryptedWif, salt, nonce }` — all hex-encoded).
+- **`save_wallet(walletInfo, passphrase)`** — Tauri command now requires a passphrase (minimum 8 characters) and writes the encrypted format. Old unencrypted saves are no longer produced.
+- **`wallet_needs_passphrase()`** — new Tauri command that returns `true` if a `wallet.json` exists on disk (used by the frontend to decide whether to show the unlock prompt on startup).
+- **`load_saved_wallet(passphrase?)`** — Tauri command now accepts an optional passphrase. Returns `Err("passphrase_required")` for encrypted files when no passphrase is provided; loads legacy plaintext files (pre-v0.3.16) directly and logs a warning so users can upgrade.
+- **`WalletTab.svelte`** — save modal replaced with a passphrase entry form (passphrase + confirm, min. 8 chars, visual feedback). Startup now calls `wallet_needs_passphrase()`; if true, shows an unlock modal before loading. Legacy plaintext wallets are detected and a nudge is shown to re-save with encryption.
+- New dependencies: `argon2 = "0.5"`, `chacha20poly1305 = "0.10"` added to workspace and `radiodoge-core`.
+
 #### Real Dogecoin P2PKH transaction signing (`wallet.rs`)
 - **`build_signed_transaction(from_wif, to_address, amount_doge, fee_doge)`** — async function that fetches UTXOs from Trezor Blockbook (`https://doge1.trezor.io/api/v2/utxo/{address}`), selects coins with a greedy largest-first algorithm, builds inputs and change outputs, and signs each input with SIGHASH_ALL (secp256k1 ECDSA). Returns the raw serialized binary transaction.
 - **`broadcast_raw_tx(raw_hex)`** — async function that POSTs a hex-encoded raw transaction to Trezor Blockbook (`/api/v2/sendtx/`) and returns the txid on success.

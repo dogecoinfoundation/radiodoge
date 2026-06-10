@@ -8,7 +8,9 @@
 //! No FFI to libdogecoin is needed — everything is done in pure Rust.
 
 use anyhow::Result;
-use rand::rngs::OsRng;
+use argon2::{Argon2, Algorithm, Version, Params};
+use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, KeyInit, aead::AeadInPlace};
+use rand::{rngs::OsRng, RngCore};
 use ripemd::{Digest as RipemdDigest, Ripemd160};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::Sha256;
@@ -452,6 +454,84 @@ pub async fn broadcast_raw_tx(raw_hex: &str) -> Result<String> {
     } else {
         anyhow::bail!("Unexpected broadcast response: {}", resp)
     }
+}
+
+// ─── Wallet encryption at rest ────────────────────────────────────────────────
+
+/// Encrypted wallet file written to `wallet.json` (v0.3.16+).
+/// The WIF private key is encrypted with ChaCha20-Poly1305 (16-byte auth tag included),
+/// key-derived from the user's passphrase via argon2id.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedWalletFile {
+    pub address: String,
+    pub public_key_hex: String,
+    /// Ciphertext + 16-byte Poly1305 authentication tag, hex-encoded.
+    pub encrypted_wif: String,
+    /// Argon2id salt (16 bytes), hex-encoded.
+    pub salt: String,
+    /// ChaCha20-Poly1305 nonce (12 bytes), hex-encoded.
+    pub nonce: String,
+}
+
+/// Encrypt a wallet for storage on disk.
+/// Uses argon2id (64 MiB, 2 iterations) for key derivation and ChaCha20-Poly1305 for AEAD.
+/// Passphrase must be at least 1 byte; enforce a minimum length in the calling layer.
+pub fn encrypt_wallet(wallet: &WalletInfo, passphrase: &str) -> Result<EncryptedWalletFile> {
+    let mut salt = [0u8; 16];
+    let mut nonce_bytes = [0u8; 12];
+    OsRng.fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut nonce_bytes);
+
+    let key = derive_encryption_key(passphrase, &salt)?;
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let mut buffer: Vec<u8> = wallet.private_key_wif.as_bytes().to_vec();
+    cipher.encrypt_in_place(nonce, b"", &mut buffer)
+        .map_err(|_| anyhow::anyhow!("encryption failed"))?;
+
+    Ok(EncryptedWalletFile {
+        address: wallet.address.clone(),
+        public_key_hex: wallet.public_key_hex.clone(),
+        encrypted_wif: hex::encode(&buffer),
+        salt: hex::encode(salt),
+        nonce: hex::encode(nonce_bytes),
+    })
+}
+
+/// Decrypt a wallet loaded from disk.
+/// Returns `Err` with a user-facing message if the passphrase is wrong or the file is corrupted.
+pub fn decrypt_wallet(encrypted: &EncryptedWalletFile, passphrase: &str) -> Result<WalletInfo> {
+    let salt = hex::decode(&encrypted.salt)
+        .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid salt encoding"))?;
+    let nonce_bytes = hex::decode(&encrypted.nonce)
+        .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid nonce encoding"))?;
+    let mut buffer = hex::decode(&encrypted.encrypted_wif)
+        .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid ciphertext encoding"))?;
+
+    let key = derive_encryption_key(passphrase, &salt)?;
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    cipher.decrypt_in_place(nonce, b"", &mut buffer)
+        .map_err(|_| anyhow::anyhow!("Wrong passphrase or corrupted wallet file."))?;
+
+    let wif = String::from_utf8(buffer)
+        .map_err(|_| anyhow::anyhow!("corrupted wallet: decrypted data is not valid UTF-8"))?;
+    let info = import_wif(&wif)?;
+    if info.address != encrypted.address {
+        anyhow::bail!("Wallet integrity check failed: decrypted key does not match stored address.");
+    }
+    Ok(info)
+}
+
+fn derive_encryption_key(passphrase: &str, salt: &[u8]) -> Result<[u8; 32]> {
+    let params = Params::new(65536, 2, 1, Some(32))
+        .map_err(|e| anyhow::anyhow!("argon2 params error: {}", e))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = [0u8; 32];
+    argon2.hash_password_into(passphrase.as_bytes(), salt, &mut key)
+        .map_err(|e| anyhow::anyhow!("key derivation failed: {}", e))?;
+    Ok(key)
 }
 
 /// Return true if a CMD_DOGE_TX payload looks like a raw signed Dogecoin transaction

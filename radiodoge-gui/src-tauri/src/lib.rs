@@ -892,35 +892,64 @@ async fn query_mac(state: State<'_, AppState>, app: AppHandle) -> Result<Option<
 
 // ─── v0.3.8: Persistent Wallet ───────────────────────────────────────────────
 
-/// v0.3.8 — Persist the current wallet to app-local storage (best-effort, unencrypted).
-/// ⚠️ This is a HOT wallet — only use for small test amounts!
-/// The user must confirm with the phrase "THIS IS MUCH INSECURE" in the UI before calling this.
+/// v0.3.16 — Encrypt and persist the wallet to app-local storage.
+/// The WIF private key is encrypted with ChaCha20-Poly1305 (argon2id KDF, 64 MiB).
 #[tauri::command]
-async fn save_wallet(wallet_info: WalletInfo, app: AppHandle) -> Result<(), String> {
+async fn save_wallet(wallet_info: WalletInfo, passphrase: String, app: AppHandle) -> Result<(), String> {
+    if passphrase.len() < 8 {
+        return Err("Passphrase must be at least 8 characters.".to_string());
+    }
+    let encrypted = wallet::encrypt_wallet(&wallet_info, &passphrase)
+        .map_err(|e| e.to_string())?;
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
     let path = dir.join("wallet.json");
-    let json = serde_json::to_string_pretty(&wallet_info).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&encrypted).map_err(|e| e.to_string())?;
     tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
-    log::warn!("Wallet saved to disk — hot wallet, use with care!");
+    log::info!("Encrypted wallet saved to disk.");
     Ok(())
 }
 
-/// v0.3.8 — Load a previously saved wallet from app-local storage.
-/// Returns None if no wallet has been saved.
+/// Returns true if a wallet.json exists on disk (so the frontend can show a passphrase prompt).
 #[tauri::command]
-async fn load_saved_wallet(app: AppHandle) -> Result<Option<WalletInfo>, String> {
+async fn wallet_needs_passphrase(app: AppHandle) -> bool {
+    let path = match app.path().app_data_dir() {
+        Ok(p) => p.join("wallet.json"),
+        Err(_) => return false,
+    };
+    tokio::fs::metadata(&path).await.is_ok()
+}
+
+/// v0.3.16 — Load and decrypt a wallet from disk.
+/// - Encrypted format (v0.3.16+): requires a non-empty passphrase.
+/// - Legacy plaintext format (pre-v0.3.16): loaded directly; the caller should prompt
+///   the user to re-save with a passphrase.
+/// Returns `Err("passphrase_required")` if the file is encrypted but no passphrase was supplied.
+#[tauri::command]
+async fn load_saved_wallet(passphrase: Option<String>, app: AppHandle) -> Result<Option<WalletInfo>, String> {
     let path = match app.path().app_data_dir() {
         Ok(p) => p.join("wallet.json"),
         Err(_) => return Ok(None),
     };
-    match tokio::fs::read_to_string(&path).await {
-        Ok(json) => {
-            let w: WalletInfo = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-            Ok(Some(w))
-        }
-        Err(_) => Ok(None), // File doesn't exist
+    let json = match tokio::fs::read_to_string(&path).await {
+        Ok(j) => j,
+        Err(_) => return Ok(None),
+    };
+    // Try encrypted format first (v0.3.16+).
+    if let Ok(enc) = serde_json::from_str::<wallet::EncryptedWalletFile>(&json) {
+        let pp = match &passphrase {
+            Some(p) if !p.is_empty() => p.as_str(),
+            _ => return Err("passphrase_required".to_string()),
+        };
+        let info = wallet::decrypt_wallet(&enc, pp).map_err(|e| e.to_string())?;
+        return Ok(Some(info));
     }
+    // Legacy plaintext format (pre-v0.3.16) — load directly.
+    if let Ok(w) = serde_json::from_str::<WalletInfo>(&json) {
+        log::warn!("Loaded legacy plaintext wallet — user should re-save with encryption.");
+        return Ok(Some(w));
+    }
+    Err("wallet file is corrupted or in an unrecognised format".to_string())
 }
 
 /// v0.3.8 — Delete the saved wallet from disk (user explicitly cleared it).
@@ -1584,6 +1613,7 @@ pub fn run() {
             query_battery,
             query_mac,
             save_wallet,
+            wallet_needs_passphrase,
             load_saved_wallet,
             delete_saved_wallet,
             load_address_book,

@@ -74,24 +74,35 @@
     }
   }
 
-  // ── v0.3.8 — Persistent wallet ────────────────────────────────────────────
+  // ── v0.3.16 — Encrypted persistent wallet ────────────────────────────────
   let showSaveModal = $state(false);
-  let saveConfirmPhrase = $state('');
+  let savePassphrase = $state('');
+  let savePassphraseConfirm = $state('');
   let isSavingWallet = $state(false);
   let saveWalletError = $state<string | null>(null);
   let walletSaved = $state(false);
-
-  const REQUIRED_PHRASE = 'THIS IS MUCH INSECURE';
+  // Passphrase unlock modal (shown on startup when an encrypted wallet exists)
+  let showUnlockModal = $state(false);
+  let unlockPassphrase = $state('');
+  let isUnlocking = $state(false);
+  let unlockError = $state<string | null>(null);
+  // True if a legacy plaintext wallet was loaded — nudge user to re-encrypt
+  let walletIsLegacy = $state(false);
 
   async function openSaveModal() {
-    saveConfirmPhrase = '';
+    savePassphrase = '';
+    savePassphraseConfirm = '';
     saveWalletError = null;
     showSaveModal = true;
   }
 
   async function confirmSaveWallet() {
-    if (saveConfirmPhrase !== REQUIRED_PHRASE) {
-      saveWalletError = `Type exactly: ${REQUIRED_PHRASE}`;
+    if (savePassphrase.length < 8) {
+      saveWalletError = 'Passphrase must be at least 8 characters.';
+      return;
+    }
+    if (savePassphrase !== savePassphraseConfirm) {
+      saveWalletError = 'Passphrases do not match.';
       return;
     }
     if (!wallet.isGenerated) return;
@@ -103,9 +114,11 @@
           address: wallet.address,
           publicKeyHex: wallet.publicKeyHex,
           privateKeyWif: wallet.privateKeyWif,
-        }
+        },
+        passphrase: savePassphrase,
       });
       walletSaved = true;
+      walletIsLegacy = false;
       showSaveModal = false;
     } catch (e: unknown) {
       saveWalletError = e instanceof Error ? e.message : String(e);
@@ -117,17 +130,55 @@
   async function deleteSavedWallet() {
     await invoke('delete_saved_wallet').catch(() => {});
     walletSaved = false;
+    walletIsLegacy = false;
   }
 
-  // On mount: try to load saved wallet.
+  async function unlockWallet() {
+    if (!unlockPassphrase) {
+      unlockError = 'Enter your passphrase.';
+      return;
+    }
+    isUnlocking = true;
+    unlockError = null;
+    try {
+      const w = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>(
+        'load_saved_wallet', { passphrase: unlockPassphrase }
+      );
+      if (w) {
+        loadWallet(w);
+        walletSaved = true;
+        showUnlockModal = false;
+        unlockPassphrase = '';
+      }
+    } catch (e: unknown) {
+      unlockError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isUnlocking = false;
+    }
+  }
+
+  // On mount: check for saved wallet, prompt for passphrase if encrypted.
   // Must use onMount (not $effect) — $effect re-runs each time the component mounts,
   // which happens on every tab switch ({#if activeTab === 'wallet'} unmounts on exit).
-  // Re-running load_saved_wallet would overwrite an in-memory generated/imported wallet
-  // with the older saved one each time the user navigates back to this tab.
-  onMount(() => {
-    invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>('load_saved_wallet')
-      .then(w => { if (w) { loadWallet(w); walletSaved = true; } })
-      .catch(() => {});
+  onMount(async () => {
+    const hasWallet = await invoke<boolean>('wallet_needs_passphrase').catch(() => false);
+    if (!hasWallet) return;
+    // Try loading without passphrase — succeeds for legacy plaintext wallets.
+    try {
+      const w = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>(
+        'load_saved_wallet', { passphrase: null }
+      );
+      if (w) {
+        loadWallet(w);
+        walletSaved = true;
+        walletIsLegacy = true; // legacy plaintext — nudge user to re-encrypt
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'passphrase_required') {
+        showUnlockModal = true;
+      }
+    }
   });
 </script>
 
@@ -494,30 +545,40 @@
         line-height: 1.6;
       ">
         💡 <strong style="color: var(--doge-yellow);">Tip:</strong> Each wallet is independent.
-        Save your private key (WIF) before generating a new one — RadioDoge never stores keys to disk.
+        Save your private key (WIF) before generating a new one, or use the encrypted save below.
         Much wallet. Very self-custody. Wow.
       </div>
 
-      <!-- v0.3.8 — Persistent wallet section -->
+      <!-- v0.3.16 — Encrypted persistent wallet section -->
       <div style="
         padding: 14px 16px;
-        background: rgba(255,60,60,0.06);
-        border: 1px solid rgba(255,60,60,0.25);
+        background: rgba(255,196,0,0.04);
+        border: 1px solid rgba(255,196,0,0.2);
         border-radius: 8px;
         font-size: 0.82rem;
         line-height: 1.6;
       ">
-        <p style="margin: 0 0 10px 0; font-weight: 700; color: #ff8080; font-size: 0.88rem;">
-          ⚠️ HOT WALLET STORAGE
+        <p style="margin: 0 0 8px 0; font-weight: 700; color: var(--doge-yellow); font-size: 0.88rem;">
+          🔐 Encrypted Wallet Storage
         </p>
         <p style="margin: 0 0 10px 0; color: var(--doge-muted);">
-          RadioDoge can save your private key to local app storage so it reloads on startup.
-          This is <strong style="color: #ff6060;">NOT encrypted</strong> — anyone with access to this machine can read it.
-          Only use small test amounts. Never store more DOGE than you can afford to lose.
+          Save your wallet to local storage, protected with a passphrase (ChaCha20-Poly1305 + argon2id).
+          The passphrase is never stored — if you forget it, you cannot recover the saved wallet.
         </p>
+        {#if walletIsLegacy}
+          <p style="margin: 0 0 10px 0; font-size: 0.78rem; color: #ff8080;">
+            ⚠️ Your saved wallet uses an old unencrypted format. Click "Save Encrypted" to upgrade it.
+          </p>
+        {/if}
         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-          {#if walletSaved}
-            <span style="font-size: 0.78rem; color: var(--doge-neon);">✅ Wallet saved to disk</span>
+          {#if walletSaved && !walletIsLegacy}
+            <span style="font-size: 0.78rem; color: var(--doge-neon);">🔐 Wallet saved (encrypted)</span>
+            <button
+              onclick={openSaveModal}
+              style="padding: 6px 12px; border: 1px solid rgba(255,196,0,0.3); background: rgba(255,196,0,0.06); color: var(--doge-yellow); border-radius: 6px; cursor: pointer; font-size: 0.78rem;"
+            >
+              🔑 Change passphrase
+            </button>
             <button
               onclick={deleteSavedWallet}
               style="padding: 6px 12px; border: 1px solid rgba(255,60,60,0.4); background: rgba(255,60,60,0.08); color: #ff8080; border-radius: 6px; cursor: pointer; font-size: 0.78rem;"
@@ -527,9 +588,10 @@
           {:else}
             <button
               onclick={openSaveModal}
-              style="padding: 6px 14px; border: 1px solid rgba(255,60,60,0.5); background: rgba(255,60,60,0.1); color: #ff8080; border-radius: 6px; cursor: pointer; font-size: 0.8rem;"
+              class="btn-doge"
+              style="padding: 6px 14px; font-size: 0.8rem;"
             >
-              💾 Remember this wallet (unsafe)
+              🔐 Save Encrypted
             </button>
           {/if}
         </div>
@@ -537,7 +599,7 @@
     </div>
   {/if}
 
-  <!-- v0.3.8 — Scary save confirmation modal -->
+  <!-- v0.3.16 — Passphrase-protected wallet save modal -->
   {#if showSaveModal}
     <div
       style="
@@ -545,38 +607,48 @@
         display: flex; align-items: center; justify-content: center;
         z-index: 9999; padding: 24px;
       "
-      role="dialog" aria-modal="true" aria-label="Confirm wallet save"
+      role="dialog" aria-modal="true" aria-label="Save wallet with passphrase"
     >
       <div style="
         background: var(--doge-card);
-        border: 2px solid rgba(255,60,60,0.6);
+        border: 2px solid rgba(255,196,0,0.4);
         border-radius: 16px;
         padding: 28px;
-        max-width: 480px;
+        max-width: 440px;
         width: 100%;
-        box-shadow: 0 0 60px rgba(255,60,60,0.25);
+        box-shadow: 0 0 40px rgba(255,196,0,0.12);
       ">
-        <h3 style="margin: 0 0 12px 0; color: #ff6060; font-size: 1.1rem;">⚠️ MUCH DANGEROUS — Very Confirm</h3>
-        <p style="margin: 0 0 10px 0; font-size: 0.85rem; color: var(--doge-muted); line-height: 1.6;">
-          Your private key will be saved as <strong style="color:#ff8080;">plain text</strong> in the RadioDoge app data folder.
-          Anyone who can access this machine or the file system can steal your funds.
+        <h3 style="margin: 0 0 10px 0; color: var(--doge-yellow); font-size: 1.05rem;">🔐 Encrypt &amp; Save Wallet</h3>
+        <p style="margin: 0 0 16px 0; font-size: 0.83rem; color: var(--doge-muted); line-height: 1.6;">
+          Your private key will be encrypted with <strong style="color:var(--doge-text);">ChaCha20-Poly1305</strong> using a passphrase you choose.
+          Pick something strong — there is no recovery option if you forget it.
         </p>
-        <p style="margin: 0 0 6px 0; font-size: 0.85rem; color: var(--doge-muted);">
-          To confirm, type exactly:
-        </p>
-        <p style="margin: 0 0 12px 0; font-family: var(--font-mono); font-size: 0.9rem; color: #ff6060; font-weight: 700; letter-spacing: 0.04em;">
-          {REQUIRED_PHRASE}
-        </p>
+        <label for="save-passphrase" style="display:block; font-size:0.8rem; color:var(--doge-muted); margin-bottom:4px;">Passphrase (min. 8 chars)</label>
         <input
-          type="text"
-          placeholder="Type the phrase above..."
-          bind:value={saveConfirmPhrase}
+          id="save-passphrase"
+          type="password"
+          placeholder="Enter passphrase…"
+          bind:value={savePassphrase}
+          autocomplete="new-password"
           style="
-            width: 100%; padding: 10px 14px;
-            background: var(--doge-dark); border: 1px solid rgba(255,60,60,0.4);
+            width: 100%; padding: 10px 14px; box-sizing: border-box;
+            background: var(--doge-dark); border: 1px solid rgba(255,196,0,0.3);
             border-radius: 8px; color: var(--doge-text); font-size: 0.9rem;
-            font-family: var(--font-mono); margin-bottom: 10px;
-            outline: none;
+            margin-bottom: 10px; outline: none;
+          "
+        />
+        <label for="save-passphrase-confirm" style="display:block; font-size:0.8rem; color:var(--doge-muted); margin-bottom:4px;">Confirm passphrase</label>
+        <input
+          id="save-passphrase-confirm"
+          type="password"
+          placeholder="Repeat passphrase…"
+          bind:value={savePassphraseConfirm}
+          autocomplete="new-password"
+          style="
+            width: 100%; padding: 10px 14px; box-sizing: border-box;
+            background: var(--doge-dark); border: 1px solid rgba(255,196,0,0.3);
+            border-radius: 8px; color: var(--doge-text); font-size: 0.9rem;
+            margin-bottom: 10px; outline: none;
           "
         />
         {#if saveWalletError}
@@ -584,26 +656,79 @@
         {/if}
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
           <button
-            onclick={() => { showSaveModal = false; saveConfirmPhrase = ''; }}
+            onclick={() => { showSaveModal = false; savePassphrase = ''; savePassphraseConfirm = ''; saveWalletError = null; }}
             style="padding: 8px 18px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-muted); border-radius: 8px; cursor: pointer; font-size: 0.85rem;"
           >
             Cancel
           </button>
           <button
             onclick={confirmSaveWallet}
-            disabled={isSavingWallet || saveConfirmPhrase !== REQUIRED_PHRASE}
-            style="
-              padding: 8px 18px;
-              border: 1px solid rgba(255,60,60,0.5);
-              background: rgba(255,60,60,0.15);
-              color: #ff8080;
-              border-radius: 8px;
-              cursor: pointer;
-              font-size: 0.85rem;
-              opacity: {isSavingWallet || saveConfirmPhrase !== REQUIRED_PHRASE ? 0.5 : 1};
-            "
+            disabled={isSavingWallet}
+            class="btn-doge"
+            style="padding: 8px 18px; font-size: 0.85rem; opacity: {isSavingWallet ? 0.6 : 1};"
           >
-            {isSavingWallet ? '⏳ Saving…' : '💾 Save Anyway (Much Risky)'}
+            {isSavingWallet ? '⏳ Encrypting…' : '🔐 Save Encrypted'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- v0.3.16 — Passphrase unlock modal (shown on startup when encrypted wallet exists) -->
+  {#if showUnlockModal}
+    <div
+      style="
+        position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; padding: 24px;
+      "
+      role="dialog" aria-modal="true" aria-label="Unlock saved wallet"
+    >
+      <div style="
+        background: var(--doge-card);
+        border: 2px solid rgba(255,196,0,0.4);
+        border-radius: 16px;
+        padding: 28px;
+        max-width: 380px;
+        width: 100%;
+        box-shadow: 0 0 40px rgba(255,196,0,0.15);
+        text-align: center;
+      ">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">🔐</div>
+        <h3 style="margin: 0 0 8px 0; color: var(--doge-yellow); font-size: 1.05rem;">Unlock Saved Wallet</h3>
+        <p style="margin: 0 0 16px 0; font-size: 0.83rem; color: var(--doge-muted); line-height: 1.5;">
+          An encrypted wallet was found on disk. Enter your passphrase to load it.
+        </p>
+        <input
+          type="password"
+          placeholder="Enter passphrase…"
+          bind:value={unlockPassphrase}
+          autocomplete="current-password"
+          onkeydown={(e) => { if (e.key === 'Enter') unlockWallet(); }}
+          style="
+            width: 100%; padding: 10px 14px; box-sizing: border-box;
+            background: var(--doge-dark); border: 1px solid rgba(255,196,0,0.35);
+            border-radius: 8px; color: var(--doge-text); font-size: 0.9rem;
+            margin-bottom: 10px; outline: none; text-align: left;
+          "
+        />
+        {#if unlockError}
+          <p style="margin: 0 0 10px 0; font-size: 0.78rem; color: #ff6060;">{unlockError}</p>
+        {/if}
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button
+            onclick={() => { showUnlockModal = false; unlockPassphrase = ''; unlockError = null; }}
+            style="padding: 8px 18px; border: 1px solid var(--doge-border); background: transparent; color: var(--doge-muted); border-radius: 8px; cursor: pointer; font-size: 0.85rem;"
+          >
+            Skip
+          </button>
+          <button
+            onclick={unlockWallet}
+            disabled={isUnlocking}
+            class="btn-doge"
+            style="padding: 8px 18px; font-size: 0.85rem; opacity: {isUnlocking ? 0.6 : 1};"
+          >
+            {isUnlocking ? '⏳ Unlocking…' : '🔓 Unlock'}
           </button>
         </div>
       </div>

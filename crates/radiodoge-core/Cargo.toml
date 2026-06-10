@@ -29,7 +29,11 @@ rand       = "0.8"
 hex        = "0.4"
 
 # HTTP client for UTXO fetching and transaction broadcast
-reqwest    = { workspace = true }
+reqwest          = { workspace = true }
+
+# Wallet encryption at rest — argon2id KDF + ChaCha20-Poly1305 AEAD
+argon2           = { workspace = true }
+chacha20poly1305 = { workspace = true }
 
 # Error handling
 anyhow     = "1"
