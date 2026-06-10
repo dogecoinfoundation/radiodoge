@@ -48,7 +48,12 @@ enum Commands {
 
     /// Send a Dogecoin transaction over LoRa radio
     ///
-    /// Example: radiodoge-cli send -p COM3 -t DH5yaieq... -a 4.20
+    /// Without --wif: sends a legacy payload (amount + address) for gateways
+    /// that handle signing server-side.
+    /// With --wif: builds and signs a real P2PKH transaction (fetches UTXOs
+    /// from Blockbook, signs with secp256k1) before broadcasting over LoRa.
+    ///
+    /// Example: radiodoge-cli send -p COM3 -t DH5yaieq... -a 4.20 --wif Q...
     Send {
         /// Serial port (e.g. COM3 on Windows, /dev/ttyUSB0 on Linux)
         #[arg(short, long)]
@@ -62,9 +67,13 @@ enum Commands {
         #[arg(short, long)]
         amount: f64,
 
-        /// Optional transaction memo (up to 190 bytes)
+        /// Optional transaction memo (up to 190 bytes; ignored when --wif is set)
         #[arg(short, long)]
         memo: Option<String>,
+
+        /// WIF private key for signing a real P2PKH transaction before LoRa broadcast
+        #[arg(short, long)]
+        wif: Option<String>,
     },
 
     /// Listen for incoming LoRa packets and print them
@@ -194,8 +203,8 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Ports => cmd_ports(),
         Commands::Wallet { cmd } => cmd_wallet(cmd),
-        Commands::Send { port, to_address, amount, memo } => {
-            cmd_send(&port, &to_address, amount, memo.as_deref()).await
+        Commands::Send { port, to_address, amount, memo, wif } => {
+            cmd_send(&port, &to_address, amount, memo.as_deref(), wif.as_deref()).await
         }
         Commands::Receive { port, timeout } => cmd_receive(&port, timeout).await,
         Commands::Ping { port } => cmd_ping(&port).await,
@@ -271,7 +280,7 @@ fn cmd_wallet(cmd: WalletCommands) -> Result<()> {
 }
 
 /// Send a Dogecoin transaction over LoRa.
-async fn cmd_send(port: &str, to: &str, amount: f64, memo: Option<&str>) -> Result<()> {
+async fn cmd_send(port: &str, to: &str, amount: f64, memo: Option<&str>, wif: Option<&str>) -> Result<()> {
     if !wallet::is_valid_address(to) {
         anyhow::bail!("'{}' is not a valid Dogecoin address (must start with 'D')", to);
     }
@@ -281,21 +290,25 @@ async fn cmd_send(port: &str, to: &str, amount: f64, memo: Option<&str>) -> Resu
 
     println!("🐕 Connecting to {} ...", port);
     let manager = Arc::new(SerialManager::new());
-
-    // Connect with a no-op packet handler (we just want to send)
     let on_packet = Arc::new(|_pkt: IncomingPacket| {});
     manager.connect(port, on_packet).await
         .with_context(|| format!("Failed to open serial port {}", port))?;
 
-    println!("✅ Connected! Encoding transaction...");
-
-    let payload = wallet::encode_transaction_payload(to, amount, memo)
-        .context("Failed to encode transaction")?;
+    // Build payload: real signed P2PKH tx when --wif supplied, legacy stub otherwise.
+    let payload = if let Some(key) = wif {
+        println!("🔑 Signing P2PKH transaction (fetching UTXOs from Blockbook)...");
+        wallet::build_signed_transaction(key, to, amount, wallet::DEFAULT_TX_FEE_DOGE)
+            .await
+            .context("Transaction signing failed")?
+    } else {
+        println!("✅ Connected! Encoding stub transaction...");
+        wallet::encode_transaction_payload(to, amount, memo)
+            .context("Failed to encode transaction")?
+    };
 
     let src = manager.get_node_address().await;
     let dst = NodeAddress::broadcast();
 
-    // Send single or multipart depending on payload size
     if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
         let pkt = radio::build_doge_tx(&src, &dst, &payload);
         manager.send_raw(pkt).await.context("Failed to send packet")?;
@@ -309,8 +322,12 @@ async fn cmd_send(port: &str, to: &str, amount: f64, memo: Option<&str>) -> Resu
         }
     }
 
-    let memo_note = memo.map(|m| format!(" [{}]", m)).unwrap_or_default();
-    println!("✅ Sent! {:.8} DOGE → {}{} via LoRa 🐕🌙", amount, to, memo_note);
+    if wif.is_some() {
+        println!("✅ Signed tx sent! {:.8} DOGE → {} via LoRa 🐕🌙", amount, to);
+    } else {
+        let memo_note = memo.map(|m| format!(" [{}]", m)).unwrap_or_default();
+        println!("✅ Sent! {:.8} DOGE → {}{} via LoRa 🐕🌙", amount, to, memo_note);
+    }
 
     manager.disconnect().await.ok();
     Ok(())
