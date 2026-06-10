@@ -12,7 +12,7 @@
 
 Send and receive Dogecoin over **LoRa radio waves** — completely offline, no internet required. RadioDoge uses Heltec ESP32 boards with built-in SX1262 LoRa transceivers to create a wireless mesh network for Dogecoin transactions.
 
-> **v0.3.16** ✨: **Real Dogecoin P2PKH transactions!** The wallet now builds, signs (secp256k1 SIGHASH_ALL), and broadcasts genuine transactions over LoRa. UTXOs are fetched from Trezor Blockbook; the gateway daemon broadcasts signed transactions to the Dogecoin network with retry logic and sends a TX_ACK back to the sender. Android USB-C and Bluetooth BLE both production-ready! Settings tab fully functional on Android. BLE advertising toggle added. Live Packet Log readable on 360dp phones. Much real. Very on-chain. Wow!
+> **v0.3.16** ✨: **Real Dogecoin P2PKH transactions + wallet encryption + TX verification + balance query!** The wallet builds, signs (secp256k1 SIGHASH_ALL), and broadcasts real transactions. Private keys are encrypted with ChaCha20-Poly1305 + argon2id and protected by a user passphrase. Incoming signed transactions are verified in-process — ✅ verified or ⚠️ unverified in every packet view. Balance queries go directly to Trezor Blockbook. The gateway daemon handles balance requests and broadcasts transactions over LoRa. Android USB-C and Bluetooth BLE both production-ready! Much real. Very encrypted. Wow!
 
 ---
 
@@ -112,8 +112,8 @@ Your PC / Phone
 ### Option B: Build from Source
 
 ```bash
-# Clone (with submodules for libdogecoin)
-git clone --recurse-submodules https://github.com/jnowat/RadioDoge.git
+# Clone
+git clone https://github.com/jnowat/RadioDoge.git
 cd RadioDoge/radiodoge-gui
 
 # Install frontend dependencies
@@ -198,7 +198,7 @@ cargo build -p radiodoge-cli --release
 1. Click the **Wallet** tab
 2. Click **Generate New Wallet** — pure Rust crypto creates a real mainnet keypair in < 1 ms
 3. Your address starts with `D` (e.g., `DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L`)
-4. **Save your private key (WIF) now** — it is never stored to disk! Copy it somewhere safe
+4. **Save your private key** — click **🔐 Save Encrypted** to save with a passphrase (ChaCha20-Poly1305 + argon2id), or copy the WIF somewhere safe offline
 
 ### Step 4 — Send a Dogecoin Transaction Over LoRa
 
@@ -455,7 +455,7 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **WiFi toggle** — enable/disable the board's WiFi radio from Settings
 - ✅ **Mesh neighbor map** — tracks recently heard nodes; address conflict detection (CMD 0x25)
 - ✅ **Address book** — save and label Dogecoin addresses, persisted to `address_book.json`
-- ✅ **Persistent wallet** — save encrypted wallet to disk; reload on next launch
+- ✅ **Encrypted wallet** — ChaCha20-Poly1305 + argon2id passphrase-protected wallet saved to `wallet.json`; passphrase prompt on unlock; legacy plaintext wallets auto-detected with re-encrypt nudge
 - ✅ **Battery voltage display** — polls board every 15 s when connected
 - ✅ **Board MAC address** — displayed in Settings tab
 - ✅ **Light/dark theme toggle** — full theme switcher in Settings
@@ -468,9 +468,9 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 ### 🚀 v0.4.x — Roadmap
 
 - ✅ **Full P2PKH transaction signing** (v0.3.16) — UTXO fetch + secp256k1 SIGHASH_ALL + gateway broadcast via Trezor Blockbook; TX_ACK feedback over LoRa
-- 🔜 **Wallet encryption at rest** — argon2id + ChaCha20-Poly1305 passphrase encryption for the WIF private key; OS keychain integration
-- 🔜 **Incoming TX verification** — parse and verify the embedded secp256k1 signature before displaying "received" UI; until then, incoming notices are labelled "unverified"
-- 🔜 **Balance query** — `CMD_REQUEST_BALANCE` (0x11) handler: gateway fetches balance from Blockbook and relays back over LoRa mesh
+- ✅ **Wallet encryption at rest** (v0.3.16) — argon2id (64 MiB) + ChaCha20-Poly1305 passphrase encryption; passphrase entry modal on save and unlock modal on startup
+- ✅ **Incoming TX verification** (v0.3.16) — secp256k1 ECDSA signature verified in-process; ✅ verified or ⚠️ unverified label in all packet views
+- ✅ **Balance query** (v0.3.16) — direct Blockbook query from the GUI; `CMD_REQUEST_BALANCE` daemon handler for LoRa gateway path; Balance card in WalletTab
 - 🔜 **BIP32/BIP44 HD wallet** — derive multiple addresses from a single mnemonic seed (m/44'/3'/0'/0/n)
 - 🔜 **SPV verification** — lightweight header chain validation; app can verify inclusion without a full node
 - 🔜 **Multi-hop relay status** — show hop count and intermediate node addresses in the packet log
@@ -494,7 +494,6 @@ Bridge RadioDoge with the existing Meshtastic community:
 
 ### 📱 Future Horizons
 
-- 🔜 **Android USB-OTG serial** — connect to Heltec directly from your phone via USB cable
 - 🔜 **iOS** — Bluetooth LE to Heltec via BLE-serial bridge firmware
 - 🔜 **Linux AppImage + macOS .dmg** in CI — Tauri supports these targets already
 - 🔜 **WebAssembly packet inspector** — browser tool to decode RadioDoge packets from hex
@@ -503,9 +502,9 @@ Bridge RadioDoge with the existing Meshtastic community:
 
 ---
 
-## 🏛️ Legacy: RadioDogeSharp
+## 🏛️ Legacy
 
-The `RadioDogeSharp/` directory contains the original Windows C# .NET 6.0 console application. It remains as a **reference implementation** showing the serial protocol and SPV wallet logic in C#. New development happens in `radiodoge-gui/`.
+The `RadioDogeSharp` C# application and `serdog` C helper have been replaced by `crates/radiodoge-cli` — a pure Rust CLI that implements the full RadioDoge protocol without any native library dependencies. The vendored C source (`libdogecoin`) was also removed; all cryptography is handled by the `secp256k1`, `sha2`, `ripemd`, and `bs58` Rust crates.
 
 ---
 
