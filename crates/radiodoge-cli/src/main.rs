@@ -180,6 +180,16 @@ enum WalletCommands {
         phrase: String,
     },
 
+    /// Import a wallet from a WIF-encoded private key
+    ///
+    /// Only compressed Dogecoin mainnet keys (starting with 'Q') are supported.
+    ///
+    /// Example: radiodoge-cli wallet import-wif QWif...
+    ImportWif {
+        /// WIF-encoded private key (starts with 'Q' for Dogecoin mainnet)
+        wif: String,
+    },
+
     /// Validate whether a string is a valid Dogecoin address
     ///
     /// Example: radiodoge-cli wallet validate DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L
@@ -263,6 +273,13 @@ fn cmd_wallet(cmd: WalletCommands) -> Result<()> {
             let w = wallet::wallet_from_mnemonic(&phrase)
                 .context("Failed to derive wallet from mnemonic")?;
             println!("✅ Wallet restored from recovery phrase (m/44'/3'/0'/0/0)\n");
+            println!("  Address (share this):     {}", w.address);
+            println!("  Public Key (hex):          {}", w.public_key_hex);
+            println!("  Private Key (WIF, SECRET): {}", w.private_key_wif);
+        }
+        WalletCommands::ImportWif { wif } => {
+            let w = wallet::import_wif(&wif).context("Failed to import WIF key")?;
+            println!("✅ Wallet imported from WIF key\n");
             println!("  Address (share this):     {}", w.address);
             println!("  Public Key (hex):          {}", w.public_key_hex);
             println!("  Private Key (WIF, SECRET): {}", w.private_key_wif);

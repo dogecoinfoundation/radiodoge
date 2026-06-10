@@ -165,6 +165,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`wallet import-mnemonic "<phrase>"`** — restores a wallet from a BIP39 phrase, prints address + WIF.
 - **`balance -a <address>`** — queries confirmed balance from Trezor Blockbook, prints `X.XXXXXXXX DOGE`.
 - **`broadcast --wif Q… --to D… --amount X.XX`** — new subcommand: builds a real P2PKH Dogecoin transaction, signs it (secp256k1 SIGHASH_ALL), and broadcasts directly to the Dogecoin network via Trezor Blockbook. No LoRa device or gateway needed — the direct internet path for hot wallets. Prints txid and a dogechain.info tracking URL.
+- **`wallet import-wif <key>`** — new subcommand: imports a wallet from a WIF-encoded private key (compressed Dogecoin mainnet keys starting with 'Q'), prints address + public key + WIF for confirmation.
 - **Interactive REPL** (`connect`/`daemon` mode): added `wallet-mnemonic` and `balance <addr>` commands with updated help text and banner.
 
 #### Code quality and TypeScript fixes
