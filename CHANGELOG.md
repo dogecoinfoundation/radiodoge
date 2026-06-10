@@ -160,11 +160,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - New dependencies: `bip39 = { version = "2.2.2", features = ["rand"] }`, `hmac = "0.12"` added to workspace and `radiodoge-core`.
 - New tests: `test_mnemonic_generate_and_roundtrip`, `test_mnemonic_known_vector` (validates against the all-`abandon`+`about` BIP39 test vector), `test_mnemonic_invalid_rejected`.
 
-#### `radiodoge-cli` — mnemonic and balance commands
+#### `radiodoge-cli` — mnemonic, balance, and broadcast commands
 - **`wallet mnemonic`** — generates a 12-word BIP39 wallet, prints numbered word list + derived address/WIF at `m/44'/3'/0'/0/0`.
 - **`wallet import-mnemonic "<phrase>"`** — restores a wallet from a BIP39 phrase, prints address + WIF.
 - **`balance -a <address>`** — queries confirmed balance from Trezor Blockbook, prints `X.XXXXXXXX DOGE`.
+- **`broadcast --wif Q… --to D… --amount X.XX`** — new subcommand: builds a real P2PKH Dogecoin transaction, signs it (secp256k1 SIGHASH_ALL), and broadcasts directly to the Dogecoin network via Trezor Blockbook. No LoRa device or gateway needed — the direct internet path for hot wallets. Prints txid and a dogechain.info tracking URL.
 - **Interactive REPL** (`connect`/`daemon` mode): added `wallet-mnemonic` and `balance <addr>` commands with updated help text and banner.
+
+#### Code quality and TypeScript fixes
+- **`tray.rs`**: Replaced `.expect("app should have a window icon")` with a graceful early-return and `log::warn!` — the app now starts without a tray icon if the icon resource isn't bundled (e.g. in CI dev builds) instead of panicking.
+- **`wallet.rs`**: BIP32 chain-slice `unwrap()` calls in `bip32_master` and `bip32_ckd_private` replaced with `expect()` carrying an invariant message (HMAC-SHA512 always produces 64 bytes — these are infallible, but the message aids debugging).
+- **TypeScript: 8 errors → 0** across the Svelte frontend:
+  - `vite.config.ts`: `@types/node` installed; `/// <reference types="node" />` added to resolve `process` not-found.
+  - `src/lib/types/qrcode.d.ts`: new minimal type shim for the `qrcode` npm package (ships no bundled TS types).
+  - `SendTab.svelte`: removed unused `import type { Confetti }` (type was never exported by `Confetti.svelte`).
+  - `WalletTab.svelte`: removed non-standard `autocorrect` attribute from WIF import textarea.
+  - `connection-bridge.ts`: updated to `@mnlphlp/plugin-blec` v0.5+ API — `scan()` → `startScan()`, `onReceiveData()` → `subscribe()`, `sendData()` → `send()`; removed now-dead `BLE_SERVICE_UUID` constant; fixed `available_ports()` double-cast via `unknown`.
 
 #### BAL:/TX_ACK message decoding + gateway balance listener
 - **`radio.rs`**: `CMD_MESSAGE`/`CMD_BROADCAST` payloads with prefix `BAL:{koinus}` are now decoded to `"💰 Balance: X.XXXXXXXX DOGE"` and `TX_ACK:{txid}` to `"✅ TX confirmed: txid=…"` in `decode_payload`.
