@@ -6,7 +6,8 @@
    */
 
   import { invoke } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import type { TxHistoryEntry } from '$lib/types';
   import { formatTimestamp } from '$lib/types';
 
@@ -29,6 +30,11 @@
   onMount(() => {
     loadHistory();
   });
+
+  // Reload history whenever a transaction is sent so the list updates
+  // without requiring a manual Refresh click.
+  const _txSentListener = listen<string>('transaction-sent', () => { loadHistory(); });
+  onDestroy(() => { _txSentListener.then(fn => fn()); });
 
   function statusColor(status: string): string {
     return status === 'sent' ? 'var(--doge-neon)' : 'var(--doge-red)';

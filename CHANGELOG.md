@@ -192,6 +192,15 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `if change > 0 { outputs.push(...) }` created a change output for any positive remainder, including amounts below the Dogecoin dust threshold (0.01 DOGE). Sub-dust outputs are unspendable by most nodes and will cause the transaction to be rejected by relaying nodes.
 - **Fix**: Added `const DUST_THRESHOLD_KOINUS: u64 = 1_000_000` (0.01 DOGE). Sub-dust change is now dropped (absorbed into the effective fee) rather than added as an unspendable output.
 
+#### Android mobile cannot send transactions via Send tab
+- **Root cause**: `send_transaction` in `lib.rs` checked `state.serial.is_connected()` unconditionally. On Android the JS bridge owns the USB/BLE port so `serial.is_connected()` is always `false`, causing every send attempt to return "Not connected to a Heltec device" even when a board was actively connected and responsive.
+- **Fix A (lib.rs)**: Added `is_mobile` detection (`current_port.is_some() && !serial.is_connected()`). On mobile, radio packets are built identically to the desktop path, debug-traffic entries are emitted for the Debug Console, then the packet bytes are forwarded to the JS bridge via a new `mobile-tx-packets` Tauri event instead of going through `serial.send_raw()`. History recording and the `transaction-sent` event still fire on both paths.
+- **Fix B (connection-bridge.ts)**: Added a `mobile-tx-packets` listener in `_registerSessionListeners()`. It writes each packet via the active transport (`_usbWrite` or `_bleWrite`), with the same 120 ms inter-packet delay used by `mobileSendTransaction`. The listener is registered on connect and cleaned up on disconnect alongside the existing firmware-version and doge-tx-received listeners.
+
+#### `HistoryTab` does not auto-refresh after a transaction is sent
+- **Root cause**: `HistoryTab.svelte` called `loadHistory()` once in `onMount` and had no listener for updates. If a transaction was sent while the History tab was already open, the new entry was not visible until the user clicked the "Refresh" button.
+- **Fix**: Added a `listen('transaction-sent', ...)` subscriber using the Promise-capture cleanup pattern. Any successful send (desktop or mobile) triggers a `loadHistory()` call so the history list updates immediately.
+
 ### Added
 
 #### BIP39 mnemonic + BIP32 HD wallet derivation

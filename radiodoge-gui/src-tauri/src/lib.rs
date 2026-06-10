@@ -488,7 +488,10 @@ async fn send_transaction(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    if !state.serial.is_connected() {
+    // On Android the JS bridge owns the USB/BLE port, so serial.is_connected() is
+    // always false.  Allow the send when mobile is connected (current_port is set).
+    let is_mobile = state.current_port.lock().await.is_some() && !state.serial.is_connected();
+    if !is_mobile && !state.serial.is_connected() {
         return Err("Not connected to a Heltec device. Please connect first.".to_string());
     }
 
@@ -525,7 +528,25 @@ async fn send_transaction(
     let src = state.serial.get_node_address().await;
     let dst = NodeAddress::broadcast();
 
-    if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
+    if is_mobile {
+        // Mobile path: the JS bridge owns the port; emit packet bytes via a
+        // Tauri event so the connection-bridge session listener can write them.
+        let signed_label = tx.from_private_key_wif.is_some();
+        let packets = if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
+            vec![radio::build_doge_tx(&src, &dst, &payload)]
+        } else {
+            radio::build_multipart_packets(&src, &dst, radio::CMD_DOGE_TX, &payload)
+        };
+        for (i, pkt) in packets.iter().enumerate() {
+            let label = if signed_label {
+                format!("CMD_DOGE_TX signed (mobile {}/{})", i + 1, packets.len())
+            } else {
+                format!("CMD_DOGE_TX (mobile {}/{})", i + 1, packets.len())
+            };
+            emit_debug_traffic(&app, "TX", &hex::encode(pkt), &label);
+        }
+        let _ = app.emit("mobile-tx-packets", &packets);
+    } else if payload.len() <= radio::MAX_SINGLE_PAYLOAD_LEN {
         let pkt = radio::build_doge_tx(&src, &dst, &payload);
         let pkt_hex = hex::encode(&pkt);
         let label = if tx.from_private_key_wif.is_some() { "CMD_DOGE_TX signed (single)" } else { "CMD_DOGE_TX (single packet)" };

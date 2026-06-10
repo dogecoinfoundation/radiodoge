@@ -599,6 +599,22 @@ async function _registerSessionListeners(): Promise<void> {
     window.dispatchEvent(new CustomEvent('radiodoge:doge-tx', { detail: ev.payload.body }));
   });
   sessionUnlistens.push(unlistenTx);
+
+  // send_transaction emits this event on Android so the bridge can write the
+  // signed radio packets over USB or BLE without any protocol code in the UI.
+  const unlistenMobileTx = await listen<number[][]>('mobile-tx-packets', async (ev) => {
+    const packets = ev.payload;
+    for (let i = 0; i < packets.length; i++) {
+      const chunk = new Uint8Array(packets[i]);
+      if (activeBleAddress) {
+        await _bleWrite(chunk);
+      } else {
+        await _usbWrite(chunk);
+      }
+      if (packets.length > 1 && i < packets.length - 1) await _sleep(120);
+    }
+  });
+  sessionUnlistens.push(unlistenMobileTx);
 }
 
 function _clearSessionListeners(): void {
