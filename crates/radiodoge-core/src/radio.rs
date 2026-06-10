@@ -285,9 +285,20 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
     match command {
         CMD_PING => Some("🏓 PING".to_string()),
         CMD_MESSAGE | CMD_BROADCAST => {
-            std::str::from_utf8(payload)
-                .ok()
-                .map(|s| format!("💬 {}", s.trim_end_matches('\0')))
+            std::str::from_utf8(payload).ok().map(|s| {
+                let text = s.trim_end_matches('\0').trim();
+                // Gateway balance response: "BAL:{koinus}"
+                if let Some(koinus_str) = text.strip_prefix("BAL:") {
+                    if let Ok(koinus) = koinus_str.parse::<u64>() {
+                        return format!("💰 Balance: {:.8} DOGE", koinus as f64 / 1e8);
+                    }
+                }
+                // Gateway TX acknowledgement: "TX_ACK:{txid}"
+                if let Some(txid) = text.strip_prefix("TX_ACK:") {
+                    return format!("✅ TX confirmed: txid={}", txid);
+                }
+                format!("💬 {}", text)
+            })
         }
         CMD_GET_NODE_ADDR => Some("📍 GET NODE ADDRESS".to_string()),
         CMD_SET_NODE_ADDRS => {

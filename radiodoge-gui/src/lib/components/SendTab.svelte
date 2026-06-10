@@ -255,6 +255,22 @@
       </div>
     {/if}
 
+    <!-- Fee summary (shown when wallet is loaded and amount is valid) -->
+    {#if wallet.isGenerated && isValidAmount()}
+      <div style="
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 14px;
+        background: rgba(245, 197, 24, 0.04);
+        border: 1px solid rgba(245, 197, 24, 0.15);
+        border-radius: 8px;
+        font-size: 0.78rem;
+        color: var(--doge-muted);
+      ">
+        <span>Network fee</span>
+        <span style="font-family: var(--font-mono); color: var(--doge-text);">1.00000000 DOGE (fixed)</span>
+      </div>
+    {/if}
+
     <!-- Send button -->
     <button
       onclick={sendTransaction}

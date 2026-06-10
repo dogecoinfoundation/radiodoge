@@ -12,7 +12,8 @@
    */
 
   import { invoke } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
+  import { onMount, onDestroy } from 'svelte';
   import { wallet, loadWallet, togglePrivateKeyVisibility } from '$lib/stores/wallet.svelte';
   import QRCode from './QRCode.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
@@ -76,6 +77,7 @@
 
   // ── v0.3.16 — Balance query ────────────────────────────────────────────────
   let balance = $state<number | null>(null);
+  let balanceSource = $state<'blockbook' | 'gateway' | null>(null);
   let isFetchingBalance = $state(false);
   let balanceError = $state<string | null>(null);
 
@@ -85,12 +87,19 @@
     balanceError = null;
     try {
       balance = await invoke<number>('get_balance', { address: wallet.address });
+      balanceSource = 'blockbook';
     } catch (e: unknown) {
       balanceError = e instanceof Error ? e.message : String(e);
     } finally {
       isFetchingBalance = false;
     }
   }
+
+  // Listen for "💰 Balance: X.XXXXXXXX DOGE" decoded messages from the gateway.
+  // These arrive as radio-packet events when a gateway responds to CMD_REQUEST_BALANCE.
+  let _unlistenBalance: (() => void) | null = null;
+  onDestroy(() => { _unlistenBalance?.(); });
+
 
   // ── v0.3.16 — Encrypted persistent wallet ────────────────────────────────
   let showSaveModal = $state(false);
@@ -197,6 +206,20 @@
         showUnlockModal = true;
       }
     }
+
+    // Listen for gateway balance responses: decoded text "💰 Balance: X.XXXXXXXX DOGE"
+    _unlistenBalance = await listen<{ decoded?: string }>('radio-packet', (ev) => {
+      const decoded = ev.payload?.decoded ?? '';
+      const match = decoded.match(/^💰 Balance: ([\d.]+) DOGE$/);
+      if (match) {
+        const amount = parseFloat(match[1]);
+        if (isFinite(amount)) {
+          balance = amount;
+          balanceSource = 'gateway';
+          balanceError = null;
+        }
+      }
+    });
   });
 </script>
 
@@ -467,7 +490,7 @@
             {balance.toFixed(8)} DOGE
           </div>
           <div style="font-size: 0.75rem; color: var(--doge-muted); margin-top: 4px;">
-            Confirmed balance from Trezor Blockbook
+            {balanceSource === 'gateway' ? '📡 Relayed by gateway over LoRa' : '🌐 Confirmed balance from Trezor Blockbook'}
           </div>
         {:else if balanceError}
           <div style="font-size: 0.8rem; color: #ff6060;">{balanceError}</div>
