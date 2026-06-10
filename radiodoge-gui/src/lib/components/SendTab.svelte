@@ -8,8 +8,6 @@
   import { connection } from '$lib/stores/connection.svelte';
   import { wallet } from '$lib/stores/wallet.svelte';
   import DogeSpinner from './DogeSpinner.svelte';
-  import type { Confetti as ConfettiType } from './Confetti.svelte';
-
   interface Props {
     onTriggerConfetti: () => void;
   }

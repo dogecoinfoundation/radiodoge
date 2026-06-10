@@ -169,7 +169,14 @@ export async function bleScan(timeoutMs = 5000): Promise<MobileDeviceInfo[]> {
   const blec = await _blec();
   let rawDevices: Array<{ address: string; name?: string | null; rssi?: number | null }> = [];
   try {
-    rawDevices = await blec.scan(timeoutMs);
+    // plugin-blec v0.5+ uses startScan(handler, timeout) instead of scan(timeout)
+    rawDevices = await new Promise<typeof rawDevices>((resolve, reject) => {
+      const seen = new Map<string, (typeof rawDevices)[number]>();
+      blec.startScan(
+        (devices) => { for (const d of devices) seen.set(d.address, d); },
+        timeoutMs,
+      ).then(() => resolve(Array.from(seen.values()))).catch(reject);
+    });
   } catch (e) {
     console.warn('[bridge-ble] scan() failed:', e);
     return [];
@@ -230,7 +237,7 @@ async function _listDesktopPorts(): Promise<MobileDeviceInfo[]> {
 async function _listAndroidDevices(): Promise<MobileDeviceInfo[]> {
   let portsMap: Record<string, Record<string, unknown>>;
   try {
-    portsMap = (await SerialPort.available_ports()) as Record<string, Record<string, unknown>>;
+    portsMap = (await SerialPort.available_ports()) as unknown as Record<string, Record<string, unknown>>;
   } catch (e) {
     console.warn('[bridge] available_ports() failed:', e);
     return [];
@@ -429,23 +436,17 @@ async function _connectBluetoothAndroid(address: string): Promise<void> {
   // Each notification chunk feeds directly into mobile_push_bytes, which runs
   // the identical accumulator + framing logic as the USB-OTG path.
   try {
-    const teardown = await blec.onReceiveData(
-      BLE_SERVICE_UUID,
-      BLE_NOTIFY_CHAR_UUID,
-      (data: unknown) => {
-        // BLE notifications are typically Uint8Array but use _extractBytes()
-        // for defensive compatibility with any wrapper format.
-        const bytes = _extractBytes(data);
-        if (bytes.length === 0) return;
-        invoke('mobile_push_bytes', { bytes, rssi: 0 }).catch(
-          (err) => console.warn('[bridge-ble] mobile_push_bytes error:', err),
-        );
-      },
-    );
-    bleNotifyTeardown = typeof teardown === 'function' ? teardown : null;
-    if (!bleNotifyTeardown) {
-      console.warn('[bridge-ble] onReceiveData returned non-function teardown — notifications may not work');
-    }
+    // plugin-blec v0.5+ uses subscribe(char, handler) instead of onReceiveData(svc, char, handler)
+    await blec.subscribe(BLE_NOTIFY_CHAR_UUID, (data: unknown) => {
+      // BLE notifications are typically Uint8Array but use _extractBytes()
+      // for defensive compatibility with any wrapper format.
+      const bytes = _extractBytes(data);
+      if (bytes.length === 0) return;
+      invoke('mobile_push_bytes', { bytes, rssi: 0 }).catch(
+        (err) => console.warn('[bridge-ble] mobile_push_bytes error:', err),
+      );
+    });
+    bleNotifyTeardown = () => { void blec.unsubscribe(BLE_NOTIFY_CHAR_UUID); };
   } catch (e) {
     // Propagate: without notifications the board can never respond and the
     // connection is silently broken.  Surface the error so the UI can show it.
@@ -619,10 +620,8 @@ async function _bleWrite(data: Uint8Array): Promise<void> {
   // Debug logging (non-blocking — fire-and-forget is fine here)
   invoke('mobile_ble_write_characteristic', { data: Array.from(data) }).catch(() => {});
   const blec = await _blec();
-  // Pass bytes as number[] to ensure compatibility across @mnlphlp/plugin-blec
-  // versions (some 0.4.x builds expect number[] rather than Uint8Array in the
-  // underlying Tauri IPC serialisation).
-  await blec.sendData(BLE_SERVICE_UUID, BLE_WRITE_CHAR_UUID, Array.from(data) as unknown as Uint8Array);
+  // plugin-blec v0.5+ uses send(char, data) instead of sendData(svc, char, data)
+  await blec.send(BLE_WRITE_CHAR_UUID, data, 'withoutResponse');
 }
 
 // ─── Port helpers ─────────────────────────────────────────────────────────────

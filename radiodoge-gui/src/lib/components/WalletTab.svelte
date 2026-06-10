@@ -343,7 +343,6 @@
           aria-label="WIF private key input"
           spellcheck="false"
           autocomplete="off"
-          autocorrect="off"
         ></textarea>
         {#if importError}
           <div style="
