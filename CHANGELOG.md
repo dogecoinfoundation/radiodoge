@@ -14,6 +14,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+#### `setDisconnected()` does not clear `connection.error` — stale error banner after reconnect
+- **Root cause**: `setDisconnected()` in `connection.svelte.ts` reset all connection fields (port, stats, MAC, mobile state, etc.) but did not clear `connection.error`. If a connection attempt failed with an error message, then the user disconnected and reconnected successfully, the red error banner from the previous session was still visible even though the connection was healthy.
+- **Fix**: Added `connection.error = null;` to `setDisconnected()`.
+
+#### `SendTab` address validation too loose — accepts strings up to 100+ characters
+- **Root cause**: `isValidAddress` checked `toAddress.length > 25 && toAddress.startsWith('D')`. Dogecoin P2PKH addresses are exactly 34 characters; the `> 25` check accepted any string longer than 25 chars starting with `D`, including garbled pastes or addresses from other networks.
+- **Fix**: Changed to `toAddress.length === 34 && toAddress.startsWith('D')` — exactly the right length for a Base58Check P2PKH address.
+
+#### `WalletTab` `onMount` async without mounted guard — state writes after unmount
+- **Root cause**: `onMount(async () => { ... })` awaited two sequential `invoke()` calls without checking whether the component was still mounted. If the user navigated away (switching tabs unmounts `WalletTab`) between the first and second `invoke`, the state assignments (`walletSaved`, `walletIsLegacy`, `showUnlockModal`) ran after unmount — a Svelte 5 footgun that can trigger reactive updates on a dead component.
+- **Fix**: Refactored to `onMount(() => { let mounted = true; (async () => { ...; if (!mounted) return; ...; })(); return () => { mounted = false; }; })` — all post-`await` state writes are guarded, and the cleanup sets `mounted = false`.
+
 #### Settings tab actions failing on Android ("Not connected to board")
 - **Root cause**: All Rust commands (`set_gateway_mode`, `set_wifi_enabled`, `query_mac`) checked `state.serial.is_connected()` which is always `false` on Android (the JS bridge owns the USB port, not the Rust `SerialManager`). Every Settings tab action immediately returned an error.
 - **Fix**: Added four new `mobile_build_*` Tauri commands that return raw packet bytes for the JS bridge to write:

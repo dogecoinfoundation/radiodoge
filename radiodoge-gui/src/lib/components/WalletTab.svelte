@@ -237,26 +237,31 @@
   // On mount: check for saved wallet, prompt for passphrase if encrypted.
   // Must use onMount (not $effect) — $effect re-runs each time the component mounts,
   // which happens on every tab switch ({#if activeTab === 'wallet'} unmounts on exit).
-  onMount(async () => {
-    const hasWallet = await invoke<boolean>('wallet_needs_passphrase').catch(() => false);
-    if (!hasWallet) return;
-    // Try loading without passphrase — succeeds for legacy plaintext wallets.
-    try {
-      const w = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>(
-        'load_saved_wallet', { passphrase: null }
-      );
-      if (w) {
-        loadWallet(w);
-        walletSaved = true;
-        walletIsLegacy = true; // legacy plaintext — nudge user to re-encrypt
+  onMount(() => {
+    let mounted = true;
+    (async () => {
+      const hasWallet = await invoke<boolean>('wallet_needs_passphrase').catch(() => false);
+      if (!mounted || !hasWallet) return;
+      // Try loading without passphrase — succeeds for legacy plaintext wallets.
+      try {
+        const w = await invoke<{ address: string; publicKeyHex: string; privateKeyWif: string } | null>(
+          'load_saved_wallet', { passphrase: null }
+        );
+        if (!mounted) return;
+        if (w) {
+          loadWallet(w);
+          walletSaved = true;
+          walletIsLegacy = true; // legacy plaintext — nudge user to re-encrypt
+        }
+      } catch (e: unknown) {
+        if (!mounted) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'passphrase_required') {
+          showUnlockModal = true;
+        }
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg === 'passphrase_required') {
-        showUnlockModal = true;
-      }
-    }
-
+    })();
+    return () => { mounted = false; };
   });
 </script>
 

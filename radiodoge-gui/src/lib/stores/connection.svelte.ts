@@ -150,6 +150,7 @@ export function setDisconnected() {
   connection.neighbors = [];
   connection.batteryMv = null;
   connection.boardMac = null;
+  connection.error = null;
   // v0.3.10 — reset mobile state on disconnect
   connection.mobileStatus = 'idle';
   connection.mobileStatusText = '';

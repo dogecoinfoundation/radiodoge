@@ -28,7 +28,7 @@
 
   // Validation
   const isValidAddress = $derived(() => {
-    return toAddress.length > 25 && toAddress.startsWith('D');
+    return toAddress.length === 34 && toAddress.startsWith('D');
   });
 
   const isValidAmount = $derived(() => {
