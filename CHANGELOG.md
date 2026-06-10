@@ -160,6 +160,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - New dependencies: `bip39 = { version = "2.2.2", features = ["rand"] }`, `hmac = "0.12"` added to workspace and `radiodoge-core`.
 - New tests: `test_mnemonic_generate_and_roundtrip`, `test_mnemonic_known_vector` (validates against the all-`abandon`+`about` BIP39 test vector), `test_mnemonic_invalid_rejected`.
 
+#### `radiodoge-cli` — mnemonic and balance commands
+- **`wallet mnemonic`** — generates a 12-word BIP39 wallet, prints numbered word list + derived address/WIF at `m/44'/3'/0'/0/0`.
+- **`wallet import-mnemonic "<phrase>"`** — restores a wallet from a BIP39 phrase, prints address + WIF.
+- **`balance -a <address>`** — queries confirmed balance from Trezor Blockbook, prints `X.XXXXXXXX DOGE`.
+- **Interactive REPL** (`connect`/`daemon` mode): added `wallet-mnemonic` and `balance <addr>` commands with updated help text and banner.
+
 #### BAL:/TX_ACK message decoding + gateway balance listener
 - **`radio.rs`**: `CMD_MESSAGE`/`CMD_BROADCAST` payloads with prefix `BAL:{koinus}` are now decoded to `"💰 Balance: X.XXXXXXXX DOGE"` and `TX_ACK:{txid}` to `"✅ TX confirmed: txid=…"` in `decode_payload`.
 - **`WalletTab.svelte`**: On mount, registers a `radio-packet` listener that matches the `"💰 Balance: …"` pattern and auto-updates the balance card with `balanceSource = 'gateway'`. Source attribution shown below the balance figure.

@@ -729,9 +729,9 @@
         color: var(--doge-muted);
         line-height: 1.6;
       ">
-        💡 <strong style="color: var(--doge-yellow);">Tip:</strong> Each wallet is independent.
-        Save your private key (WIF) before generating a new one, or use the encrypted save below.
-        Much wallet. Very self-custody. Wow.
+        💡 <strong style="color: var(--doge-yellow);">Tip:</strong> Each generated wallet comes with a 12-word recovery phrase — write it down offline.
+        The phrase is shown once and never stored. The encrypted save below protects your private key with a passphrase,
+        but does <em>not</em> store the recovery phrase. Much wallet. Very self-custody. Wow.
       </div>
 
       <!-- v0.3.16 — Encrypted persistent wallet section -->
