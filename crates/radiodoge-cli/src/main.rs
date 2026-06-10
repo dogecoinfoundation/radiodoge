@@ -543,8 +543,9 @@ async fn cmd_connect(port: &str) -> Result<()> {
             }
             ["stats"] => {
                 let s = manager.get_stats().await;
-                println!("📊 Sent: {}  Received: {}  RSSI: {} dBm  SNR: {:.1} dB",
-                    s.packets_sent, s.packets_received, s.rssi, s.snr);
+                let snr_str = s.snr.map(|v| format!("{:.1} dB", v)).unwrap_or_else(|| "N/A".to_string());
+                println!("📊 Sent: {}  Received: {}  RSSI: {} dBm  SNR: {}",
+                    s.packets_sent, s.packets_received, s.rssi, snr_str);
             }
             ["help"] | [] => {
                 println!("Commands:");

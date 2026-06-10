@@ -10,7 +10,7 @@ export interface RadioStats {
   bandwidthKhz: number;
   codingRate: string;
   rssi: number;
-  snr: number;
+  snr: number | null;
   packetsSent: number;
   packetsReceived: number;
 }

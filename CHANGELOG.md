@@ -176,6 +176,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: Identical pattern to the history bug — `unwrap_or_default()` on `address_book.json` parse failure.
 - **Fix**: Same match-with-warning approach.
 
+#### LoRa frequency truncated to wrong kHz value due to missing `round()` before `as u32` cast
+- **Root cause**: `update_lora_settings` and `mobile_build_lora_settings_packet` both computed `freq_khz` with `(settings.frequency_mhz * 1000.0) as u32`. Rust `as` truncates toward zero, so a floating-point representation like `914.9999...` would produce `914_999` kHz instead of `915_000` kHz, sending the board a slightly wrong frequency.
+- **Fix**: Added `.round()` before the cast in both places: `(settings.frequency_mhz * 1000.0).round() as u32`.
+
+#### SNR displayed as `0.0 dB` instead of `--` when hardware does not report it
+- **Root cause**: The `RadioStats` struct had `snr: f32` defaulting to `0.0`. USB serial and BLE transports do not carry SNR data, so the field was always emitted as `0.0` to the frontend, which displayed `"0.0 dB"` in the Dashboard and Connection panel — indistinguishable from a genuinely terrible signal.
+- **Fix**: Changed `snr` to `Option<f32>` in `RadioStats` (default `None`). The backend emits `null` when SNR is unavailable. `ConnectionPanel.svelte` updated to show `--` when null (Dashboard already handled this with `snr?.toFixed(1) ?? '--'`). CLI `stats` command now prints `N/A` instead of `0.0 dB`.
+
 #### `wallet.rs` `build_transaction_payload` — no NaN/Infinity guard before `f64 → u64` cast
 - **Root cause**: `(amount_doge * 1e8).round() as u64` had no pre-flight check. While `f64::NAN as u64` is now defined (= 0) and `f64::INFINITY as u64` saturates in Rust ≥1.45, both produce wrong packet data silently. The frontend and Tauri IPC filter these inputs in practice, but the backend should not trust the caller.
 - **Fix**: Added `if !amount_doge.is_finite() || amount_doge < 0.0 { anyhow::bail!(...) }` before the cast.

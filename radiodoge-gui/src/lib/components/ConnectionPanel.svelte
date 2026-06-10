@@ -1019,7 +1019,7 @@
           <div>
             <div class="stat-label">SNR</div>
             <div style="font-family: var(--font-mono); color: var(--doge-text);">
-              {connection.stats.snr.toFixed(1)} dB
+              {connection.stats.snr != null ? connection.stats.snr.toFixed(1) + ' dB' : '--'}
             </div>
           </div>
         {/if}

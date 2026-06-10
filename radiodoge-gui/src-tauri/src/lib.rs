@@ -637,7 +637,7 @@ async fn update_lora_settings(
     );
     state.serial.send_raw(pkt).await.map_err(|e| e.to_string())?;
 
-    let freq_khz = (settings.frequency_mhz * 1000.0) as u32;
+    let freq_khz = (settings.frequency_mhz * 1000.0).round() as u32;
     let bw_idx: u8 = match settings.bandwidth_khz as u32 {
         250 => 1,
         500 => 2,
@@ -1349,7 +1349,7 @@ async fn mobile_push_bytes(
             bandwidth_khz: lora.bandwidth_khz,
             coding_rate: lora.coding_rate.clone(),
             rssi: rssi_snap,
-            snr: 0.0, // SNR not available over USB serial; BLE path may supply it later
+            snr: None, // SNR not available over USB serial or BLE
             packets_sent: tx_snap,
             packets_received: count_snap,
         };
@@ -1497,7 +1497,7 @@ async fn mobile_build_lora_settings_packet(settings: LoraSettings) -> Vec<u8> {
         "4/8" => 8,
         _     => 5, // default 4/5
     };
-    let freq_khz = (settings.frequency_mhz * 1000.0) as u32;
+    let freq_khz = (settings.frequency_mhz * 1000.0).round() as u32;
     radio::build_set_lora_params(
         &settings.node_address,
         settings.spreading_factor,

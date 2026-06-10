@@ -21,8 +21,8 @@ pub struct RadioStats {
     pub coding_rate: String,
     /// Last received RSSI in dBm (typically -50 to -120)
     pub rssi: i16,
-    /// Last received SNR in dB
-    pub snr: f32,
+    /// Last received SNR in dB; `None` when not reported by the hardware (USB/BLE serial paths).
+    pub snr: Option<f32>,
     /// Total packets sent this session
     pub packets_sent: u32,
     /// Total packets received this session
@@ -38,7 +38,7 @@ impl Default for RadioStats {
             bandwidth_khz: 125.0,
             coding_rate: "4/5".to_string(),
             rssi: -120,
-            snr: 0.0,
+            snr: None,
             packets_sent: 0,
             packets_received: 0,
         }
