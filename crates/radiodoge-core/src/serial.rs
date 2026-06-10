@@ -482,7 +482,7 @@ impl SerialManager {
                                             });
                                             // Keep last 20 neighbors
                                             if nbrs.len() > 20 {
-                                                nbrs.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+                                                nbrs.sort_by_key(|b| std::cmp::Reverse(b.last_seen));
                                                 nbrs.truncate(20);
                                             }
                                         }

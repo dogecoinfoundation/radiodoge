@@ -346,7 +346,7 @@ pub async fn build_signed_transaction(
         .into_iter()
         .filter_map(|u| u.value.parse::<u64>().ok().map(|v| (u.txid, u.vout, v)))
         .collect();
-    utxos.sort_by(|a, b| b.2.cmp(&a.2)); // largest first
+    utxos.sort_by_key(|b| std::cmp::Reverse(b.2)); // largest first
 
     let mut selected: Vec<(String, u32)> = Vec::new();
     let mut selected_sum: u64 = 0;
