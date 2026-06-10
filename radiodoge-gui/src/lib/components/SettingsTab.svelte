@@ -22,7 +22,9 @@
   // code path (desktop query_mac) on Android before the Promise settles.
   let isAndroidPlatform = $state<boolean | null>(null);
   $effect(() => {
-    bridge.isAndroid().then(v => { isAndroidPlatform = v; });
+    let cancelled = false;
+    bridge.isAndroid().then(v => { if (!cancelled) isAndroidPlatform = v; });
+    return () => { cancelled = true; };
   });
 
   let isSaving = $state(false);
