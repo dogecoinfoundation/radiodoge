@@ -83,7 +83,8 @@ export type MobileConnectionStatus =
 //   BLE_NOTIFY_CHAR_UUID = NUS TX char  (we subscribe for notifications)
 
 // Lowercase UUIDs are required by some Android BLE implementations.
-const BLE_SERVICE_UUID     = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'; // NUS service
+// NUS service UUID (6e400001-…) is not needed after upgrading to plugin-blec v0.5+
+// which addresses characteristics directly without a service UUID argument.
 const BLE_WRITE_CHAR_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // NUS RX — host writes
 const BLE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // NUS TX — board notifies
 

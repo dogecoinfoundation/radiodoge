@@ -121,6 +121,27 @@ enum Commands {
         #[arg(short, long)]
         address: String,
     },
+
+    /// Build, sign, and broadcast a real P2PKH Dogecoin transaction to the network
+    ///
+    /// Fetches UTXOs from Trezor Blockbook, builds the transaction, signs each
+    /// input with SIGHASH_ALL (secp256k1), and broadcasts via Blockbook.
+    /// Requires an internet connection. No LoRa device needed.
+    ///
+    /// Example: radiodoge-cli broadcast --wif QWif... --to DH5yaie... --amount 4.20
+    Broadcast {
+        /// WIF-encoded private key of the sender (starts with 'Q')
+        #[arg(short, long)]
+        wif: String,
+
+        /// Recipient Dogecoin address (must start with 'D')
+        #[arg(short = 't', long = "to")]
+        to_address: String,
+
+        /// Amount to send in DOGE (network fee of 1 DOGE is added automatically)
+        #[arg(short, long)]
+        amount: f64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -181,6 +202,7 @@ async fn main() -> Result<()> {
         Commands::Connect { port } => cmd_connect(&port).await,
         Commands::Daemon { port } => cmd_daemon(&port).await,
         Commands::Balance { address } => cmd_balance(&address).await,
+        Commands::Broadcast { wif, to_address, amount } => cmd_broadcast(&wif, &to_address, amount).await,
     }
 }
 
@@ -672,5 +694,35 @@ async fn cmd_balance(address: &str) -> Result<()> {
     println!("🌐 Querying Blockbook for {}...", address);
     let koinus = wallet::fetch_balance_blockbook(address).await?;
     println!("💰 Balance: {:.8} DOGE  ({} koinus)", koinus as f64 / 1e8, koinus);
+    Ok(())
+}
+
+/// Build, sign, and broadcast a real P2PKH Dogecoin transaction directly to the network.
+async fn cmd_broadcast(wif: &str, to: &str, amount: f64) -> Result<()> {
+    if !wallet::is_valid_address(to) {
+        anyhow::bail!("'{}' is not a valid Dogecoin address (must start with 'D')", to);
+    }
+    if amount <= 0.0 {
+        anyhow::bail!("Amount must be > 0 DOGE");
+    }
+
+    println!("🐕 Building signed P2PKH transaction...");
+    println!("   To:     {}", to);
+    println!("   Amount: {:.8} DOGE  (+{:.8} DOGE fee)", amount, wallet::DEFAULT_TX_FEE_DOGE);
+
+    let raw_tx = wallet::build_signed_transaction(wif, to, amount, wallet::DEFAULT_TX_FEE_DOGE)
+        .await
+        .context("Failed to build/sign transaction")?;
+
+    let raw_hex = hex::encode(&raw_tx);
+    println!("   Signed: {} bytes", raw_tx.len());
+
+    println!("🌐 Broadcasting via Trezor Blockbook...");
+    let txid = wallet::broadcast_raw_tx(&raw_hex)
+        .await
+        .context("Broadcast failed")?;
+
+    println!("✅ Broadcast! txid = {}", txid);
+    println!("   Track: https://dogechain.info/tx/{}", txid);
     Ok(())
 }
