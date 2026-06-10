@@ -289,8 +289,12 @@ fn decode_payload(command: u8, payload: &[u8]) -> Option<String> {
             }
         }
         CMD_DOGE_TX => {
-            crate::wallet::decode_transaction_payload(payload)
-                .map(|s| format!("🐕 {}", s))
+            if crate::wallet::is_signed_tx_payload(payload) {
+                Some(format!("🐕 {}", crate::wallet::describe_signed_tx(payload)))
+            } else {
+                crate::wallet::decode_transaction_payload(payload)
+                    .map(|s| format!("🐕 {}", s))
+            }
         }
         CMD_GET_FIRMWARE_VERSION => {
             std::str::from_utf8(payload)

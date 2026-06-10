@@ -541,6 +541,218 @@ pub fn is_signed_tx_payload(payload: &[u8]) -> bool {
     payload.len() >= 100 && payload.starts_with(&[0x01, 0x00, 0x00, 0x00])
 }
 
+// ─── Incoming transaction verification ────────────────────────────────────────
+
+/// Parse a varint from `buf` at position `pos`, advancing `pos`.
+fn parse_varint_at(buf: &[u8], pos: &mut usize) -> Option<u64> {
+    let first = *buf.get(*pos)?;
+    *pos += 1;
+    match first {
+        0..=0xfc => Some(first as u64),
+        0xfd => {
+            let bytes: [u8; 2] = buf.get(*pos..*pos + 2)?.try_into().ok()?;
+            *pos += 2;
+            Some(u16::from_le_bytes(bytes) as u64)
+        }
+        0xfe => {
+            let bytes: [u8; 4] = buf.get(*pos..*pos + 4)?.try_into().ok()?;
+            *pos += 4;
+            Some(u32::from_le_bytes(bytes) as u64)
+        }
+        _ => {
+            let bytes: [u8; 8] = buf.get(*pos..*pos + 8)?.try_into().ok()?;
+            *pos += 8;
+            Some(u64::from_le_bytes(bytes))
+        }
+    }
+}
+
+/// Extract (sig_der, hashtype, compressed_pubkey) from a P2PKH scriptSig.
+fn parse_p2pkh_scriptsig(ss: &[u8]) -> Result<(Vec<u8>, u8, [u8; 33])> {
+    if ss.len() < 4 {
+        anyhow::bail!("scriptSig too short");
+    }
+    let sig_push = ss[0] as usize;
+    if ss.len() < 1 + sig_push + 2 {
+        anyhow::bail!("scriptSig truncated at signature");
+    }
+    let sig_with_ht = &ss[1..1 + sig_push];
+    if sig_with_ht.is_empty() {
+        anyhow::bail!("empty signature push");
+    }
+    let hashtype = *sig_with_ht.last().unwrap();
+    let sig_der = sig_with_ht[..sig_with_ht.len() - 1].to_vec();
+
+    let pubkey_push = ss[1 + sig_push] as usize;
+    if pubkey_push != 33 {
+        anyhow::bail!("expected 33-byte compressed pubkey, got {} bytes", pubkey_push);
+    }
+    if ss.len() < 1 + sig_push + 1 + 33 {
+        anyhow::bail!("scriptSig truncated at pubkey");
+    }
+    let mut pubkey = [0u8; 33];
+    pubkey.copy_from_slice(&ss[1 + sig_push + 1..1 + sig_push + 1 + 33]);
+    Ok((sig_der, hashtype, pubkey))
+}
+
+/// Derive a P2PKH scriptPubKey directly from a public key (for sighash construction).
+fn p2pkh_script_from_pubkey(pubkey: &PublicKey) -> Vec<u8> {
+    let compressed = pubkey.serialize();
+    let sha_hash = Sha256::digest(compressed);
+    let mut ripemd = Ripemd160::new();
+    ripemd.update(sha_hash);
+    let pubkey_hash = ripemd.finalize();
+    let mut s = Vec::with_capacity(25);
+    s.push(0x76); // OP_DUP
+    s.push(0xa9); // OP_HASH160
+    s.push(0x14); // push 20 bytes
+    s.extend_from_slice(&pubkey_hash);
+    s.push(0x88); // OP_EQUALVERIFY
+    s.push(0xac); // OP_CHECKSIG
+    s
+}
+
+/// Extract a Dogecoin address from a standard P2PKH scriptPubKey.
+fn p2pkh_address_from_script(script: &[u8]) -> Option<String> {
+    if script.len() == 25
+        && script[0] == 0x76
+        && script[1] == 0xa9
+        && script[2] == 0x14
+        && script[23] == 0x88
+        && script[24] == 0xac
+    {
+        let mut payload = Vec::with_capacity(21);
+        payload.push(DOGE_MAINNET_ADDR_VERSION);
+        payload.extend_from_slice(&script[3..23]);
+        Some(bs58::encode(payload).with_check().into_string())
+    } else {
+        None
+    }
+}
+
+/// Verify all input signatures in a raw Dogecoin P2PKH transaction (no network access).
+/// Returns `(sender_address, recipients)` where recipients is a list of `(koinus, address)`.
+/// All inputs are assumed to be P2PKH from the same address; the UTXO scriptPubKey is
+/// reconstructed from the pubkey in each input's scriptSig.
+pub fn verify_signed_tx(raw_tx: &[u8]) -> Result<(String, Vec<(u64, String)>)> {
+    let mut pos = 0usize;
+
+    // Version (4 bytes)
+    if raw_tx.len() < 4 {
+        anyhow::bail!("transaction too short");
+    }
+    pos += 4;
+
+    // Inputs
+    let input_count = parse_varint_at(raw_tx, &mut pos)
+        .ok_or_else(|| anyhow::anyhow!("failed to parse input count"))? as usize;
+    if input_count == 0 || input_count > 200 {
+        anyhow::bail!("invalid input count: {}", input_count);
+    }
+    let mut inputs: Vec<([u8; 32], u32, Vec<u8>)> = Vec::with_capacity(input_count);
+    for _ in 0..input_count {
+        let txid: [u8; 32] = raw_tx
+            .get(pos..pos + 32)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| anyhow::anyhow!("truncated txid"))?;
+        pos += 32;
+        let vout = u32::from_le_bytes(
+            raw_tx.get(pos..pos + 4)
+                .and_then(|s| s.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("truncated vout"))?,
+        );
+        pos += 4;
+        let ss_len = parse_varint_at(raw_tx, &mut pos)
+            .ok_or_else(|| anyhow::anyhow!("failed to parse scriptSig length"))? as usize;
+        let ss = raw_tx.get(pos..pos + ss_len)
+            .ok_or_else(|| anyhow::anyhow!("truncated scriptSig"))?
+            .to_vec();
+        pos += ss_len;
+        pos += 4; // sequence
+        inputs.push((txid, vout, ss));
+    }
+
+    // Outputs
+    let output_count = parse_varint_at(raw_tx, &mut pos)
+        .ok_or_else(|| anyhow::anyhow!("failed to parse output count"))? as usize;
+    if output_count == 0 || output_count > 200 {
+        anyhow::bail!("invalid output count: {}", output_count);
+    }
+    let mut outputs: Vec<(u64, Vec<u8>)> = Vec::with_capacity(output_count);
+    for _ in 0..output_count {
+        let value = u64::from_le_bytes(
+            raw_tx.get(pos..pos + 8)
+                .and_then(|s| s.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("truncated output value"))?,
+        );
+        pos += 8;
+        let spk_len = parse_varint_at(raw_tx, &mut pos)
+            .ok_or_else(|| anyhow::anyhow!("failed to parse scriptPubKey length"))? as usize;
+        let spk = raw_tx.get(pos..pos + spk_len)
+            .ok_or_else(|| anyhow::anyhow!("truncated scriptPubKey"))?
+            .to_vec();
+        pos += spk_len;
+        outputs.push((value, spk));
+    }
+
+    // Verify each input's ECDSA signature
+    let secp = Secp256k1::verification_only();
+    let mut sender_address: Option<String> = None;
+    let all_inputs_for_sighash: Vec<([u8; 32], u32)> =
+        inputs.iter().map(|(txid, vout, _)| (*txid, *vout)).collect();
+    let outputs_for_sighash: Vec<(u64, &[u8])> =
+        outputs.iter().map(|(v, s)| (*v, s.as_slice())).collect();
+
+    for (i, (_, _, scriptsig)) in inputs.iter().enumerate() {
+        let (sig_der, hashtype, pubkey_bytes) = parse_p2pkh_scriptsig(scriptsig)?;
+        if hashtype != 0x01 {
+            anyhow::bail!("input {} uses unsupported SIGHASH type 0x{:02x}", i, hashtype);
+        }
+        let pubkey = PublicKey::from_slice(&pubkey_bytes)
+            .map_err(|e| anyhow::anyhow!("input {} invalid pubkey: {}", i, e))?;
+        let utxo_script = p2pkh_script_from_pubkey(&pubkey);
+        let preimage = sighash_preimage(&all_inputs_for_sighash, &outputs_for_sighash, i, &utxo_script);
+        let hash = sha256d(&preimage);
+        let msg = secp256k1::Message::from_digest(hash);
+        let sig = secp256k1::ecdsa::Signature::from_der(&sig_der)
+            .map_err(|e| anyhow::anyhow!("input {} invalid DER sig: {}", i, e))?;
+        secp.verify_ecdsa(&msg, &sig, &pubkey)
+            .map_err(|_| anyhow::anyhow!("input {} signature verification failed", i))?;
+        if sender_address.is_none() {
+            sender_address = pubkey_to_address(&pubkey).ok();
+        }
+    }
+
+    let sender = sender_address.ok_or_else(|| anyhow::anyhow!("no verified sender"))?;
+    let recipients: Vec<(u64, String)> = outputs
+        .iter()
+        .filter_map(|(v, spk)| p2pkh_address_from_script(spk).map(|addr| (*v, addr)))
+        .filter(|(_, addr)| addr != &sender)
+        .collect();
+
+    Ok((sender, recipients))
+}
+
+/// Describe an incoming signed Dogecoin transaction payload for display.
+/// Returns a human-readable string with verification status, amount, and addresses.
+/// Falls back to an "unverified" message if the transaction cannot be parsed or verified.
+pub fn describe_signed_tx(raw_tx: &[u8]) -> String {
+    match verify_signed_tx(raw_tx) {
+        Ok((sender, recipients)) => {
+            if recipients.is_empty() {
+                format!("✅ DOGE TX (verified) — {} → self/change only", sender)
+            } else {
+                let parts: Vec<String> = recipients
+                    .iter()
+                    .map(|(v, addr)| format!("{:.8} DOGE → {}", *v as f64 / 1e8, addr))
+                    .collect();
+                format!("✅ DOGE TX: {} [from {}]", parts.join(", "), sender)
+            }
+        }
+        Err(_) => format!("⚠️ DOGE TX (unverified) — {} bytes", raw_tx.len()),
+    }
+}
+
 /// Decode an incoming transaction payload from a LoRa packet.
 /// Returns a human-readable description.
 pub fn decode_transaction_payload(payload: &[u8]) -> Option<String> {
@@ -610,5 +822,85 @@ mod tests {
         let decoded = decode_transaction_payload(&payload).expect("decode should succeed");
         assert!(decoded.contains("100.00000000"));
         assert!(decoded.contains("much wow"));
+    }
+
+    #[test]
+    fn test_wallet_encrypt_decrypt_roundtrip() {
+        let wallet = generate_keypair().expect("keypair generation should succeed");
+        let passphrase = "test-passphrase-12345";
+        let encrypted = encrypt_wallet(&wallet, passphrase).expect("encryption should succeed");
+        // encrypted_wif should not contain the plaintext WIF
+        assert!(!encrypted.encrypted_wif.contains(&wallet.private_key_wif));
+        // Decryption with correct passphrase should recover the original wallet
+        let recovered = decrypt_wallet(&encrypted, passphrase).expect("decryption should succeed");
+        assert_eq!(recovered.address, wallet.address);
+        assert_eq!(recovered.private_key_wif, wallet.private_key_wif);
+        // Decryption with wrong passphrase should fail
+        let bad = decrypt_wallet(&encrypted, "wrong-passphrase");
+        assert!(bad.is_err(), "wrong passphrase should fail");
+    }
+
+    #[test]
+    fn test_tx_verification_on_manually_built_tx() {
+        // Build a self-contained signed transaction and verify it.
+        let sender = generate_keypair().expect("keypair generation should succeed");
+        let recipient = generate_keypair().expect("keypair generation should succeed");
+
+        // Build a fake 1-input transaction manually (UTXO from self)
+        let decoded_wif = bs58::decode(&sender.private_key_wif)
+            .with_check(None).into_vec().unwrap();
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&decoded_wif[1..33]).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let utxo_script = p2pkh_script_from_pubkey(&public_key);
+        let to_script = p2pkh_script(&recipient.address).unwrap();
+
+        // Fake txid (32 bytes LE), vout 0
+        let txid_le = [0xab_u8; 32];
+        let inputs = vec![(txid_le, 0u32)];
+        let amount_koinus = 100_000_000u64; // 1 DOGE
+        let outputs: Vec<(u64, &[u8])> = vec![(amount_koinus, to_script.as_slice())];
+
+        let preimage = sighash_preimage(&inputs, &outputs, 0, &utxo_script);
+        let hash = sha256d(&preimage);
+        let msg = secp256k1::Message::from_digest(hash);
+        let sig = secp.sign_ecdsa(&msg, &secret_key);
+        let mut der_sig = sig.serialize_der().to_vec();
+        der_sig.push(0x01); // SIGHASH_ALL
+
+        let compressed_pubkey = public_key.serialize();
+        let mut scriptsig = Vec::new();
+        scriptsig.push(der_sig.len() as u8);
+        scriptsig.extend_from_slice(&der_sig);
+        scriptsig.push(33u8);
+        scriptsig.extend_from_slice(&compressed_pubkey);
+
+        // Serialize the transaction
+        let mut tx = Vec::new();
+        tx.extend_from_slice(&1u32.to_le_bytes()); // version
+        tx.extend_from_slice(&encode_varint(1)); // 1 input
+        tx.extend_from_slice(&txid_le);
+        tx.extend_from_slice(&0u32.to_le_bytes()); // vout
+        tx.extend_from_slice(&encode_varint(scriptsig.len() as u64));
+        tx.extend_from_slice(&scriptsig);
+        tx.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // sequence
+        tx.extend_from_slice(&encode_varint(1)); // 1 output
+        tx.extend_from_slice(&amount_koinus.to_le_bytes());
+        tx.extend_from_slice(&encode_varint(to_script.len() as u64));
+        tx.extend_from_slice(&to_script);
+        tx.extend_from_slice(&0u32.to_le_bytes()); // locktime
+
+        let (verified_sender, recipients) = verify_signed_tx(&tx)
+            .expect("verification should succeed for a properly signed transaction");
+        assert_eq!(verified_sender, sender.address, "sender address should match");
+        assert_eq!(recipients.len(), 1, "should have 1 recipient");
+        assert_eq!(recipients[0].0, amount_koinus, "amount should match");
+        assert_eq!(recipients[0].1, recipient.address, "recipient address should match");
+
+        // describe_signed_tx should return a verified description
+        let desc = describe_signed_tx(&tx);
+        assert!(desc.starts_with("✅"), "should start with verified checkmark");
+        assert!(desc.contains("1.00000000"), "should contain the amount");
     }
 }

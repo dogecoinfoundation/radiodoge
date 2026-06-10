@@ -159,6 +159,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`WalletTab.svelte`** — save modal replaced with a passphrase entry form (passphrase + confirm, min. 8 chars, visual feedback). Startup now calls `wallet_needs_passphrase()`; if true, shows an unlock modal before loading. Legacy plaintext wallets are detected and a nudge is shown to re-save with encryption.
 - New dependencies: `argon2 = "0.5"`, `chacha20poly1305 = "0.10"` added to workspace and `radiodoge-core`.
 
+#### Incoming transaction signature verification
+- **`verify_signed_tx(raw_tx)`** — new public function in `wallet.rs` that verifies all ECDSA input signatures in a raw Dogecoin P2PKH transaction without any network access. Extracts the pubkey from each input's scriptSig, reconstructs the UTXO scriptPubKey, computes the SIGHASH_ALL preimage, and calls `secp256k1::verify_ecdsa`. Returns `(sender_address, recipients)` on success.
+- **`describe_signed_tx(raw_tx)`** — formats the verification result into a human-readable string: `"✅ DOGE TX: 1.00000000 DOGE → D… [from D…]"` on success, or `"⚠️ DOGE TX (unverified) — N bytes"` on failure.
+- **`radio.rs` `decode_payload`** — `CMD_DOGE_TX` branch now calls `describe_signed_tx` for signed transactions (detected by `is_signed_tx_payload`); falls back to legacy stub decoder for the old format.
+- All ReceiveTab, Live Packet Log, mobile notification, and daemon ACK paths receive the verified/unverified label automatically via `IncomingPacket.decoded`.
+- **Tests**: `test_tx_verification_on_manually_built_tx` — builds a real P2PKH transaction, signs it, verifies it round-trip; `test_wallet_encrypt_decrypt_roundtrip` — full encrypt/decrypt round-trip + wrong-passphrase rejection.
+
 #### Real Dogecoin P2PKH transaction signing (`wallet.rs`)
 - **`build_signed_transaction(from_wif, to_address, amount_doge, fee_doge)`** — async function that fetches UTXOs from Trezor Blockbook (`https://doge1.trezor.io/api/v2/utxo/{address}`), selects coins with a greedy largest-first algorithm, builds inputs and change outputs, and signs each input with SIGHASH_ALL (secp256k1 ECDSA). Returns the raw serialized binary transaction.
 - **`broadcast_raw_tx(raw_hex)`** — async function that POSTs a hex-encoded raw transaction to Trezor Blockbook (`/api/v2/sendtx/`) and returns the txid on success.
