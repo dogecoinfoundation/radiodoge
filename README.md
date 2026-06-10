@@ -462,16 +462,16 @@ Rock-solid when you plug in a real Heltec board, now with Android support:
 - ✅ **Android app** — Tauri Mobile port; debug APK built by CI on every push, installable on Android 7.0+ (API 24); mobile-responsive UI with icon-only NavBar on phones
 - ✅ **Android USB serial** (v0.3.10) — USB-OTG CP2102/CH340 serial via `tauri-plugin-serialplugin`; status badge; full RadioDoge packet protocol identical to desktop
 - ✅ **Android Bluetooth BLE** (v0.3.11) — full GATT scan → connect → notify pipeline via `tauri-plugin-blec`; incoming notifications feed the identical `mobile_push_bytes` accumulator as USB; Nordic UART Service UUIDs aligned with `heltec-firmware-v3` (v0.3.13)
-
----
-
-### 🚀 v0.4.x — Roadmap
-
 - ✅ **Full P2PKH transaction signing** (v0.3.16) — UTXO fetch + secp256k1 SIGHASH_ALL + gateway broadcast via Trezor Blockbook; TX_ACK feedback over LoRa
 - ✅ **Wallet encryption at rest** (v0.3.16) — argon2id (64 MiB) + ChaCha20-Poly1305 passphrase encryption; passphrase entry modal on save and unlock modal on startup
 - ✅ **Incoming TX verification** (v0.3.16) — secp256k1 ECDSA signature verified in-process; ✅ verified or ⚠️ unverified label in all packet views
 - ✅ **Balance query** (v0.3.16) — direct Blockbook query from the GUI; `CMD_REQUEST_BALANCE` daemon handler for LoRa gateway path; Balance card in WalletTab
 - ✅ **BIP32/BIP44 HD wallet** (v0.3.16) — 12-word BIP39 mnemonic generation; derive key at `m/44'/3'/0'/0/0` (Dogecoin coin type 3) via HMAC-SHA512 BIP32; recovery phrase backup modal on generate; mnemonic import panel in WalletTab
+
+---
+
+### 🚀 v0.4.x — Roadmap
+
 - 🔜 **SPV verification** — lightweight header chain validation; app can verify inclusion without a full node
 - 🔜 **Multi-hop relay status** — show hop count and intermediate node addresses in the packet log
 - 🔜 **QR code scanning** — camera/image input for recipient field (no hand-typing long addresses)
