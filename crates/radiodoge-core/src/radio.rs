@@ -150,7 +150,8 @@ pub fn build_ble_toggle(src: &NodeAddress, enable: bool) -> Vec<u8> {
 /// a CMD_MESSAGE containing `"BAL:{koinus}"` addressed back to `src`.
 pub fn build_request_balance(src: &NodeAddress, doge_address: &str) -> Vec<u8> {
     let mut packet = build_header(CMD_REQUEST_BALANCE, FLAG_STANDARD, src, &NodeAddress::broadcast());
-    packet.extend_from_slice(doge_address.as_bytes());
+    let addr_bytes = doge_address.as_bytes();
+    packet.extend_from_slice(&addr_bytes[..addr_bytes.len().min(MAX_SINGLE_PAYLOAD_LEN)]);
     packet
 }
 
@@ -451,5 +452,113 @@ mod tests {
         assert_eq!(parsed.command, CMD_PING);
         assert_eq!(parsed.source.region, 10);
         assert_eq!(parsed.rssi, -70);
+    }
+
+    /// Regression test for the back-to-back framing bug fixed in v0.3.16.
+    ///
+    /// When two packets arrive in a single serial read, the framing loop must
+    /// pre-slice the accumulator to the exact packet length before calling
+    /// parse_incoming.  Without this, the first packet's payload_hex includes
+    /// the raw bytes of every subsequent packet.
+    #[test]
+    fn test_parse_incoming_does_not_bleed_into_next_packet() {
+        let src = test_src();
+        let dst = test_dst();
+
+        // Two back-to-back packets in one buffer, as they might arrive from the
+        // serial port: a CMD_MESSAGE followed immediately by a CMD_PING.
+        let mut combined = build_message(&src, &dst, "hello");
+        combined.extend_from_slice(&build_ping(&src, &dst));
+
+        let msg_len = SINGLE_HDR_LEN + b"hello".len();
+
+        // Parse only the first packet's bytes.
+        let parsed = parse_incoming(&combined[..msg_len], 0)
+            .expect("Should parse valid CMD_MESSAGE");
+
+        assert_eq!(parsed.command, CMD_MESSAGE);
+        // payload_hex must be exactly "hello" — not "hello" + the PING header bytes.
+        assert_eq!(
+            parsed.payload_hex,
+            hex::encode(b"hello"),
+            "payload_hex must not include bytes from the subsequent PING packet"
+        );
+    }
+
+    /// Verify exact_packet_len returns the correct size for every fixed-length command
+    /// and None for all variable-length commands.
+    #[test]
+    fn test_exact_packet_len_coverage() {
+        // Fixed-length commands and their expected total byte counts
+        let fixed = [
+            (CMD_GET_NODE_ADDR,   8usize),
+            (CMD_PING,            8),
+            (CMD_SET_LORA_PARAMS, 8),
+            (CMD_ADDR_CONFLICT,   8),
+            (CMD_SET_NODE_ADDRS,  8),
+            (CMD_SET_GATEWAY,     9),
+            (CMD_WIFI_TOGGLE,     9),
+            (CMD_BLE_TOGGLE,      9),
+            (CMD_GET_SETTINGS,    13),
+            (CMD_GET_BATTERY,     10),
+            (CMD_GET_MAC,         14),
+        ];
+        for (cmd, expected) in fixed {
+            assert_eq!(
+                exact_packet_len(cmd),
+                Some(expected),
+                "CMD 0x{:02X} should have fixed length {}", cmd, expected
+            );
+        }
+
+        // Variable-length commands must return None
+        let variable = [
+            CMD_MESSAGE, CMD_BROADCAST, CMD_MULTIPART,
+            CMD_DOGE_TX, CMD_REQUEST_BALANCE, CMD_GET_FIRMWARE_VERSION,
+        ];
+        for cmd in variable {
+            assert_eq!(
+                exact_packet_len(cmd),
+                None,
+                "CMD 0x{:02X} should be variable-length (None)", cmd
+            );
+        }
+    }
+
+    /// Verify that the null-terminator scan logic used for CMD_GET_FIRMWARE_VERSION
+    /// correctly stops at the '\0' and does not consume bytes from a subsequent packet.
+    #[test]
+    fn test_firmware_version_null_terminator_scan() {
+        let src = test_src();
+        let ver_string = b"v1.2.3\0";
+
+        // Manually build a CMD_GET_FIRMWARE_VERSION response followed by CMD_GET_SETTINGS
+        let mut combined = vec![CMD_GET_FIRMWARE_VERSION, 0x00];
+        combined.extend_from_slice(&[src.region, src.community, src.node]);
+        combined.extend_from_slice(&[0xFF, 0xFF, 0xFF]); // broadcast dst
+        combined.extend_from_slice(ver_string);
+        // Append a CMD_GET_SETTINGS response immediately after
+        combined.extend_from_slice(&build_get_settings(&src));
+
+        // Simulate the null-terminator scan from the framing loop
+        let after_hdr = &combined[SINGLE_HDR_LEN..];
+        let payload_len = after_hdr
+            .iter()
+            .position(|&b| b == 0)
+            .map(|i| i + 1)
+            .unwrap_or_else(|| after_hdr.len().min(MAX_SINGLE_PAYLOAD_LEN));
+        let packet_len = (SINGLE_HDR_LEN + payload_len).min(combined.len());
+
+        let parsed = parse_incoming(&combined[..packet_len], 0)
+            .expect("Should parse firmware version packet");
+
+        assert_eq!(parsed.command, CMD_GET_FIRMWARE_VERSION);
+        // Payload must be only "v1.2.3\0", not "v1.2.3\0" + GET_SETTINGS bytes
+        let raw_payload = hex::decode(&parsed.payload_hex).expect("valid hex");
+        assert_eq!(
+            raw_payload,
+            ver_string,
+            "Firmware version payload must end at the null terminator"
+        );
     }
 }

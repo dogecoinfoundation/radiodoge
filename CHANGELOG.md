@@ -132,6 +132,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
 - **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
 
+#### `build_request_balance` — missing payload length clamp
+- **Root cause**: `build_request_balance` in `radio.rs` called `packet.extend_from_slice(doge_address.as_bytes())` with no length check. Every other packet builder (`build_message`, `build_doge_tx`, `build_broadcast`) clamps via `.min(MAX_SINGLE_PAYLOAD_LEN)`. An abnormally long address string (theoretical — Dogecoin addresses are 34 chars) would produce an oversized packet that the board firmware cannot process.
+- **Fix**: Added `.min(MAX_SINGLE_PAYLOAD_LEN)` clamp to match the pattern used by all other variable-payload builders.
+
 #### Desktop serial framing: `parse_incoming` received full accumulator, contaminating `payload_hex`
 - **Root cause**: `serial.rs` called `radio::parse_incoming(&accumulator, 0)` with the entire accumulator buffer. `parse_incoming` takes `&buf[SINGLE_HDR_LEN..]` as the payload — meaning when two packets arrive in a single serial read, the first packet's `payload_hex` included all bytes of every subsequent packet. For fixed-size payloads (PING, GET_SETTINGS, etc.) downstream code only reads specific byte indices so the extra bytes were ignored, but for variable-length payloads (CMD_MESSAGE, CMD_DOGE_TX) the decoded text and signature verification received garbage-appended data.
 - **Fix**: Pre-compute `packet_len` before calling `parse_incoming` using the same logic already in `mobile_push_bytes` (`exact_packet_len` for fixed-length commands, null-terminator scan for `CMD_GET_FIRMWARE_VERSION`, `min(available, MAX_SINGLE_PAYLOAD_LEN)` for all others). Pass `&accumulator[..packet_len]` so the parser receives exactly one packet's worth of bytes. Simplified the drain step to `accumulator.drain(..packet_len)`.
