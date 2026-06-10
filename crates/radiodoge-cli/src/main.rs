@@ -368,7 +368,7 @@ async fn cmd_connect(port: &str) -> Result<()> {
 
     let addr = manager.get_node_address().await;
     println!("✅ Connected! Node address: {}\n", addr.to_display_string());
-    println!("Commands: ping | wallet | send <addr> <amount> [memo] | stats | quit");
+    println!("Commands: ping | wallet | wallet-mnemonic | send <addr> <amount> [memo] | stats | quit");
     println!("{}", "─".repeat(60));
 
     // Simple line-based REPL
@@ -395,6 +395,22 @@ async fn cmd_connect(port: &str) -> Result<()> {
                         println!("   Address:     {}", w.address);
                         println!("   Private key: {}", w.private_key_wif);
                         println!("   ⚠️  Save the private key now — not stored anywhere!");
+                    }
+                    Err(e) => println!("❌ Error: {}", e),
+                }
+            }
+            ["wallet-mnemonic"] => {
+                match wallet::generate_mnemonic().and_then(|m| {
+                    let phrase = m.to_string();
+                    wallet::wallet_from_mnemonic(&phrase).map(|w| (phrase, w))
+                }) {
+                    Ok((phrase, w)) => {
+                        println!("🌱 New wallet with recovery phrase:");
+                        for (i, word) in phrase.split_whitespace().enumerate() {
+                            println!("   {:2}. {}", i + 1, word);
+                        }
+                        println!("   Address: {}", w.address);
+                        println!("   ⚠️  Write the phrase offline — shows once!");
                     }
                     Err(e) => println!("❌ Error: {}", e),
                 }
@@ -455,6 +471,7 @@ async fn cmd_connect(port: &str) -> Result<()> {
                 println!("Commands:");
                 println!("  ping                         — ping the device");
                 println!("  wallet                       — generate new Dogecoin keypair");
+                println!("  wallet-mnemonic              — generate wallet with 12-word BIP39 phrase");
                 println!("  send <addr> <amount> [memo]  — send DOGE over LoRa");
                 println!("  stats                        — show radio statistics");
                 println!("  quit / exit / q              — disconnect and exit");
