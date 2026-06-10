@@ -121,6 +121,24 @@ enum WalletCommands {
     /// Example: radiodoge-cli wallet generate
     Generate,
 
+    /// Generate a new wallet with a 12-word BIP39 mnemonic recovery phrase
+    ///
+    /// Derives the key at m/44'/3'/0'/0/0 (Dogecoin BIP44 path).
+    /// Write down the phrase offline — it is shown once and never stored.
+    ///
+    /// Example: radiodoge-cli wallet mnemonic
+    Mnemonic,
+
+    /// Import a wallet from a BIP39 mnemonic recovery phrase
+    ///
+    /// Derives the key at m/44'/3'/0'/0/0 (Dogecoin BIP44 coin type 3).
+    ///
+    /// Example: radiodoge-cli wallet import-mnemonic "word1 word2 ... word12"
+    ImportMnemonic {
+        /// 12 or 24-word BIP39 mnemonic phrase (space-separated, quoted)
+        phrase: String,
+    },
+
     /// Validate whether a string is a valid Dogecoin address
     ///
     /// Example: radiodoge-cli wallet validate DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L
@@ -181,6 +199,30 @@ fn cmd_wallet(cmd: WalletCommands) -> Result<()> {
             println!("  Public Key (hex):          {}", w.public_key_hex);
             println!("  Private Key (WIF, SECRET): {}", w.private_key_wif);
             println!("\n⚠️  The private key is shown ONCE. Write it down. Lose it = lose DOGE.");
+        }
+        WalletCommands::Mnemonic => {
+            let mnemonic = wallet::generate_mnemonic().context("Failed to generate mnemonic")?;
+            let phrase = mnemonic.to_string();
+            let w = wallet::wallet_from_mnemonic(&phrase).context("Failed to derive wallet")?;
+            println!("🌱 New Dogecoin Wallet with Recovery Phrase — WRITE THIS DOWN OFFLINE!\n");
+            println!("  Recovery Phrase (12 words, SECRET):");
+            for (i, word) in phrase.split_whitespace().enumerate() {
+                println!("    {:2}. {}", i + 1, word);
+            }
+            println!();
+            println!("  Derived at: m/44'/3'/0'/0/0 (Dogecoin BIP44)");
+            println!("  Address (share this):     {}", w.address);
+            println!("  Public Key (hex):          {}", w.public_key_hex);
+            println!("  Private Key (WIF, SECRET): {}", w.private_key_wif);
+            println!("\n⚠️  Store the recovery phrase OFFLINE. Anyone with it controls your DOGE.");
+        }
+        WalletCommands::ImportMnemonic { phrase } => {
+            let w = wallet::wallet_from_mnemonic(&phrase)
+                .context("Failed to derive wallet from mnemonic")?;
+            println!("✅ Wallet restored from recovery phrase (m/44'/3'/0'/0/0)\n");
+            println!("  Address (share this):     {}", w.address);
+            println!("  Public Key (hex):          {}", w.public_key_hex);
+            println!("  Private Key (WIF, SECRET): {}", w.private_key_wif);
         }
         WalletCommands::Validate { address } => {
             if wallet::is_valid_address(&address) {
