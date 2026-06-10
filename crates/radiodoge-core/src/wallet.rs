@@ -328,8 +328,11 @@ pub async fn build_signed_transaction(
     let compressed_pubkey = public_key.serialize(); // 33 bytes
     let from_address = pubkey_to_address(&public_key)?;
 
+    if !fee_doge.is_finite() || fee_doge < 0.0 {
+        anyhow::bail!("Invalid fee: {}", fee_doge);
+    }
     let amount_koinus: u64 = (amount_doge * 1e8).round() as u64;
-    let fee_koinus: u64 = (fee_doge.abs() * 1e8).round() as u64;
+    let fee_koinus: u64 = (fee_doge * 1e8).round() as u64;
     let total_needed = amount_koinus
         .checked_add(fee_koinus)
         .ok_or_else(|| anyhow::anyhow!("Amount + fee overflow"))?;
@@ -368,7 +371,11 @@ pub async fn build_signed_transaction(
 
     let change = selected_sum - total_needed;
     let mut outputs: Vec<(u64, Vec<u8>)> = vec![(amount_koinus, to_script)];
-    if change > 0 {
+    // Only create a change output if the change exceeds the Dogecoin dust threshold.
+    // Below this limit the output costs more to spend than it is worth and many nodes
+    // will not relay the transaction.
+    const DUST_THRESHOLD_KOINUS: u64 = 1_000_000; // 0.01 DOGE
+    if change > DUST_THRESHOLD_KOINUS {
         outputs.push((change, from_script.clone()));
     }
 
@@ -534,6 +541,9 @@ pub fn decrypt_wallet(encrypted: &EncryptedWalletFile, passphrase: &str) -> Resu
         .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid salt encoding"))?;
     let nonce_bytes = hex::decode(&encrypted.nonce)
         .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid nonce encoding"))?;
+    if nonce_bytes.len() != 12 {
+        anyhow::bail!("corrupted wallet: nonce must be 12 bytes, got {}", nonce_bytes.len());
+    }
     let mut buffer = hex::decode(&encrypted.encrypted_wif)
         .map_err(|_| anyhow::anyhow!("corrupted wallet: invalid ciphertext encoding"))?;
 

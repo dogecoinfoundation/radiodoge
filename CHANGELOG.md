@@ -180,6 +180,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `(amount_doge * 1e8).round() as u64` had no pre-flight check. While `f64::NAN as u64` is now defined (= 0) and `f64::INFINITY as u64` saturates in Rust ≥1.45, both produce wrong packet data silently. The frontend and Tauri IPC filter these inputs in practice, but the backend should not trust the caller.
 - **Fix**: Added `if !amount_doge.is_finite() || amount_doge < 0.0 { anyhow::bail!(...) }` before the cast.
 
+#### `wallet.rs` `decrypt_wallet` — `Nonce::from_slice` panics on corrupted wallet nonce
+- **Root cause**: `ChaCha20Poly1305::Nonce::from_slice` contains an internal `assert_eq!(slice.len(), 12)` and panics rather than returning `Err` when the nonce slice is the wrong length. If `wallet.json` is corrupted (e.g., truncated nonce hex string), the app would crash with a panic instead of returning a user-facing error.
+- **Fix**: Added an explicit length guard before calling `from_slice`: if `nonce_bytes.len() != 12`, `anyhow::bail!` returns a clear "corrupted wallet: nonce must be 12 bytes" error.
+
+#### `wallet.rs` `build_signed_transaction` — fee `f64 → u64` cast without NaN/Infinity guard
+- **Root cause**: `amount_doge` was validated with `is_finite()` before its cast, but `fee_doge` was not — `(fee_doge.abs() * 1e8).round() as u64` could silently produce 0 for a NaN or Infinity fee. In practice the function is always called with `DEFAULT_TX_FEE_DOGE = 1.0`, but the backend should validate all inputs.
+- **Fix**: Added `if !fee_doge.is_finite() || fee_doge < 0.0 { anyhow::bail!("Invalid fee: {}", fee_doge) }` before the cast.
+
+#### `wallet.rs` `build_signed_transaction` — sub-dust change output created for tiny remainders
+- **Root cause**: `if change > 0 { outputs.push(...) }` created a change output for any positive remainder, including amounts below the Dogecoin dust threshold (0.01 DOGE). Sub-dust outputs are unspendable by most nodes and will cause the transaction to be rejected by relaying nodes.
+- **Fix**: Added `const DUST_THRESHOLD_KOINUS: u64 = 1_000_000` (0.01 DOGE). Sub-dust change is now dropped (absorbed into the effective fee) rather than added as an unspendable output.
+
 ### Added
 
 #### BIP39 mnemonic + BIP32 HD wallet derivation
