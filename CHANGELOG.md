@@ -132,6 +132,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Root cause**: `navigator.clipboard.writeText()` was not wrapped in a try/catch. In sandboxed or permission-denied environments this throws a `NotAllowedError` which propagated as an uncaught rejection, leaving the copy icon in its default state with no feedback.
 - **Fix**: Wrapped in try/catch matching the identical pattern used by `ReceiveTab.copyPacket`.
 
+#### `ping_device` timeout message said "500 ms" — actual timeout is 1500 ms
+- **Root cause**: When `serial.rs` raised the PING timeout from 500 ms to 1500 ms (v0.3.7), the debug traffic strings in `lib.rs` were not updated. The user-visible log message `"No PONG within 500 ms"` was wrong.
+- **Fix**: Updated both the success and failure debug strings to `"1500 ms"`.
+
+#### Dashboard TX counter always 0 on Android (USB + BLE)
+- **Root cause**: The `radio-stats-update` event emitted by `mobile_push_bytes` had `packets_sent: 0` hardcoded. There was no counter for outgoing mobile packets — only `mobile_packets_rx` existed.
+- **Fix**: Added `mobile_packets_tx: Arc<Mutex<u32>>` to `AppState`. `mobile_emit_debug_tx` (USB) and `mobile_ble_write_characteristic` (BLE) now accept `State<'_, AppState>` and increment the counter on every write. The counter is read in `mobile_push_bytes`'s stats emission block and cleared in `mobile_set_disconnected`.
+
 #### `mobile_push_bytes` accumulator unbounded — memory exhaustion on misbehaving board
 - **Root cause**: `acc.extend_from_slice(&bytes)` had no size guard. In normal operation the packet-drain loop keeps the accumulator to a few hundred bytes. But a board stuck in a debug-print loop, or one that sends valid command-byte headers that never complete into packets, could grow the accumulator without bound — an OOM risk on Android.
 - **Fix**: Added an 8 KB ceiling in `mobile_push_bytes`. If the new data would exceed it, the accumulator is cleared (framing recovers on the next valid packet) and a warning is printed to stderr.

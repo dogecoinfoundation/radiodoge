@@ -68,6 +68,9 @@ pub struct AppState {
     /// Used to synthesize `radio-stats-update` events so the Dashboard packet
     /// counters and NavBar signal bars stay current on mobile USB/BLE.
     pub mobile_packets_rx: Arc<Mutex<u32>>,
+    /// Running count of packets sent via the Android mobile path.
+    /// Incremented by mobile_emit_debug_tx (USB) and mobile_ble_write_characteristic (BLE).
+    pub mobile_packets_tx: Arc<Mutex<u32>>,
     /// v0.3.15 — Last known RSSI seen on the mobile path.
     /// Always 0 on USB (RSSI is not available over serial); may be non-zero
     /// in a future BLE path that reports received signal strength.
@@ -88,6 +91,7 @@ impl AppState {
             mobile_fw_version: Arc::new(Mutex::new(None)),
             ble_device_address: Arc::new(Mutex::new(None)),
             mobile_packets_rx: Arc::new(Mutex::new(0)),
+            mobile_packets_tx: Arc::new(Mutex::new(0)),
             mobile_last_rssi: Arc::new(Mutex::new(0)),
         }
     }
@@ -419,8 +423,8 @@ async fn ping_device(state: State<'_, AppState>, app: AppHandle) -> Result<bool,
     let ok = state.serial.ping().await;
     emit_debug_traffic(
         &app, "RX", "",
-        if ok { "✅ PONG — device responded within 500 ms 🐕" }
-        else  { "❌ No PONG within 500 ms — firmware may be busy" },
+        if ok { "✅ PONG — device responded within 1500 ms 🐕" }
+        else  { "❌ No PONG within 1500 ms — firmware may be busy" },
     );
     Ok(ok)
 }
@@ -1079,6 +1083,7 @@ async fn mobile_set_disconnected(
     *state.mobile_fw_version.lock().await = None;
     state.mobile_accumulator.lock().await.clear();
     *state.mobile_packets_rx.lock().await = 0;
+    *state.mobile_packets_tx.lock().await = 0;
     *state.mobile_last_rssi.lock().await = 0;
     let _ = app.emit("connection-status", ConnectionStatusEvent::disconnected());
     log::info!("mobile_set_disconnected");
@@ -1310,6 +1315,7 @@ async fn mobile_push_bytes(
         }
         let rssi_snap = *state.mobile_last_rssi.lock().await;
 
+        let tx_snap = *state.mobile_packets_tx.lock().await;
         let lora = state.lora_settings.lock().await.clone();
         let stats = RadioStats {
             frequency_mhz: lora.frequency_mhz,
@@ -1319,7 +1325,7 @@ async fn mobile_push_bytes(
             coding_rate: lora.coding_rate.clone(),
             rssi: rssi_snap,
             snr: 0.0, // SNR not available over USB serial; BLE path may supply it later
-            packets_sent: 0,
+            packets_sent: tx_snap,
             packets_received: count_snap,
         };
         let _ = app.emit("radio-stats-update", &stats);
@@ -1564,7 +1570,7 @@ async fn mobile_ble_disconnect(
 ///   1. Emit a "TX-USB" debug-serial-traffic event visible in the Debug Console
 ///   2. Mirror the equivalent `mobile_ble_write_characteristic` for the BLE path
 #[tauri::command]
-async fn mobile_emit_debug_tx(bytes: Vec<u8>, app: AppHandle) -> Result<(), String> {
+async fn mobile_emit_debug_tx(bytes: Vec<u8>, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let hex = hex::encode(&bytes);
     let note = bytes.first().map(|cmd| match *cmd {
         0x02 => "CMD_PING",
@@ -1579,6 +1585,7 @@ async fn mobile_emit_debug_tx(bytes: Vec<u8>, app: AppHandle) -> Result<(), Stri
         _    => "CMD_?",
     }).unwrap_or("(empty)");
     emit_debug_traffic(&app, "TX-USB", &hex, note);
+    *state.mobile_packets_tx.lock().await += 1;
     Ok(())
 }
 
@@ -1591,10 +1598,12 @@ async fn mobile_emit_debug_tx(bytes: Vec<u8>, app: AppHandle) -> Result<(), Stri
 #[tauri::command]
 async fn mobile_ble_write_characteristic(
     data: Vec<u8>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let hex = hex::encode(&data);
     emit_debug_traffic(&app, "TX-BLE", &hex, "BLE write characteristic");
+    *state.mobile_packets_tx.lock().await += 1;
     Ok(())
 }
 
