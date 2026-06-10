@@ -604,7 +604,8 @@ fn bip32_master(seed: &[u8]) -> Result<(SecretKey, [u8; 32])> {
         .map_err(|e| anyhow::anyhow!("HMAC init: {}", e))?;
     mac.update(seed);
     let result = mac.finalize().into_bytes();
-    let chain: [u8; 32] = result[32..].try_into().unwrap();
+    let chain: [u8; 32] = result[32..].try_into()
+        .expect("HMAC-SHA512 always produces 64 bytes; chain slice is always exactly 32");
     let key = SecretKey::from_slice(&result[..32])
         .map_err(|e| anyhow::anyhow!("master key invalid: {}", e))?;
     Ok((key, chain))
@@ -630,7 +631,8 @@ fn bip32_ckd_private(parent: &SecretKey, chain: &[u8; 32], index: u32) -> Result
         .map_err(|e| anyhow::anyhow!("BIP32 child IL invalid: {}", e))?;
     let child = parent.add_tweak(&secp256k1::Scalar::from(il_key))
         .map_err(|e| anyhow::anyhow!("BIP32 child key derivation failed: {}", e))?;
-    let new_chain: [u8; 32] = result[32..].try_into().unwrap();
+    let new_chain: [u8; 32] = result[32..].try_into()
+        .expect("HMAC-SHA512 always produces 64 bytes; chain slice is always exactly 32");
     Ok((child, new_chain))
 }
 

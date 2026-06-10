@@ -21,8 +21,15 @@ pub fn setup_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&open_item, &status_item, &separator, &quit_item])?;
 
+    // Tray icon is optional — gracefully skip if the icon resource isn't bundled
+    // (can happen in CI / dev builds before icon generation runs).
+    let Some(icon) = app.default_window_icon().cloned() else {
+        log::warn!("[tray] no window icon available; skipping tray setup");
+        return Ok(());
+    };
+
     TrayIconBuilder::new()
-        .icon(app.default_window_icon().cloned().expect("app should have a window icon"))
+        .icon(icon)
         .menu(&menu)
         .tooltip("RadioDoge — Wireless Dogecoin")
         .on_tray_icon_event(|tray, event| {
